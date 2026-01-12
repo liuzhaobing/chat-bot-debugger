@@ -52,3 +52,20 @@ class Message(models.Model):
         except Exception:
             pass
         return f"{self.role}: {self.content[:50]}"
+
+class App(models.Model):
+    CATEGORY_CHOICES = (
+        ('featured', '精选'),
+        ('lifestyle', '生活方式'),
+        ('productivity', '工作效率'),
+        ('other', '其他'),
+    )
+    name = models.CharField(max_length=100)
+    description = models.TextField()
+    icon_url = models.URLField(blank=True, null=True)
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='other')
+    is_featured = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name

@@ -7,8 +7,11 @@ from django.http import StreamingHttpResponse
 from django.shortcuts import get_object_or_404
 import requests
 import json
-from .models import Provider, LLMModel, Conversation, Message
-from .serializers import ProviderSerializer, ConversationSerializer, MessageSerializer, LLMModelSerializer
+from .models import Provider, LLMModel, Conversation, Message, App
+from .serializers import (
+    ProviderSerializer, ConversationSerializer, MessageSerializer, 
+    LLMModelSerializer, AppSerializer
+)
 
 class ProviderViewSet(viewsets.ModelViewSet):
     queryset = Provider.objects.filter(is_active=True)
@@ -50,6 +53,25 @@ class ProviderViewSet(viewsets.ModelViewSet):
 class LLMModelViewSet(viewsets.ModelViewSet):
     queryset = LLMModel.objects.all()
     serializer_class = LLMModelSerializer
+
+class AppViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = App.objects.all()
+    serializer_class = AppSerializer
+
+    def get_queryset(self):
+        queryset = App.objects.all()
+        category = self.request.query_params.get('category')
+        is_featured = self.request.query_params.get('is_featured')
+        search = self.request.query_params.get('search')
+        
+        if category:
+            queryset = queryset.filter(category=category)
+        if is_featured:
+            queryset = queryset.filter(is_featured=is_featured.lower() == 'true')
+        if search:
+            queryset = queryset.filter(name__icontains=search) | queryset.filter(description__icontains=search)
+            
+        return queryset
 
 class ConversationPagination(PageNumberPagination):
     page_size = 15

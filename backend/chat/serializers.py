@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Provider, LLMModel, Conversation, Message
+from .models import Provider, LLMModel, Conversation, Message, App
 
 class LLMModelSerializer(serializers.ModelSerializer):
     class Meta:
@@ -22,3 +22,8 @@ class ConversationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Conversation
         fields = ['id', 'title', 'created_at', 'updated_at']
+
+class AppSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = App
+        fields = '__all__'

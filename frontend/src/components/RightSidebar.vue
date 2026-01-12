@@ -1,10 +1,6 @@
 <template>
-  <div class="right-sidebar" :class="{ open: isOpen }">
-    <button class="toggle-btn" @click="toggleSidebar">
-      <svg v-if="isOpen" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>
-      <svg v-else xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
-    </button>
-    <div v-if="isOpen" class="content">
+  <div class="right-sidebar" :class="{ open: isRightSidebarOpen }">
+    <div v-if="isRightSidebarOpen" class="content">
       <h3>System Prompt</h3>
       <textarea v-model="systemPrompt" rows="3" placeholder="System prompt..." />
       <div class="param-group">
@@ -20,15 +16,19 @@
 </template>
 
 <script>
+import { mapState } from 'vuex'
+
 export default {
   name: 'RightSidebar',
   data() {
     return {
-      isOpen: false,
       systemPrompt: '',
       temperature: 0.7,
       maxTokens: 1024
     }
+  },
+  computed: {
+      ...mapState(['isRightSidebarOpen'])
   },
   watch: {
     systemPrompt(val) {
@@ -47,9 +47,6 @@ export default {
     this.maxTokens = this.$store.state.maxTokens || 1024
   },
   methods: {
-    toggleSidebar() {
-      this.isOpen = !this.isOpen
-    }
   }
 }
 </script>

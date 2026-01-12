@@ -157,17 +157,9 @@ export default {
 
 <style scoped>
 .model-selector-container {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  padding: 10px 0 30px 24px;
-  margin: 0 auto;
-  width: 100%;
-  z-index: 20;
-  background: linear-gradient(180deg, var(--bg-primary) 60%, transparent 100%);
   display: flex;
-  justify-content: flex-start;
+  align-items: center;
+  z-index: 20;
 }
 
 .model-trigger {
@@ -182,6 +174,14 @@ export default {
   align-items: center;
   gap: 8px;
   transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.current-model {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 300px; /* Optional cap */
 }
 
 .model-trigger:hover {

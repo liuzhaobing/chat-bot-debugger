@@ -247,7 +247,7 @@ export default {
   flex: 1;
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100%;
   background-color: var(--bg-primary);
   position: relative;
 }
@@ -261,11 +261,11 @@ export default {
 }
 
 .messages-buffer {
-    height: 160px; /* Space for model selector with gradient (prevents first message blocking) */
+    height: 20px; /* Reduced since we have header now */
 }
 
 .bottom-spacer {
-    height: 220px; /* Space for input area with extra clearance */
+    height: 280px; /* Increased to ensure last assistant message is never obscured by the input box */
 }
 
 .status-message {

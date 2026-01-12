@@ -21,7 +21,9 @@ export default new Vuex.Store({
         conversationsLoading: false,
         systemPrompt: 'You are a helpful assistant.',
         temperature: 0.7,
-        maxTokens: 1024
+        maxTokens: 1024,
+        isSidebarCollapsed: false,
+        isRightSidebarOpen: false
     },
     mutations: {
         SET_SYSTEM_PROMPT(state, prompt) {
@@ -94,6 +96,12 @@ export default new Vuex.Store({
         },
         SET_STREAMING(state, status) {
             state.isStreaming = status
+        },
+        SET_SIDEBAR_COLLAPSED(state, collapsed) {
+            state.isSidebarCollapsed = collapsed
+        },
+        SET_RIGHT_SIDEBAR_OPEN(state, open) {
+            state.isRightSidebarOpen = open
         },
     },
     actions: {
@@ -245,7 +253,7 @@ export default new Vuex.Store({
                 const decoder = new TextDecoder()
                 let assistantContent = ''
                 let buffer = ''
-                for (;;) {
+                for (; ;) {
                     const { done, value } = await reader.read()
                     if (done) break
                     buffer += decoder.decode(value, { stream: true })
