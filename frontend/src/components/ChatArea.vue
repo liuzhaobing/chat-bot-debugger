@@ -2,7 +2,7 @@
   <div class="chat-area">
     <div class="messages" ref="messagesContainer">
       <div class="messages-buffer"></div> <!-- Spacing at top -->
-      <MessageItem 
+      <message-item 
         v-for="(msg, index) in messages" 
         :key="index"
         :role="msg.role"
@@ -16,18 +16,30 @@
     </div>
     
     <div class="input-area-wrapper">
-      <div class="input-card">
+      <div class="input-card" @dragover.prevent @drop="handleDrop">
         <textarea 
           v-model="inputContent" 
-          @keydown.enter.prevent="sendMessage"
+          @keydown="handleKeydown"
+          @paste="handlePaste"
           placeholder="Send a message..."
           rows="1"
           ref="textarea"
           @input="autoResize"
         ></textarea>
-        <button @click="sendMessage" :disabled="isStreaming || !inputContent.trim()" class="send-btn">
+          <input type="file" accept="image/*" ref="fileInput" style="display:none" @change="handleFileChange" multiple />
+        <button class="image-btn no-border" @click.prevent="triggerFileInput" :disabled="isStreaming" title="上传图片">
+          <!-- Plus icon -->
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+        </button>
+          <button @click="sendMessage" :disabled="isStreaming || (!inputContent.trim() && imageBase64List.length === 0)" class="send-btn">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
         </button>
+          <div v-if="imageBase64List.length" class="image-preview-list">
+            <div v-for="(img, idx) in imageBase64List" :key="idx" class="image-thumb-wrapper">
+              <img :src="img" class="image-thumb" @click="previewImage(img)" />
+              <span class="remove-thumb" @click="removeImage(idx)">&times;</span>
+            </div>
+          </div>
       </div>
 
     </div>
@@ -39,14 +51,14 @@ import { mapState } from 'vuex'
 import MessageItem from './MessageItem.vue'
 
 export default {
-  name: 'ChatArea',
-  components: {
-    MessageItem
-  },
   data() {
     return {
-      localInput: ''
+      localInput: '',
+      imageBase64List: [] // 支持多图上传
     }
+  },
+  components: {
+    MessageItem
   },
   computed: {
     ...mapState(['messages', 'isStreaming', 'inputMessage']),
@@ -64,14 +76,49 @@ export default {
       this.scrollToBottom()
     }
   },
+
   methods: {
     sendMessage() {
-      if (this.isStreaming || !this.localInput.trim()) return
-      this.$store.dispatch('sendMessage', this.localInput)
+      if (this.isStreaming || (!this.localInput.trim() && this.imageBase64List.length === 0)) return
+
+      let userMsg
+      if (this.imageBase64List.length === 0) {
+        // 仅文本，content为字符串
+        userMsg = { role: 'user', content: this.localInput.trim() }
+      } else {
+        // 多模态，content为list
+        const multimodalContent = []
+        if (this.localInput.trim()) {
+          multimodalContent.push({ type: 'text', text: this.localInput.trim() })
+        }
+        for (const img of this.imageBase64List) {
+          multimodalContent.push({ type: 'image_url', image_url: { url: img } })
+        }
+        userMsg = { role: 'user', content: multimodalContent }
+      }
+      let messages = this.$store.state.messages.slice()
+      // 过滤掉最后一条assistant空消息（流式占位）
+      if (messages.length && messages[messages.length-1].role === 'assistant' && !messages[messages.length-1].content) {
+        messages = messages.slice(0, -1)
+      }
+      messages = [...messages, userMsg]
+      this.$store.dispatch('sendMessage', messages)
       this.localInput = ''
+      this.imageBase64List = []
       this.$nextTick(() => {
-          this.autoResize()
+        this.autoResize()
       })
+    },
+    handleKeydown(e) {
+      if (e.key === 'Enter') {
+        if (e.shiftKey) {
+          // 允许换行
+          return
+        } else {
+          e.preventDefault()
+          this.sendMessage()
+        }
+      }
     },
     scrollToBottom() {
       this.$nextTick(() => {
@@ -87,7 +134,106 @@ export default {
             el.style.height = 'auto'
             el.style.height = Math.min(el.scrollHeight, 200) + 'px'
         }
-    }
+    },
+    async handlePaste(e) {
+      const items = e.clipboardData && e.clipboardData.items
+      if (!items) return
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i]
+        if (item.kind === 'file' && item.type.startsWith('image/')) {
+          e.preventDefault()
+          const file = item.getAsFile()
+          const imageUrl = await this.uploadImage(file)
+          if (imageUrl) {
+            this.imageBase64List.push(imageUrl)
+          }
+        }
+      }
+    },
+    async uploadImage(file) {
+      // 生成缩略图（最大120x120），返回base64
+      return new Promise(resolve => {
+        const reader = new FileReader()
+        reader.onload = e => {
+          const img = new window.Image()
+          img.onload = () => {
+            const canvas = document.createElement('canvas')
+            const maxSize = 120
+            let w = img.width, h = img.height
+            if (w > h) {
+              if (w > maxSize) {
+                h = Math.round(h * maxSize / w)
+                w = maxSize
+              }
+            } else {
+              if (h > maxSize) {
+                w = Math.round(w * maxSize / h)
+                h = maxSize
+              }
+            }
+            canvas.width = w
+            canvas.height = h
+            const ctx = canvas.getContext('2d')
+            ctx.drawImage(img, 0, 0, w, h)
+            resolve(canvas.toDataURL('image/jpeg', 0.8))
+          }
+          img.src = e.target.result
+        }
+        reader.readAsDataURL(file)
+      })
+    },
+    insertAtCursor(text) {
+      // 只插入文本，不再插入图片base64
+      const textarea = this.$refs.textarea
+      if (!textarea) return
+      const start = textarea.selectionStart
+      const end = textarea.selectionEnd
+      const value = this.inputContent
+      this.inputContent = value.slice(0, start) + text + value.slice(end)
+      this.$nextTick(() => {
+        textarea.selectionStart = textarea.selectionEnd = start + text.length
+        this.autoResize()
+      })
+    },
+    triggerFileInput() {
+      this.$refs.fileInput && this.$refs.fileInput.click()
+    },
+    async handleFileChange(e) {
+      const files = e.target.files
+      if (files && files.length > 0) {
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i]
+          if (file.type.startsWith('image/')) {
+            const imageUrl = await this.uploadImage(file)
+            if (imageUrl) {
+              this.imageBase64List.push(imageUrl)
+            }
+          }
+        }
+      }
+      e.target.value = '' // 清空选择
+    },
+    async handleDrop(e) {
+      const files = e.dataTransfer.files
+      if (files && files.length > 0) {
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i]
+          if (file.type.startsWith('image/')) {
+            const imageUrl = await this.uploadImage(file)
+            if (imageUrl) {
+              this.imageBase64List.push(imageUrl)
+            }
+          }
+        }
+      }
+    },
+
+    removeImage(idx) {
+      this.imageBase64List.splice(idx, 1)
+    },
+    previewImage(url) {
+      window.open(url, '_blank')
+    },
   },
   mounted() {
       this.autoResize()
@@ -198,6 +344,7 @@ textarea::placeholder {
     color: var(--text-tertiary);
 }
 
+
 .send-btn {
   background: transparent;
   border: none;
@@ -209,6 +356,12 @@ textarea::placeholder {
   align-items: center;
   justify-content: center;
   transition: all 0.2s;
+}
+
+.image-btn.no-border {
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
 }
 
 .send-btn:hover:not(:disabled) {

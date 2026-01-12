@@ -1,13 +1,17 @@
 <template>
-  <div class="sidebar">
+  <div class="sidebar" :class="{ collapsed: isCollapsed }">
     <div class="sidebar-header">
       <button @click="newChat" class="new-chat-btn">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-        <span>New Chat</span>
+        <span v-if="!isCollapsed">New Chat</span>
+      </button>
+      <button class="collapse-btn" @click="toggleCollapse" :title="isCollapsed ? '展开侧边栏' : '收起侧边栏'">
+        <svg v-if="!isCollapsed" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+        <svg v-else xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
       </button>
     </div>
     
-    <div class="history-list" ref="historyList" @scroll="handleScroll">
+    <div class="history-list" ref="historyList" @scroll="handleScroll" v-show="!isCollapsed">
       <div v-if="conversations.length === 0 && !conversationsLoading" class="empty-history">
         No chats yet.
       </div>
@@ -33,7 +37,7 @@
       </div>
     </div>
 
-    <div class="sidebar-footer">
+    <div class="sidebar-footer" v-show="!isCollapsed">
       <button @click="toggleTheme" class="footer-btn" :title="theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'">
         <svg v-if="theme === 'dark'" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
         <svg v-else xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
@@ -53,6 +57,11 @@ import { mapState } from 'vuex'
 
 export default {
   name: 'ChatSidebar',
+  data() {
+    return {
+      isCollapsed: false
+    }
+  },
   computed: {
     ...mapState(['conversations', 'currentConversationId', 'theme', 'conversationsNextPage', 'conversationsLoading'])
   },
@@ -99,11 +108,13 @@ export default {
     checkIfNeedsMore() {
       const el = this.$refs.historyList
       if (!el) return
-      
       // If there's no vertical scrollbar and we have more pages, load them
       if (el.scrollHeight <= el.clientHeight && this.conversationsNextPage && !this.conversationsLoading) {
         this.loadMore()
       }
+    },
+    toggleCollapse() {
+      this.isCollapsed = !this.isCollapsed
     }
   },
   mounted() {
@@ -130,13 +141,21 @@ export default {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  min-height: 0;
   border-right: 1px solid var(--border-color);
-  transition: background-color 0.3s ease, border-color 0.3s ease;
+  transition: background-color 0.3s ease, border-color 0.3s ease, width 0.2s;
+  box-sizing: border-box;
+}
+.sidebar.collapsed {
+  width: 56px;
 }
 
 .sidebar-header {
   padding: 12px;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .new-chat-btn {
@@ -153,6 +172,26 @@ export default {
   transition: all 0.2s ease;
   font-size: 0.9rem;
   font-weight: 500;
+  flex: 1;
+  min-width: 0;
+}
+.sidebar.collapsed .new-chat-btn span {
+  display: none;
+}
+.collapse-btn {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+.collapse-btn:hover {
+  background: var(--bg-hover);
 }
 
 .new-chat-btn:hover {
@@ -162,29 +201,28 @@ export default {
 
 .history-list {
   flex: 1;
-  overflow-y: overlay; /* Use overlay if supported, fall back to auto */
   overflow-y: auto;
   min-height: 0;
   padding: 0 12px;
   display: flex;
   flex-direction: column;
   gap: 4px;
+  /* 强制显示滚动条，兼容主流浏览器 */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-color) transparent;
 }
 
-/* Specific scrollbar styling for history-list to make it more visible */
+/* 滚动条样式优化，兼容 Webkit 浏览器 */
 .history-list::-webkit-scrollbar {
-  width: 5px;
+  width: 6px;
 }
-
 .history-list::-webkit-scrollbar-track {
   background: transparent;
 }
-
 .history-list::-webkit-scrollbar-thumb {
   background: var(--border-color);
   border-radius: 10px;
 }
-
 .history-list::-webkit-scrollbar-thumb:hover {
   background: var(--text-tertiary);
 }

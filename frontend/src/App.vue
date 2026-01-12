@@ -6,6 +6,7 @@
         <ModelSelector />
         <router-view />
       </main>
+      <RightSidebar />
       <SettingsModal v-if="showSettings" @close="showSettings = false" />
     </div>
   </div>
@@ -15,13 +16,15 @@
 import Sidebar from './components/Sidebar.vue'
 import ModelSelector from './components/ModelSelector.vue'
 import SettingsModal from './components/SettingsModal.vue'
+import RightSidebar from './components/RightSidebar.vue'
 
 export default {
   name: 'App',
   components: {
     Sidebar,
     ModelSelector,
-    SettingsModal
+    SettingsModal,
+    RightSidebar
   },
   data() {
     return {
@@ -39,9 +42,11 @@ export default {
 </script>
 
 <style>
+
 .layout {
   display: flex;
   height: 100vh;
+  position: relative;
 }
 
 .main-content {
@@ -50,5 +55,6 @@ export default {
   flex-direction: column;
   position: relative;
   background-color: var(--bg-primary);
+  min-width: 0;
 }
 </style>

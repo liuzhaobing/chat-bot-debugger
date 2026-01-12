@@ -15,12 +15,24 @@ export default new Vuex.Store({
         selectedModel: null, // { provider_id, model_name }
         isStreaming: false,
         inputMessage: '',
-        theme: localStorage.getItem('theme') || 'dark',
+        theme: localStorage.getItem('theme') || 'light',
         providerFetchError: null,
         conversationsNextPage: null,
-        conversationsLoading: false
+        conversationsLoading: false,
+        systemPrompt: 'You are a helpful assistant.',
+        temperature: 0.7,
+        maxTokens: 1024
     },
     mutations: {
+        SET_SYSTEM_PROMPT(state, prompt) {
+            state.systemPrompt = prompt
+        },
+        SET_TEMPERATURE(state, temp) {
+            state.temperature = temp
+        },
+        SET_MAX_TOKENS(state, val) {
+            state.maxTokens = val
+        },
         SET_PROVIDER_ERROR(state, error) {
             state.providerFetchError = error
         },
@@ -61,7 +73,12 @@ export default new Vuex.Store({
             state.selectedModel = model
         },
         ADD_MESSAGE(state, message) {
-            state.messages.push(message)
+            // 保证多模态消息为响应式对象，避免直接引用导致视图不更新
+            let msg = message
+            if (Array.isArray(message.content)) {
+                msg = { ...message, content: JSON.parse(JSON.stringify(message.content)) }
+            }
+            state.messages.push(msg)
         },
         UPDATE_LAST_MESSAGE(state, content) {
             if (state.messages.length > 0) {
@@ -173,26 +190,42 @@ export default new Vuex.Store({
             commit('SET_CURRENT_CONVERSATION', null)
             commit('SET_MESSAGES', [])
         },
-        async sendMessage({ commit, state, dispatch }, content) {
-            if (!content.trim()) return
+        async sendMessage({ commit, state, dispatch }, messages) {
+            // 支持messages为字符串或数组
+            let msgArr = []
+            if (Array.isArray(messages)) {
+                msgArr = messages
+            } else if (typeof messages === 'string' && messages.trim()) {
+                msgArr = [{ role: 'user', content: messages.trim() }]
+            } else {
+                return
+            }
 
-            const userMsg = { role: 'user', content, created_at: new Date().toISOString() }
-            commit('ADD_MESSAGE', userMsg)
+            // 展示用户消息（最后一条）
+            const lastUserMsg = msgArr[msgArr.length - 1]
+            if (lastUserMsg.role === 'user') {
+                commit('ADD_MESSAGE', { ...lastUserMsg, created_at: new Date().toISOString() })
+            }
             commit('SET_INPUT_MESSAGE', '')
 
+            // 预置assistant消息用于流式更新
             const assistantMsg = { role: 'assistant', content: '', created_at: new Date().toISOString() }
             commit('ADD_MESSAGE', assistantMsg)
             commit('SET_STREAMING', true)
 
-            // We need to implement streaming manually with fetch or axios + onDownloadProgress
-            // Standard axios doesn't support streaming easily in browser, fetch is better for streams
-
             try {
                 const payload = {
-                    content,
+                    messages: msgArr,
                     model: state.selectedModel?.model_name,
                     provider_id: state.selectedModel?.provider_id,
-                    conversation_id: state.currentConversationId
+                    conversation_id: state.currentConversationId,
+                    system_prompt: state.systemPrompt,
+                    temperature: state.temperature,
+                    max_tokens: state.maxTokens
+                }
+                // 兼容localStorage system_prompt
+                if (!payload.system_prompt && window && window.localStorage) {
+                    payload.system_prompt = window.localStorage.getItem('systemPrompt') || ''
                 }
 
                 const response = await fetch(`${API_BASE}/chat/completions`, {
@@ -205,16 +238,6 @@ export default new Vuex.Store({
 
                 if (!response.ok) {
                     const errorText = await response.text()
-                    let invalidJson = false
-                    try {
-                        const errObj = JSON.parse(errorText)
-                        if (errObj.error) throw new Error(errObj.error)
-                    } catch (e) {
-                        if (e.message !== 'Network response was not ok' && !invalidJson) {
-                            // If JSON parse worked but no .error field, or JSON parse failed
-                            // We use the raw text
-                        }
-                    }
                     throw new Error(`Server Error (${response.status}): ${errorText}`)
                 }
 
@@ -222,25 +245,12 @@ export default new Vuex.Store({
                 const decoder = new TextDecoder()
                 let assistantContent = ''
                 let buffer = ''
-
-                // eslint-disable-next-line no-constant-condition
-                while (true) {
+                for (;;) {
                     const { done, value } = await reader.read()
                     if (done) break
-
                     buffer += decoder.decode(value, { stream: true })
-
-                    // Split by double newline as backend sends \n\n
-                    // But standard SSE usually splits by \n. 
-                    // Our backend sends `yield line_text + "\n\n"`. 
-                    // So we can split by \n\n safely, OR just split by \n and ignore empty lines.
-                    // Let's rely on the \n\n delimiter or just \n.
-                    // Safer: split by \n, process lines starting with data:
-
                     const lines = buffer.split('\n')
-                    // Keep the last part in buffer as it might be incomplete
                     buffer = lines.pop()
-
                     for (const line of lines) {
                         const trimmed = line.trim()
                         if (trimmed.startsWith('data: ')) {
@@ -253,20 +263,17 @@ export default new Vuex.Store({
                                     commit('UPDATE_LAST_MESSAGE', assistantContent)
                                 }
                             } catch (e) {
-                                // console.warn('JSON Parse Error', e)
+                                // 忽略流式解析错误
                             }
                         }
                     }
                 }
-
-                // Refresh conversations list to show new chat if it was created
                 if (!state.currentConversationId) {
                     await dispatch('fetchConversations')
                     if (state.conversations.length > 0) {
                         commit('SET_CURRENT_CONVERSATION', state.conversations[0].id)
                     }
                 }
-
             } catch (e) {
                 console.error("Streaming error", e)
                 commit('UPDATE_LAST_MESSAGE', `Error: ${e.message}`)

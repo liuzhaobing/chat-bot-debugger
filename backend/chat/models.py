@@ -1,3 +1,4 @@
+import json
 from django.db import models
 
 class Provider(models.Model):
@@ -25,6 +26,8 @@ class Conversation(models.Model):
     def __str__(self):
         return self.title
 
+
+# 支持多模态内容的消息模型
 class Message(models.Model):
     ROLE_CHOICES = (
         ('user', 'User'),
@@ -33,11 +36,19 @@ class Message(models.Model):
     )
     conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name='messages')
     role = models.CharField(max_length=20, choices=ROLE_CHOICES)
-    content = models.TextField()
+    # content 兼容旧文本，推荐存储为JSON字符串，结构为{"content": [...], "raw_text": "..."}
+    content = models.TextField(help_text="消息内容，推荐为多模态JSON数组，兼容纯文本")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ['created_at']
 
     def __str__(self):
+        try:
+            obj = json.loads(self.content)
+            if isinstance(obj, dict) and 'content' in obj:
+                # 多模态格式
+                return f"{self.role}: {str(obj['content'])[:50]}"
+        except Exception:
+            pass
         return f"{self.role}: {self.content[:50]}"

@@ -1,4 +1,161 @@
 <template>
+  <div class="message-item" :class="role">
+    <div v-if="role === 'user'" class="user-message-content">
+      <!-- 多模态：遍历content，text类型展示为气泡，image_url类型展示为缩略图，顺序与content一致 -->
+      <template v-if="isMultimodal">
+        <div v-for="(seg, idx) in content" :key="idx" style="width:100%">
+          <span v-if="seg.type === 'text' && seg.text" class="user-text-bubble">{{ seg.text }}</span>
+          <div v-else-if="seg.type === 'image_url' && seg.image_url && seg.image_url.url" class="image-thumb-wrapper" style="margin-top:8px;">
+            <img :src="seg.image_url.url" class="user-image-thumb" @click="previewImage(seg.image_url.url)" />
+          </div>
+        </div>
+      </template>
+      <!-- 纯文本直接显示 -->
+      <template v-else>
+        <span class="user-text-bubble">{{ content }}</span>
+      </template>
+    </div>
+    <div v-else class="assistant-message-content">
+      <span>{{ content }}</span>
+    </div>
+    <div v-if="showPreview" class="image-modal" @click="showPreview = false">
+      <img :src="previewUrl" class="modal-img" />
+    </div>
+  </div>
+</template>
+
+<script>
+export default {
+  name: 'MessageItem',
+  props: {
+    role: {
+      type: String,
+      required: true
+    },
+    content: {
+      type: [String, Array],
+      required: true
+    }
+  },
+  data() {
+    return {
+      showPreview: false,
+      previewUrl: ''
+    }
+  },
+  computed: {
+    isMultimodal() {
+      return Array.isArray(this.content)
+    },
+    firstText() {
+      if (Array.isArray(this.content)) {
+        const seg = this.content.find(s => s.type === 'text' && s.text)
+        return seg ? seg.text : ''
+      }
+      return ''
+    },
+    imageThumbs() {
+      if (Array.isArray(this.content)) {
+        // 保持顺序，依次显示所有图片
+        return this.content
+          .filter(s => s.type === 'image_url' && s.image_url && s.image_url.url)
+          .map(s => s.image_url.url)
+      }
+      return []
+    },
+    multimodalContent() {
+      if (typeof this.content === 'string') {
+        try {
+          const obj = JSON.parse(this.content)
+          if (obj && obj.content && Array.isArray(obj.content)) {
+            return obj.content
+          }
+        } catch {
+          // 不是JSON结构，直接返回纯文本
+          return [{ type: 'text', text: this.content }]
+        }
+      } else if (Array.isArray(this.content)) {
+        return this.content
+      } else if (typeof this.content === 'object' && this.content && this.content.content && Array.isArray(this.content.content)) {
+        return this.content.content
+      }
+      return []
+    }
+  },
+  methods: {
+    previewImage(url) {
+      this.previewUrl = url
+      this.showPreview = true
+    }
+  }
+}
+</script>
+
+<style scoped>
+.message-item {
+  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.user-message-content {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+.user-text-bubble {
+  background: #f2f2f2;
+  border-radius: 12px;
+  padding: 8px 14px;
+  color: #222;
+  display: inline-block;
+  margin-bottom: 6px;
+  max-width: 420px;
+  word-break: break-word;
+  font-size: 1rem;
+}
+.user-image-wrapper {
+  margin-bottom: 6px;
+}
+.user-image-thumb {
+  max-width: 120px;
+  max-height: 120px;
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  object-fit: cover;
+}
+.user-image-thumb:hover {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+}
+.image-modal {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+.modal-img {
+  max-width: 90vw;
+  max-height: 90vh;
+  border-radius: 12px;
+  background: #fff;
+}
+.assistant-message-content {
+  background: #fff;
+  border-radius: 12px;
+  padding: 8px 14px;
+  color: #222;
+  display: inline-block;
+  max-width: 420px;
+  word-break: break-word;
+  font-size: 1rem;
+  margin-bottom: 6px;
+}
+</style>
+<template>
   <div class="message-wrapper">
     <div class="message-container" :class="role">
       <div class="avatar-column">

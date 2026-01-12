@@ -72,47 +72,85 @@ class ChatCompletionView(APIView):
     def post(self, request):
         conversation_id = request.data.get('conversation_id')
         model_name = request.data.get('model')
-        content = request.data.get('content')
-        provider_id = request.data.get('provider_id') # Optional if we can infer from model, but safer to pass
-        
+        temperature = request.data.get('temperature')
+        max_tokens = request.data.get('max_tokens')
+        messages = request.data.get('messages')
+        system_prompt = request.data.get('system_prompt')
         # 1. Get or Create Conversation
         if conversation_id:
             conversation = get_object_or_404(Conversation, id=conversation_id)
         else:
-            conversation = Conversation.objects.create(title=content[:30] if content else "New Chat")
-        
-        # 2. Save User Message
-        Message.objects.create(conversation=conversation, role='user', content=content)
-        
-        # 3. Prepare Context
-        # Fetch last N messages or all
-        history = conversation.messages.all()
-        messages_payload = [{"role": msg.role, "content": msg.content} for msg in history]
-        
+            # 新建会话时，取首条user消息文本做标题
+            title = "New Chat"
+            if messages and isinstance(messages, list):
+                for m in messages:
+                    if m.get('role') == 'user':
+                        user_content = m.get('content')
+                        if isinstance(user_content, list):
+                            for seg in user_content:
+                                if seg.get('type') == 'text' and seg.get('text'):
+                                    title = seg['text'][:30]
+                                    break
+                        elif isinstance(user_content, str):
+                            title = user_content[:30]
+                        break
+            conversation = Conversation.objects.create(title=title)
+
+        # 2. Save User Message（只保存本次请求的最后一条user消息，兼容content为字符串或多模态数组）
+        user_msg = None
+        if messages and isinstance(messages, list):
+            for m in reversed(messages):
+                if m.get('role') == 'user':
+                    user_msg = m
+                    break
+        if user_msg:
+            content = user_msg.get('content')
+            # 只存content本身，字符串直接存，list直接存（由Django自动序列化）
+            Message.objects.create(
+                conversation=conversation,
+                role='user',
+                content=content
+            )
+
+        # 3. 兼容messages为纯文本（字符串）或多模态（数组）
+        if isinstance(messages, list):
+            messages_payload = messages
+        elif isinstance(messages, str):
+            # 兼容老格式，自动转为OpenAI格式
+            messages_payload = [{"role": "user", "content": messages}]
+        else:
+            messages_payload = []
+
         # 4. Get Provider and Model Config
-        # Simplified: Assume provider_id passed or find via Model
-        # If provider_id not passed, try finding model object
         try:
             llm_model = LLMModel.objects.get(name=model_name)
             provider = llm_model.provider
         except LLMModel.DoesNotExist:
-             return Response({"error": "Model not found"}, status=400)
+            return Response({"error": "Model not found"}, status=400)
 
         # 5. Call Upstream API (OpenAI Compatible)
         headers = {
             "Authorization": f"Bearer {provider.api_key}",
             "Content-Type": "application/json"
         }
-        
         payload = {
             "model": model_name,
             "messages": messages_payload,
-            "stream": True,
-            # Add parameters like temperature here if passed
+            "stream": True
         }
-        if request.data.get('temperature'):
-            payload['temperature'] = float(request.data.get('temperature'))
-
+        if temperature is not None:
+            try:
+                payload['temperature'] = float(temperature)
+            except Exception:
+                pass
+        if max_tokens is not None:
+            try:
+                payload['max_tokens'] = int(max_tokens)
+            except Exception:
+                pass
+        if system_prompt:
+            payload['messages'].insert(0, {"role": "system", "content": system_prompt})
+        print("payload:", json.dumps(payload, ensure_ascii=False, indent=4))
         try:
             response = requests.post(
                 f"{provider.base_url}/chat/completions",
@@ -122,21 +160,15 @@ class ChatCompletionView(APIView):
             )
             response.raise_for_status()
         except requests.RequestException as e:
-             return Response({"error": str(e)}, status=502)
+            return Response({"error": str(e)}, status=502)
 
-        # 6. Stream and Save Assistant Response
-        # 6. Stream and Save Assistant Response
         def stream_generator():
             assistant_content = ""
             buffer = ""
-            
-            # Use iter_content to stream raw bytes immediately
             for chunk in response.iter_content(chunk_size=1024):
                 if chunk:
                     text_chunk = chunk.decode('utf-8')
-                    yield text_chunk # Pass through immediately
-                    
-                    # Process for DB saving
+                    yield text_chunk
                     buffer += text_chunk
                     while '\n' in buffer:
                         line, buffer = buffer.split('\n', 1)
@@ -152,7 +184,6 @@ class ChatCompletionView(APIView):
                                     assistant_content += delta['content']
                             except (json.JSONDecodeError, KeyError, IndexError):
                                 continue
-
             # Save full message after stream ends
             if assistant_content:
                 Message.objects.create(
@@ -160,8 +191,6 @@ class ChatCompletionView(APIView):
                     role='assistant',
                     content=assistant_content
                 )
-            
-                # Update conversation timestamp
                 conversation.save()
 
         response_stream = StreamingHttpResponse(stream_generator(), content_type='text/event-stream')
