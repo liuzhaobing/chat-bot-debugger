@@ -35,29 +35,27 @@
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
         <span>对话</span>
       </router-link>
-      <div class="nav-item placeholder">
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-        <span>搜索聊天</span>
-      </div>
-      <div class="nav-item placeholder">
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
-        <span>图片</span>
-      </div>
       <router-link to="/apps" class="nav-item" exact-active-class="active">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
         <span>应用</span>
       </router-link>
-      <div class="nav-item placeholder">
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-        <span>项目</span>
-      </div>
     </div>
     
-    <div class="history-list" ref="historyList" @scroll="handleScroll" v-if="!isSidebarCollapsed">
-      <div v-if="!searchQuery && conversations.length > 0" class="section-title">你的聊天</div>
-      <div v-if="conversations.length === 0 && !conversationsLoading" class="empty-history">
-        No chats yet.
+    <div class="history-container" v-if="!isSidebarCollapsed">
+      <div class="section-header" @click="isHistoryCollapsed = !isHistoryCollapsed">
+        <span class="section-title">你的聊天</span>
+        <svg class="chevron-icon" :class="{ collapsed: isHistoryCollapsed }" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
       </div>
+      
+      <div 
+        class="history-list" 
+        ref="historyList" 
+        @scroll="handleScroll" 
+        v-show="!isHistoryCollapsed"
+      >
+        <div v-if="conversations.length === 0 && !conversationsLoading" class="empty-history">
+          No chats yet.
+        </div>
       <div 
         v-for="conv in conversations" 
         :key="conv.id" 
@@ -66,7 +64,6 @@
         @click="loadChat(conv.id)"
       >
         <div class="item-content">
-            <svg class="chat-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
             <span class="title">{{ conv.title || 'New Chat' }}</span>
         </div>
         <button class="delete-btn" @click.stop="deleteChat(conv.id)" title="Delete">
@@ -74,9 +71,12 @@
         </button>
       </div>
       
-      <div v-if="conversationsLoading" class="loading-more">
-        <div class="spinner-small"></div>
-        <span>Loading...</span>
+      <!-- Skeleton Loading State -->
+      <div v-if="conversationsLoading" class="skeleton-container">
+        <div v-for="i in 3" :key="'skeleton-'+i" class="skeleton-item">
+          <div class="skeleton-text"></div>
+        </div>
+      </div>
       </div>
     </div>
 
@@ -103,15 +103,6 @@
         </div>
       </button>
     </div>
-    <!-- Redesigned Toggle Button -->
-    <div class="toggle-wrapper" :class="{ collapsed: isSidebarCollapsed }">
-      <button class="edge-toggle-btn" @click="toggleCollapse" :title="isSidebarCollapsed ? '展开侧边栏' : '收起侧边栏'">
-        <div class="toggle-icon-container">
-            <svg v-if="!isSidebarCollapsed" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
-            <svg v-else xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
-        </div>
-      </button>
-    </div>
   </div>
 </template>
 
@@ -122,6 +113,8 @@ export default {
   name: 'ChatSidebar',
   data() {
     return {
+      searchQuery: '',
+      isHistoryCollapsed: false
     }
   },
   computed: {
@@ -328,17 +321,42 @@ export default {
     background-color: var(--bg-surface);
 }
 
-.nav-item.placeholder {
-    cursor: default;
-    opacity: 0.8;
+.section-header {
+  padding: 12px 16px 8px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.section-header:hover {
+  opacity: 0.8;
 }
 
 .section-title {
-    padding: 12px 12px 4px 12px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--text-secondary);
-    text-transform: uppercase;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  letter-spacing: 0.02em;
+}
+
+.chevron-icon {
+  color: var(--text-tertiary);
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transform: rotate(0deg);
+}
+
+.chevron-icon.collapsed {
+  transform: rotate(-90deg);
+}
+
+.history-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .history-list {
@@ -349,7 +367,7 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  scrollbar-width: thin;
+  scrollbar-width: auto; /* Ensure scrollbar is visible */
   scrollbar-color: var(--border-color) transparent;
 }
 
@@ -382,14 +400,8 @@ export default {
 .item-content {
     display: flex;
     align-items: center;
-    gap: 10px;
     overflow: hidden;
     flex: 1;
-}
-
-.chat-icon {
-  color: var(--text-secondary);
-  flex-shrink: 0;
 }
 
 .title {
@@ -453,11 +465,52 @@ export default {
 }
 
 .loading-more {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 12px;
-  color: var(--text-secondary);
+  display: none;
+}
+
+/* Skeleton Loader Styles */
+.skeleton-container {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 4px 0;
+}
+
+.skeleton-item {
+    padding: 10px 12px;
+    border-radius: 8px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+}
+
+.skeleton-text {
+    height: 14px;
+    background: var(--bg-surface);
+    border-radius: 4px;
+    width: 100%;
+    position: relative;
+    overflow: hidden;
+}
+
+.skeleton-text::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.05), transparent);
+    animation: placeholder-glow 1.5s infinite;
+}
+
+[data-theme="light"] .skeleton-text::after {
+    background: linear-gradient(90deg, transparent, rgba(0, 0, 0, 0.03), transparent);
+}
+
+@keyframes placeholder-glow {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
 }
 
 /* Edge Toggle Button */

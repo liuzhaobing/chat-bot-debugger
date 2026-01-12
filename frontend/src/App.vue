@@ -3,7 +3,7 @@
     <div class="layout">
       <Sidebar @open-settings="showSettings = true" />
       <main class="main-content">
-        <header class="main-header">
+        <header class="main-header" v-if="$route.name === 'Home'">
           <div class="header-left-tools">
             <ModelSelector />
           </div>
