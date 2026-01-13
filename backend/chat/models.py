@@ -53,17 +53,24 @@ class Message(models.Model):
             pass
         return f"{self.role}: {self.content[:50]}"
 
+class AppCategory(models.Model):
+    name = models.CharField(max_length=50, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
+
 class App(models.Model):
-    CATEGORY_CHOICES = (
-        ('featured', '精选'),
-        ('lifestyle', '生活方式'),
-        ('productivity', '工作效率'),
-        ('other', '其他'),
-    )
     name = models.CharField(max_length=100)
     description = models.TextField()
     icon_url = models.URLField(blank=True, null=True)
-    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='other')
+    category = models.ForeignKey(AppCategory, on_delete=models.SET_NULL, null=True, blank=True, related_name='apps')
+    
+    # Agent 1.0 Fields
+    system_prompt = models.TextField(default="", blank=True, help_text="应用的系统提示词")
+    configuration = models.JSONField(default=dict, blank=True, help_text="模型参数配置 (temperature, max_tokens等)")
+    variables = models.JSONField(default=list, blank=True, help_text="提示词中定义的变量列表")
+    
     is_featured = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 

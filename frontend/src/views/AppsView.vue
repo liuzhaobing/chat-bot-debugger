@@ -1,68 +1,240 @@
 <template>
   <div class="apps-container">
-    <div class="apps-header">
-      <div class="header-left">
-        <h1>应用</h1>
-        <span class="beta-tag">测试版</span>
-        <p class="subtitle">在 ChatGPT 中与你喜爱的应用对话</p>
-      </div>
-      <div class="search-box">
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="search-icon"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-        <input type="text" v-model="searchQuery" placeholder="搜索应用" @input="handleSearch" />
-      </div>
-    </div>
-
-    <!-- Featured Banner (Mockup based on screenshot) -->
-    <div class="featured-banner" v-if="!searchQuery && featuredApps.length > 0">
-      <div class="banner-content">
-        <div class="banner-text">
-            <div class="banner-app-icon">C</div>
-            <h2>使用 Canva 进行创作</h2>
-            <p>制作设计与宣传单</p>
-            <button class="view-btn">查看</button>
+    <header class="apps-header">
+      <div class="header-top">
+        <div class="header-title">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="title-icon"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+          <h1>应用广场</h1>
         </div>
-        <div class="banner-image">
-            <img src="https://via.placeholder.com/300x150" alt="Canva Banner" />
-            <div class="banner-badge">@Canva create social posts</div>
+        <div class="search-section">
+          <div class="search-bar">
+            <input v-model="searchQuery" type="text" placeholder="请输入应用名称" />
+            <button class="search-btn">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.35-4.35"></path></svg>
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+    </header>
 
-    <div class="tabs">
-      <button 
-        v-for="tab in tabs" 
-        :key="tab.id"
-        class="tab-btn"
-        :class="{ active: currentTab === tab.id }"
-        @click="currentTab = tab.id"
-      >
-        {{ tab.label }}
-      </button>
-    </div>
+    <div class="apps-body">
+      <aside class="category-sidebar">
+        <div class="sidebar-section-title">应用分类</div>
+        <div class="category-nav">
+          <div 
+            v-for="cat in categories" 
+            :key="cat.id"
+            class="category-nav-item-wrapper"
+            :class="{ active: currentCategoryId === cat.id }"
+          >
+            <button 
+                class="category-nav-item"
+                @click="currentCategoryId = cat.id"
+            >
+                <span class="category-dot"></span>
+                {{ cat.name }}
+            </button>
+            <button class="category-edit-btn" @click.stop="openCategoryModal(cat)" title="编辑分类">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+            </button>
+          </div>
+        </div>
+        
+        <div class="sidebar-footer">
+          <button class="add-category-btn" @click="openCategoryModal(null)">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            <span>新增分组</span>
+          </button>
+        </div>
+      </aside>
 
-    <div class="apps-grid">
-      <div v-for="app in filteredApps" :key="app.id" class="app-card" @click="$router.push(`/apps/${app.id}`)">
-        <div class="app-card-left">
-            <div class="app-icon" :style="{ backgroundColor: getIconColor(app.name) }">
-                {{ app.name[0] }}
+      <main class="apps-content">
+        <div class="apps-grid">
+          <!-- 新建应用卡片 -->
+          <div class="app-card add-app-card" @click="openAppModal(null)">
+            <div class="add-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
             </div>
-            <div class="app-info">
-                <div class="app-name">{{ app.name }}</div>
-                <div class="app-desc">{{ app.description }}</div>
+            <p>在当前分组下新建应用</p>
+          </div>
+
+          <div 
+            v-for="app in filteredApps" 
+            :key="app.id"
+            class="app-card"
+            @click="openAppModal(app)"
+          >
+            <div class="card-header">
+              <div class="app-logo" :style="{ backgroundColor: getIconColor(app.name) }">
+                <img v-if="app.icon_url" :src="app.icon_url" alt="logo">
+                <span v-else>{{ app.name[0] }}</span>
+              </div>
+              <div class="header-text">
+                <h3 class="app-name-text">{{ app.name }}</h3>
+                <div class="header-subtext">
+                  <span class="author-label">官方发布</span>
+                  <span class="v-divider">|</span>
+                  <span class="price-val">免费</span>
+                </div>
+              </div>
             </div>
+            
+            <p class="app-summary">{{ app.description || '该应用旨在提供智能对话支持，帮助用户解决各类问题。' }}</p>
+
+            <div class="card-footer-tags">
+              <button class="chat-action-btn" @click.stop="startChat(app)">进入应用</button>
+              <span class="tag-pill-fancy">{{ app.category_name || '未分类' }}</span>
+              <div class="tag-group-right">
+                <button class="delete-app-btn" @click.stop="deleteApp(app.id)" title="删除应用">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
-        <div class="app-card-right">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="arrow-icon"><polyline points="9 18 15 12 9 6"></polyline></svg>
+        
+        <div v-if="filteredApps.length === 0 && !loading" class="empty-state">
+          <div class="empty-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.35-4.35"></path></svg>
+          </div>
+          <p>没有找到相关应用，请尝试其他关键词</p>
         </div>
-      </div>
+
+        <div v-if="loading" class="loading-overlay">
+          <div class="spinner"></div>
+        </div>
+      </main>
     </div>
 
-    <div v-if="loading" class="loading">
-        <div class="spinner"></div>
-    </div>
-    <div v-if="!loading && filteredApps.length === 0" class="no-results">
-        暂无应用
-    </div>
+    <!-- Group (Category) Edit Modal -->
+    <transition name="fade">
+      <div class="modal-overlay" v-if="showCategoryModal" @click.self="showCategoryModal = false">
+        <div class="add-modal-content">
+          <div class="modal-header">
+            <h3>{{ isEditingCategory ? '修改分组' : '新增分组' }}</h3>
+            <button class="close-btn" @click="showCategoryModal = false">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <div class="input-group">
+              <label>分组名称</label>
+              <input v-model="categoryForm.name" placeholder="请输入分组名称" />
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="delete-btn-modal" v-if="isEditingCategory" @click="deleteCategory">删除</button>
+            <div class="footer-right-buttons">
+              <button class="cancel-btn" @click="showCategoryModal = false">取消</button>
+              <button class="save-btn" @click="saveCategory">{{ isEditingCategory ? '保存修改' : '立即创建' }}</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </transition>
+
+    <!-- App Edit/Add Modal -->
+    <transition name="fade">
+      <div class="modal-overlay" v-if="showAppModalFlag" @click.self="showAppModalFlag = false">
+        <div class="modal-content large-modal">
+          <div class="modal-sidebar">
+            <div class="modal-sidebar-header">
+              <h3>创建应用</h3>
+            </div>
+            <div class="sidebar-nav">
+              <div class="sidebar-nav-item active">
+                <div class="nav-icon purple">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+                </div>
+                <div class="nav-text">
+                  <span class="nav-title">智能体应用</span>
+                  <span class="nav-desc">构建智能体应用</span>
+                </div>
+              </div>
+              <div class="sidebar-nav-item disabled">
+                <div class="nav-icon blue">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                </div>
+                <div class="nav-text">
+                  <span class="nav-title">工作流应用</span>
+                  <span class="nav-desc">自定义编排工作流</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="modal-main">
+            <div class="modal-main-header">
+              <div class="header-info">
+                <h2>创建智能体应用</h2>
+                <p>构建智能体应用，连接知识、数据与服务。Agent 1.0 模式结合 Prompt 与业务逻辑控制。</p>
+              </div>
+              <button class="close-btn-top" @click="showAppModalFlag = false">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              </button>
+            </div>
+            
+            <div class="modal-main-body">
+              <div class="type-selector">
+                <label class="section-label">类型</label>
+                <div class="type-cards">
+                  <div class="type-card active">
+                    <div class="type-card-header">
+                      <span class="type-card-title">Agent 1.0</span>
+                      <div class="check-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                      </div>
+                    </div>
+                    <p class="type-card-desc">结合 Prompt 与模型参数控制的 Agent 模式，适合快速构建和调试对话应用。</p>
+                  </div>
+                  <div class="type-card disabled">
+                    <div class="type-card-header">
+                      <span class="type-card-title">Agent 2.0</span>
+                      <span class="tag-recommend">推荐</span>
+                    </div>
+                    <p class="type-card-desc">基于复杂框架构建，强化 React 与 Function Call 能力，适用于重逻辑场景。</p>
+                  </div>
+                </div>
+              </div>
+              
+              <div class="form-section">
+                <div class="input-group">
+                  <label>应用名称 <span class="required">*</span></label>
+                  <input v-model="appForm.name" placeholder="请输入应用名称" maxlength="50" />
+                  <span class="char-count">{{ appForm.name ? appForm.name.length : 0 }}/50</span>
+                </div>
+                
+                <div class="input-group">
+                  <label>描述信息</label>
+                  <textarea v-model="appForm.description" placeholder="请输入描述信息"></textarea>
+                </div>
+
+                <div class="input-row">
+                  <div class="input-group">
+                    <label>应用头像</label>
+                    <div class="avatar-uploader" :style="{ backgroundColor: getIconColor(appForm.name || 'App') }">
+                       <img v-if="appForm.icon_url" :src="appForm.icon_url" @error="appForm.icon_url = ''" />
+                       <span v-else>{{ (appForm.name || 'A')[0].toUpperCase() }}</span>
+                    </div>
+                  </div>
+                  <div class="input-group flex-1">
+                    <label>头像 URL</label>
+                    <input v-model="appForm.icon_url" placeholder="https://..." />
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div class="modal-main-footer">
+              <button class="cancel-btn-alt" @click="showAppModalFlag = false">取消</button>
+              <button class="create-btn" @click="saveApp" :disabled="!appForm.name">
+                {{ isEditingApp ? '保存修改' : '立即创建' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </transition>
   </div>
 </template>
 
@@ -74,311 +246,1041 @@ export default {
   data() {
     return {
       searchQuery: '',
-      currentTab: 'featured',
-      tabs: [
-        { id: 'featured', label: '精选' },
-        { id: 'lifestyle', label: '生活方式' },
-        { id: 'productivity', label: '工作效率' }
-      ],
+      currentCategoryId: null,
+      categories: [],
       apps: [],
       loading: false,
-      searchTimeout: null
+      
+      // Category Modal
+      showCategoryModal: false,
+      isEditingCategory: false,
+      categoryForm: { id: null, name: '' },
+      
+      // App Modal
+      showAppModalFlag: false,
+      isEditingApp: false,
+      appForm: { id: null, name: '', description: '', icon_url: '', category: null }
     }
   },
   computed: {
     filteredApps() {
-      if (this.searchQuery) {
-        return this.apps
+      let filtered = this.apps
+      
+      if (this.currentCategoryId) {
+        filtered = filtered.filter(app => app.category === this.currentCategoryId)
       }
-      if (this.currentTab === 'featured') {
-          return this.apps.filter(app => app.is_featured)
+
+      if (this.searchQuery.trim()) {
+        const query = this.searchQuery.toLowerCase()
+        filtered = filtered.filter(app => 
+          app.name.toLowerCase().includes(query) || 
+          (app.description && app.description.toLowerCase().includes(query))
+        )
       }
-      return this.apps.filter(app => app.category === this.currentTab)
-    },
-    featuredApps() {
-        return this.apps.filter(app => app.is_featured)
+      
+      return filtered
     }
   },
   methods: {
-    async fetchApps() {
+    async fetchData() {
       this.loading = true
       try {
-        const params = {}
-        if (this.searchQuery) {
-            params.search = this.searchQuery
+        const [catsRes, appsRes] = await Promise.all([
+          axios.get('/api/app-categories/'),
+          axios.get('/api/apps/')
+        ])
+        this.categories = catsRes.data
+        this.apps = appsRes.data
+        
+        if (this.categories.length > 0 && !this.currentCategoryId) {
+            this.currentCategoryId = this.categories[0].id
         }
-        const response = await axios.get('/api/apps/', { params })
-        this.apps = response.data
       } catch (error) {
-        console.error('Failed to fetch apps:', error)
+        console.error('Failed to fetch data:', error)
       } finally {
         this.loading = false
       }
     },
-    handleSearch() {
-        clearTimeout(this.searchTimeout)
-        this.searchTimeout = setTimeout(() => {
-            this.fetchApps()
-        }, 500)
-    },
     getIconColor(name) {
-        const colors = ['#000', '#f1c40f', '#e67e22', '#e74c3c', '#9b59b6', '#3498db', '#2ecc71', '#1abc9c']
+        const colors = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#3b82f6', '#ec4899', '#6366f1']
         let hash = 0
         for (let i = 0; i < name.length; i++) {
             hash = name.charCodeAt(i) + ((hash << 5) - hash)
         }
         return colors[Math.abs(hash) % colors.length]
+    },
+
+    // Category Methods
+    openCategoryModal(cat) {
+      if (cat) {
+        this.isEditingCategory = true
+        this.categoryForm = { id: cat.id, name: cat.name }
+      } else {
+        this.isEditingCategory = false
+        this.categoryForm = { id: null, name: '' }
+      }
+      this.showCategoryModal = true
+    },
+    async saveCategory() {
+      if (!this.categoryForm.name.trim()) return
+      try {
+        if (this.isEditingCategory) {
+          await axios.patch(`/api/app-categories/${this.categoryForm.id}/`, { name: this.categoryForm.name })
+          window.$message.success("修改成功")
+        } else {
+          await axios.post('/api/app-categories/', { name: this.categoryForm.name })
+          window.$message.success("创建成功")
+        }
+        this.showCategoryModal = false
+        await this.fetchData()
+      } catch (e) {
+        window.$message.error(e.response?.data?.error || "操作失败")
+      }
+    },
+    async deleteCategory() {
+      const confirmed = await window.$confirm({
+        title: '删除分组',
+        message: '确定要删除该分组吗？',
+        type: 'danger'
+      })
+      if (!confirmed) return
+      
+      try {
+        await axios.delete(`/api/app-categories/${this.categoryForm.id}/`)
+        window.$message.success("删除成功")
+        this.showCategoryModal = false
+        this.currentCategoryId = null
+        await this.fetchData()
+      } catch (e) {
+        window.$message.error(e.response?.data?.error || "删除失败")
+      }
+    },
+
+    // App Methods
+    openAppModal(app) {
+      if (app) {
+        this.isEditingApp = true
+        this.appForm = { ...app }
+      } else {
+        this.isEditingApp = false
+        this.appForm = { id: null, name: '', description: '', icon_url: '', category: this.currentCategoryId }
+      }
+      this.showAppModalFlag = true
+    },
+    async saveApp() {
+      if (!this.appForm.name.trim()) return
+      try {
+        if (this.isEditingApp) {
+          await axios.patch(`/api/apps/${this.appForm.id}/`, this.appForm)
+          window.$message.success("应用已更新")
+        } else {
+          await axios.post('/api/apps/', this.appForm)
+          window.$message.success("应用已创建")
+        }
+        this.showAppModalFlag = false
+        await this.fetchData()
+      } catch (e) {
+        window.$message.error("保存失败")
+      }
+    },
+    async deleteApp(id) {
+       if(!id) return
+        const confirmed = await window.$confirm({
+            title: '删除应用',
+            message: '确定要删除该应用吗？',
+            type: 'danger'
+        })
+        if (!confirmed) return
+        try {
+            await axios.delete(`/api/apps/${id}/`)
+            await this.fetchData()
+            window.$message.success("应用已删除")
+        } catch (e) {
+            window.$message.error('删除失败')
+        }
+    },
+    startChat(app) {
+        this.$router.push(`/apps/${app.id}`)
     }
   },
   mounted() {
-    this.fetchApps()
+    this.fetchData()
   }
 }
 </script>
 
 <style scoped>
 .apps-container {
-  padding: 40px 10%;
-  flex: 1;
-  overflow-y: auto;
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background-color: #f8fafc;
+  overflow: hidden;
+  color: #1e293b;
 }
 
 .apps-header {
+  padding: 24px 40px;
+  background-color: #ffffff;
+  border-bottom: 1px solid #f1f5f9;
+  flex-shrink: 0;
+}
+
+.header-top {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 30px;
+  align-items: center;
 }
 
-.header-left h1 {
-  font-size: 2rem;
-  margin-bottom: 4px;
+.header-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
-.beta-tag {
-  font-size: 0.7rem;
-  background: var(--bg-hover);
-  padding: 2px 6px;
+.title-icon {
+  color: #6366f1;
+}
+
+.header-title h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+}
+
+.search-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.search-bar {
+  display: flex;
+  align-items: center;
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
   border-radius: 10px;
-  vertical-align: middle;
-  color: var(--text-secondary);
-  border: 1px solid var(--border-color);
+  width: 360px;
+  height: 42px;
+  transition: all 0.2s;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
 }
 
-.subtitle {
-  color: var(--text-secondary);
-  font-size: 1rem;
-  margin-top: 8px;
+.search-bar:focus-within {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
 }
 
-.search-box {
-  position: relative;
-  width: 300px;
-}
-
-.search-icon {
-  position: absolute;
-  left: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--text-tertiary);
-}
-
-.search-box input {
-  width: 100%;
-  padding: 10px 12px 10px 40px;
-  border-radius: 20px;
-  border: 1px solid var(--border-color);
-  background: var(--bg-surface);
-  color: var(--text-primary);
+.search-bar input {
+  padding: 0 14px;
+  border: none;
   outline: none;
+  flex: 1;
   font-size: 0.9rem;
+  background: transparent;
 }
 
-.featured-banner {
-  background: linear-gradient(135deg, #e0f2fe 0%, #ccfbf1 100%);
-  border-radius: 20px;
-  padding: 40px;
-  margin-bottom: 40px;
-  color: #1e293b;
-  position: relative;
+.search-btn {
+  background: transparent;
+  border: none;
+  padding: 0 12px;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.search-btn:hover {
+  color: #6366f1;
+}
+
+.apps-body {
+  flex: 1;
+  display: flex;
   overflow: hidden;
 }
 
-[data-theme="dark"] .featured-banner {
-    background: linear-gradient(135deg, #1e3a8a 0%, #064e3b 100%);
-    color: #f8fafc;
-}
-
-.banner-content {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.banner-app-icon {
-    width: 48px;
-    height: 48px;
-    background: #00c4cc;
-    border-radius: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    font-weight: bold;
-    font-size: 1.5rem;
-    margin-bottom: 16px;
-}
-
-.banner-text h2 {
-    font-size: 1.8rem;
-    margin-bottom: 8px;
-}
-
-.banner-text p {
-    font-size: 1.1rem;
-    opacity: 0.9;
-    margin-bottom: 24px;
-}
-
-.view-btn {
-    padding: 8px 24px;
-    background: #000;
-    color: #fff;
-    border: none;
-    border-radius: 20px;
-    cursor: pointer;
-    font-weight: 500;
-}
-
-[data-theme="dark"] .view-btn {
-    background: #fff;
-    color: #000;
-}
-
-.banner-image {
-    position: relative;
-}
-
-.banner-badge {
-    position: absolute;
-    top: -20px;
-    right: 0;
-    background: rgba(255, 255, 255, 0.8);
-    padding: 4px 12px;
-    border-radius: 12px;
-    font-size: 0.8rem;
-    color: #1e293b;
-}
-
-.tabs {
+/* Sidebar Styling */
+.category-sidebar {
+  width: 260px;
+  background-color: #ffffff;
+  border-right: 1px solid #f1f5f9;
   display: flex;
-  gap: 12px;
-  margin-bottom: 30px;
-  border-bottom: 1px solid var(--border-color);
-  padding-bottom: 10px;
+  flex-direction: column;
+  padding: 24px 16px;
+  flex-shrink: 0;
 }
 
-.tab-btn {
-  background: none;
-  border: none;
-  padding: 8px 16px;
-  border-radius: 20px;
-  cursor: pointer;
-  color: var(--text-secondary);
-  font-weight: 500;
+.sidebar-section-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 16px;
+  padding-left: 12px;
+}
+
+.category-nav {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.category-nav-item-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-radius: 10px;
+  padding-right: 8px;
   transition: all 0.2s;
 }
 
-.tab-btn.active {
-  background: var(--bg-hover);
-  color: var(--text-primary);
+.category-nav-item-wrapper:hover {
+  background-color: #f8fafc;
+}
+
+.category-nav-item-wrapper.active {
+  background-color: #f5f3ff;
+}
+
+.category-nav-item {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: transparent;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  text-align: left;
+  font-weight: 500;
+  font-size: 0.95rem;
+  transition: color 0.2s;
+}
+
+.category-nav-item-wrapper.active .category-nav-item {
+  color: #6366f1;
+  font-weight: 600;
+}
+
+.category-edit-btn {
+    opacity: 0;
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 6px;
+    display: flex;
+    transition: all 0.2s;
+}
+
+.category-nav-item-wrapper:hover .category-edit-btn {
+    opacity: 1;
+}
+
+.category-edit-btn:hover {
+    background: #ffffff;
+    color: #6366f1;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+
+.category-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: transparent;
+  transition: background-color 0.2s;
+}
+
+.category-nav-item-wrapper.active .category-dot {
+  background-color: #6366f1;
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  padding-top: 24px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.add-category-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  background-color: #ffffff;
+  border: 1px dashed #cbd5e1;
+  color: #64748b;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.add-category-btn:hover {
+  border-color: #6366f1;
+  color: #6366f1;
+  background-color: #f5f3ff;
+  transform: translateY(-1px);
+}
+
+/* Content Area Styling */
+.apps-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 40px;
+  position: relative;
+  background-color: #f8fafc;
 }
 
 .apps-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 24px;
+  max-width: 1600px;
+  margin: 0 auto;
 }
 
 .app-card {
+  background-color: #ffffff;
+  border: 1px solid #f1f5f9;
+  border-radius: 16px;
+  padding: 24px;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px;
-  border-radius: 12px;
-  background: transparent;
+  flex-direction: column;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   cursor: pointer;
-  transition: background 0.2s;
+  position: relative;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.02);
 }
 
-.app-card:hover {
-  background: var(--bg-hover);
+.app-card:not(.add-app-card):hover {
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.05), 0 10px 10px -5px rgba(0, 0, 0, 0.02);
+  transform: translateY(-4px);
+  border-color: #e2e8f0;
 }
 
-.app-card-left {
+.add-app-card {
+  border: 2px dashed #e2e8f0;
+  background-color: #ffffff;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+  gap: 16px;
+  text-align: center;
+}
+
+.add-app-card:hover {
+  border-color: #6366f1;
+  color: #6366f1;
+  background-color: #f5f3ff;
+}
+
+.add-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 20px;
+  background-color: #f8fafc;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s;
+}
+
+.add-app-card:hover .add-icon {
+  background-color: #ffffff;
+  transform: scale(1.1) rotate(90deg);
+  box-shadow: 0 4px 6px -1px rgba(99, 102, 241, 0.1);
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 20px;
+}
+
+.app-logo {
+  flex-shrink: 0;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 800;
+  font-size: 1.5rem;
+  overflow: hidden;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.app-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.app-name-text {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.header-subtext {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: #64748b;
+}
+
+.author-label {
+  font-weight: 600;
+  color: #475569;
+}
+
+.v-divider {
+  color: #e2e8f0;
+}
+
+.price-val {
+  font-weight: 700;
+  color: #10b981;
+}
+
+.app-summary {
+  font-size: 0.9rem;
+  color: #475569;
+  line-height: 1.6;
+  margin: 0 0 24px 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.card-footer-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: auto;
+}
+
+.chat-action-btn {
+  background-color: #6366f1;
+  color: #ffffff;
+  border: none;
+  padding: 6px 16px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.chat-action-btn:hover {
+  background-color: #4f46e5;
+  box-shadow: 0 4px 6px -1px rgba(99, 102, 241, 0.3);
+}
+
+.tag-pill-fancy {
+  background-color: #f1f5f9;
+  color: #475569;
+  padding: 4px 12px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.tag-group-right {
+    margin-left: auto;
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 10px;
 }
 
-.app-icon {
-    width: 48px;
-    height: 48px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    font-weight: bold;
-    font-size: 1.2rem;
-    flex-shrink: 0;
-}
-
-.app-info {
-    overflow: hidden;
-}
-
-.app-name {
-    font-weight: 600;
-    font-size: 1rem;
-    margin-bottom: 2px;
-}
-
-.app-desc {
-    font-size: 0.85rem;
-    color: var(--text-secondary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.arrow-icon {
-    color: var(--text-tertiary);
+.delete-app-btn {
     opacity: 0;
-    transition: opacity 0.2s;
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 8px;
+    display: flex;
+    transition: all 0.2s;
 }
 
-.app-card:hover .arrow-icon {
+.app-card:hover .delete-app-btn {
     opacity: 1;
 }
 
-.loading, .no-results {
-    padding: 40px;
-    text-align: center;
-    color: var(--text-secondary);
+.delete-app-btn:hover {
+    background: #fef2f2;
+    color: #ef4444;
+}
+
+.empty-state {
+  text-align: center;
+  color: #94a3b8;
+  margin-top: 120px;
+}
+
+.empty-icon {
+  margin-bottom: 20px;
+  opacity: 0.2;
+}
+
+.loading-overlay {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(248, 250, 252, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  backdrop-filter: blur(4px);
 }
 
 .spinner {
-    width: 30px;
-    height: 30px;
-    border: 3px solid var(--border-color);
-    border-top-color: var(--text-primary);
+    width: 40px;
+    height: 40px;
+    border: 4px solid #e2e8f0;
+    border-top-color: #6366f1;
     border-radius: 50%;
     animation: spin 1s linear infinite;
-    margin: 0 auto;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* New Modal Styling */
+/* Premium Modal Styling */
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(15, 23, 42, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  backdrop-filter: blur(8px);
+}
+
+.add-modal-content {
+  background: #ffffff;
+  width: 520px;
+  border-radius: 24px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-header {
+  padding: 24px 32px;
+  border-bottom: 1px solid #f1f5f9;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 10px;
+  display: flex;
+  transition: all 0.2s;
+}
+
+.close-btn:hover {
+  background-color: #f1f5f9;
+  color: #1e293b;
+}
+
+.modal-body {
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.input-group label {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #334155;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.input-group input, .input-group textarea {
+  padding: 12px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  outline: none;
+  font-size: 1rem;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+.input-group input:focus, .input-group textarea:focus {
+  border-color: #6366f1;
+  background-color: #ffffff;
+  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
+}
+
+.modal-footer {
+  padding: 20px 32px;
+  background-color: #f8fafc;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.footer-right-buttons {
+    display: flex;
+    gap: 12px;
+}
+
+.delete-btn-modal {
+  padding: 10px 20px;
+  background: #ffffff;
+  border: 1px solid #fee2e2;
+  border-radius: 10px;
+  color: #ef4444;
+  cursor: pointer;
+  font-weight: 700;
+  transition: all 0.2s;
+}
+
+.delete-btn-modal:hover {
+    background: #fef2f2;
+    border-color: #fecaca;
+}
+
+.cancel-btn, .cancel-btn-alt {
+  padding: 10px 24px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  color: #64748b;
+  cursor: pointer;
+  font-weight: 700;
+  transition: all 0.2s;
+}
+
+.save-btn, .create-btn {
+  padding: 10px 32px;
+  background: #6366f1;
+  border: none;
+  border-radius: 10px;
+  color: white;
+  cursor: pointer;
+  font-weight: 700;
+  transition: all 0.3s;
+}
+
+.save-btn:hover, .create-btn:hover:not(:disabled) {
+  background: #4f46e5;
+  transform: translateY(-2px);
+  box-shadow: 0 10px 15px -3px rgba(99, 102, 241, 0.3);
+}
+
+.create-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Large Modal (App Creation) Redesign */
+.large-modal {
+  width: 1000px;
+  height: 740px;
+  max-width: 95vw;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+  border-radius: 32px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+}
+
+.modal-sidebar {
+  width: 280px;
+  background-color: #f8fafc;
+  border-right: 1px solid #f1f5f9;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-sidebar-header {
+  padding: 32px 24px;
+}
+
+.modal-sidebar-header h3 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.025em;
+}
+
+.sidebar-nav {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sidebar-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar-nav-item.active {
+  background-color: #ffffff;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05);
+  border: 1px solid #e2e8f0;
+}
+
+.sidebar-nav-item.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.nav-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.nav-icon.purple { background-color: #6366f1; color: #ffffff; }
+.nav-icon.blue { background-color: #3b82f6; color: #ffffff; }
+
+.nav-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nav-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.nav-desc {
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.modal-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background-color: #ffffff;
+}
+
+.modal-main-header {
+  padding: 32px 40px;
+  border-bottom: 1px solid #f1f5f9;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.header-info h2 {
+  margin: 0 0 6px 0;
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.header-info p {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #64748b;
+  line-height: 1.6;
+}
+
+.close-btn-top {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 12px;
+  border-radius: 12px;
+  transition: all 0.2s;
+}
+
+.close-btn-top:hover {
+  background-color: #f1f5f9;
+  color: #1e293b;
+}
+
+.modal-main-body {
+  flex: 1;
+  padding: 40px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.type-cards {
+  display: flex;
+  gap: 20px;
+}
+
+.type-card {
+  flex: 1;
+  padding: 24px;
+  border: 2px solid #f1f5f9;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  background-color: #fafafa;
+}
+
+.type-card.active {
+  border-color: #6366f1;
+  background-color: #f5f3ff;
+  box-shadow: 0 10px 15px -3px rgba(99, 102, 241, 0.1);
+}
+
+.type-card.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background-color: #fdfdfd;
+}
+
+.type-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.type-card-title {
+  font-weight: 800;
+  font-size: 1.1rem;
+  color: #1e293b;
+}
+
+.check-icon {
+  width: 24px;
+  height: 24px;
+  background-color: #6366f1;
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 4px rgba(99, 102, 241, 0.3);
+}
+
+.tag-recommend {
+  font-size: 0.75rem;
+  background-color: #e0f2fe;
+  color: #0ea5e9;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.type-card-desc {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #475569;
+  line-height: 1.6;
+}
+
+.form-section {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.char-count {
+  position: absolute;
+  right: 16px;
+  top: 40px;
+  font-size: 0.8rem;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+.avatar-uploader {
+  width: 72px;
+  height: 72px;
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 800;
+  font-size: 1.75rem;
+  overflow: hidden;
+  box-shadow: 0 8px 16px -4px rgba(0, 0, 0, 0.1);
+  border: 2px solid #ffffff;
+}
+
+.avatar-uploader img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.modal-main-footer {
+  padding: 24px 40px;
+  border-top: 1px solid #f1f5f9;
+  display: flex;
+  justify-content: flex-end;
+  gap: 16px;
+  background-color: #ffffff;
 }
 
 @keyframes spin {

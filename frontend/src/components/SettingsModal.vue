@@ -34,16 +34,8 @@
               </div>
             </li>
           </ul>
-          <div class="add-form">
-            <h4>Add New Provider</h4>
-            <div class="form-group">
-                <input v-model="newProvider.name" placeholder="Name (e.g. OpenAI)" />
-                <input v-model="newProvider.base_url" placeholder="Base URL" />
-            </div>
-            <div class="form-group">
-                <input v-model="newProvider.api_key" placeholder="API Key" type="password" />
-                <button @click="addProvider" class="primary-btn">Add Provider</button>
-            </div>
+          <div class="hint-section">
+            <p class="hint">Go to <strong>Model Square</strong> to add new providers.</p>
           </div>
         </div>
 
@@ -119,38 +111,59 @@ export default {
       }
     },
     async deleteProvider(id) {
-      if(!confirm('Delete provider?')) return
+      const confirmed = await window.$confirm({
+          title: '删除提供商',
+          message: '确定要删除此提供商及其所有模型吗？',
+          type: 'danger',
+          confirmText: '确定删除',
+          cancelText: '取消'
+      })
+      if(!confirmed) return
       try {
         await axios.delete(`/api/providers/${id}/`)
         this.$store.dispatch('fetchProviders')
-      } catch (e) { alert('Failed to delete provider') }
+        window.$message.success("提供商已删除")
+      } catch (e) { 
+          window.$message.error('删除失败') 
+      }
     },
     async addModel() {
       try {
         await axios.post('/api/models/', this.newModel)
         this.newModel = { provider: null, name: '', display_name: '' }
         this.fetchModels()
-        this.$store.dispatch('fetchProviders') // models are nested in provider list for selector
-      } catch (e) { alert('Failed to add model') }
+        this.$store.dispatch('fetchProviders') 
+        window.$message.success("模型添加成功")
+      } catch (e) { 
+          window.$message.error('模型添加失败') 
+      }
     },
     async syncProvider(id) {
         try {
             const res = await axios.post(`/api/providers/${id}/refresh_models/`)
-            alert(`Synced ${res.data.count} models!`)
+            window.$message.success(`成功同步 ${res.data.count} 个模型！`)
             this.fetchModels()
             this.$store.dispatch('fetchProviders')
         } catch (e) {
             console.error(e)
-            alert('Failed to sync: ' + JSON.stringify(e.response?.data || e.message))
+            window.$message.error('同步同步失败')
         }
     },
     async deleteModel(id) {
-       if(!confirm('Delete model?')) return
+       const confirmed = await window.$confirm({
+           title: '确认删除',
+           message: '确定要删除此模型吗？',
+           type: 'danger'
+       })
+       if(!confirmed) return
        try {
         await axios.delete(`/api/models/${id}/`)
         this.fetchModels()
         this.$store.dispatch('fetchProviders')
-      } catch (e) { alert('Failed to delete model') }
+        window.$message.success("模型已删除")
+      } catch (e) { 
+          window.$message.error('删除失败') 
+      }
     }
   }
 }

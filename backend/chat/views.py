@@ -7,10 +7,10 @@ from django.http import StreamingHttpResponse
 from django.shortcuts import get_object_or_404
 import requests
 import json
-from .models import Provider, LLMModel, Conversation, Message, App
+from .models import Provider, LLMModel, Conversation, Message, App, AppCategory
 from .serializers import (
     ProviderSerializer, ConversationSerializer, MessageSerializer, 
-    LLMModelSerializer, AppSerializer
+    LLMModelSerializer, AppSerializer, AppCategorySerializer
 )
 
 class ProviderViewSet(viewsets.ModelViewSet):
@@ -54,7 +54,20 @@ class LLMModelViewSet(viewsets.ModelViewSet):
     queryset = LLMModel.objects.all()
     serializer_class = LLMModelSerializer
 
-class AppViewSet(viewsets.ReadOnlyModelViewSet):
+class AppCategoryViewSet(viewsets.ModelViewSet):
+    queryset = AppCategory.objects.all()
+    serializer_class = AppCategorySerializer
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance.apps.exists():
+            return Response(
+                {"error": "该分组下仍有应用，无法删除。请先移动或删除应用。"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        return super().destroy(request, *args, **kwargs)
+
+class AppViewSet(viewsets.ModelViewSet):
     queryset = App.objects.all()
     serializer_class = AppSerializer
 
@@ -65,7 +78,10 @@ class AppViewSet(viewsets.ReadOnlyModelViewSet):
         search = self.request.query_params.get('search')
         
         if category:
-            queryset = queryset.filter(category=category)
+            if category.isdigit():
+                queryset = queryset.filter(category_id=category)
+            else:
+                queryset = queryset.filter(category__name=category)
         if is_featured:
             queryset = queryset.filter(is_featured=is_featured.lower() == 'true')
         if search:
