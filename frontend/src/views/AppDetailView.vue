@@ -7,7 +7,7 @@
           <button class="back-btn" @click="$router.push('/apps')">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
           </button>
-          <h1>规划</h1>
+          <h1>{{ app.name }}</h1>
         </div>
         <div class="header-actions">
           <span class="save-status">{{ saveStatus }}</span>
@@ -18,7 +18,7 @@
       <div class="pane-body">
         <section class="config-section">
           <div class="section-title">应用基本信息</div>
-          <div class="input-group">
+          <div class="input-group app-name">
             <label>应用名称</label>
             <input v-model="app.name" placeholder="请输入应用名称" />
           </div>
@@ -56,7 +56,12 @@
           <div class="variables-list">
             <div v-for="v in detectedVariables" :key="v" class="variable-item">
               <label>{{ v }}</label>
-              <input v-model="variableValues[v]" :placeholder="'请输入 ' + v" />
+              <textarea
+                  v-model="variableValues[v]"
+                  class="variable-value-textarea"
+                  :placeholder="v + ' 的取值'"
+                  @input="handlePromptInput"
+              ></textarea>
             </div>
           </div>
         </section>
@@ -232,28 +237,52 @@ export default {
           finalSystemPrompt = finalSystemPrompt.replace(regex, this.variableValues[v])
         })
 
+        const payload = {
+          messages: [
+            { role: 'system', content: finalSystemPrompt },
+            ...this.messages.slice(0, -1)
+          ],
+          model: this.selectedModel.model_name,
+          temperature: this.app.configuration.temperature,
+          stream: true
+        }
+
         const response = await fetch('/api/chat/completions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            messages: [
-              { role: 'system', content: finalSystemPrompt },
-              ...this.messages.slice(0, -1)
-            ],
-            model: this.selectedModel.model_name,
-            temperature: this.app.configuration.temperature,
-            stream: true
-          })
+          body: JSON.stringify(payload)
         })
+
+        if (!response.ok) {
+          const errorText = await response.text()
+          throw new Error(`Server Error (${response.status}): ${errorText}`)
+        }
 
         const reader = response.body.getReader()
         const decoder = new TextDecoder()
-        
+        let buffer = ''
+
         for (;;) {
           const { done, value } = await reader.read()
           if (done) break
-          const chunk = decoder.decode(value)
-          assistantMsg.content += chunk
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop()
+          for (const line of lines) {
+            const trimmed = line.trim()
+            if (trimmed.startsWith('data: ')) {
+              const jsonStr = trimmed.slice(6)
+              if (jsonStr === '[DONE]') continue
+              try {
+                const data = JSON.parse(jsonStr)
+                if (data.choices && data.choices[0].delta.content) {
+                  assistantMsg.content += data.choices[0].delta.content
+                }
+              } catch (e) {
+                // 忽略流式解析错误
+              }
+            }
+          }
           this.scrollToBottom()
         }
       } catch (e) {
@@ -407,6 +436,8 @@ export default {
   border-radius: 8px;
   font-size: 0.9rem;
   outline: none;
+  color: #475569;
+  background-color: #fcfcfd;
 }
 
 .prompt-editor-container {
@@ -484,12 +515,14 @@ export default {
   font-family: monospace;
 }
 
-.variable-item input {
+.variable-value-textarea {
   flex: 1;
   padding: 8px 12px;
   border: 1px solid #e2e8f0;
   border-radius: 6px;
   font-size: 0.85rem;
+  color: #475569;
+  background-color: #fcfcfd;
 }
 
 .params-list {

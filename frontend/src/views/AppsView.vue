@@ -941,6 +941,7 @@ export default {
 }
 
 .input-group input, .input-group textarea {
+  width: 100%;
   padding: 12px 16px;
   border: 1px solid #e2e8f0;
   border-radius: 12px;
