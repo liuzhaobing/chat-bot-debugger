@@ -1,8 +1,8 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
-    ProviderViewSet, LLMModelViewSet, ConversationViewSet, 
-    ChatCompletionView, AppViewSet, AppCategoryViewSet
+    ProviderViewSet, LLMModelViewSet, ConversationViewSet,
+    ChatCompletionView, AppViewSet, AppCategoryViewSet, AppTypeViewSet
 )
 
 router = DefaultRouter()
@@ -11,6 +11,7 @@ router.register(r'models', LLMModelViewSet)
 router.register(r'conversations', ConversationViewSet)
 router.register(r'apps', AppViewSet)
 router.register(r'app-categories', AppCategoryViewSet)
+router.register(r'app-types', AppTypeViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),

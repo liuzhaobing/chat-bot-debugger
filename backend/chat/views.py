@@ -5,12 +5,14 @@ from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
 from django.http import StreamingHttpResponse
 from django.shortcuts import get_object_or_404
+from django.db.models import Q
 import requests
 import json
-from .models import Provider, LLMModel, Conversation, Message, App, AppCategory
+from .models import Provider, LLMModel, Conversation, Message, App, AppCategory, AppType
 from .serializers import (
     ProviderSerializer, ConversationSerializer, MessageSerializer, 
-    LLMModelSerializer, AppSerializer, AppCategorySerializer
+    LLMModelSerializer, AppSerializer, AppCategorySerializer,
+    AppTypeSerializer, AppPublishSerializer, AppListSerializer
 )
 
 class ProviderViewSet(viewsets.ModelViewSet):
@@ -55,10 +57,15 @@ class LLMModelViewSet(viewsets.ModelViewSet):
     serializer_class = LLMModelSerializer
 
 class AppCategoryViewSet(viewsets.ModelViewSet):
+    """
+    应用分类视图集
+    提供应用分类的 CRUD 操作
+    """
     queryset = AppCategory.objects.all()
     serializer_class = AppCategorySerializer
 
     def destroy(self, request, *args, **kwargs):
+        """删除分类前检查是否有关联应用"""
         instance = self.get_object()
         if instance.apps.exists():
             return Response(
@@ -67,27 +74,137 @@ class AppCategoryViewSet(viewsets.ModelViewSet):
             )
         return super().destroy(request, *args, **kwargs)
 
+
+class AppTypeViewSet(viewsets.ModelViewSet):
+    """
+    应用类型视图集
+    提供应用类型的查询和管理
+    """
+    queryset = AppType.objects.all()
+    serializer_class = AppTypeSerializer
+    
+    def get_queryset(self):
+        """
+        支持筛选：
+        - is_active: 是否启用
+        """
+        queryset = AppType.objects.all()
+        is_active = self.request.query_params.get('is_active')
+        
+        if is_active is not None:
+            queryset = queryset.filter(is_active=is_active.lower() == 'true')
+        
+        return queryset
+
 class AppViewSet(viewsets.ModelViewSet):
+    """
+    应用视图集
+    提供应用的完整 CRUD 操作，支持类型筛选和发布功能
+    """
     queryset = App.objects.all()
-    serializer_class = AppSerializer
+    
+    def get_serializer_class(self):
+        """根据不同的 action 返回不同的序列化器"""
+        if self.action == 'list':
+            return AppListSerializer
+        elif self.action == 'publish':
+            return AppPublishSerializer
+        return AppSerializer
 
     def get_queryset(self):
-        queryset = App.objects.all()
-        category = self.request.query_params.get('category')
-        is_featured = self.request.query_params.get('is_featured')
-        search = self.request.query_params.get('search')
+        """
+        支持多种筛选条件：
+        - category: 按分类ID或名称筛选
+        - app_type: 按应用类型ID或code筛选
+        - is_featured: 是否精选
+        - search: 搜索应用名称或描述
+        """
+        queryset = App.objects.select_related('category', 'app_type').all()
         
+        # 按分类筛选
+        category = self.request.query_params.get('category')
         if category:
             if category.isdigit():
                 queryset = queryset.filter(category_id=category)
             else:
                 queryset = queryset.filter(category__name=category)
+        
+        # 按应用类型筛选
+        app_type = self.request.query_params.get('app_type')
+        if app_type:
+            if app_type.isdigit():
+                queryset = queryset.filter(app_type_id=app_type)
+            else:
+                queryset = queryset.filter(app_type__code=app_type)
+        
+        # 按精选状态筛选
+        is_featured = self.request.query_params.get('is_featured')
         if is_featured:
             queryset = queryset.filter(is_featured=is_featured.lower() == 'true')
+        
+        # 搜索
+        search = self.request.query_params.get('search')
         if search:
-            queryset = queryset.filter(name__icontains=search) | queryset.filter(description__icontains=search)
+            queryset = queryset.filter(
+                Q(name__icontains=search) | Q(description__icontains=search)
+            )
             
         return queryset
+    
+    @action(detail=True, methods=['post'])
+    def publish(self, request, pk=None):
+        """
+        发布应用
+        保存完整的应用配置，包括模型、参数等
+        """
+        app = self.get_object()
+        serializer = AppPublishSerializer(app, data=request.data, partial=False)
+        
+        if serializer.is_valid():
+            serializer.save()
+            return Response({
+                "status": "success",
+                "message": "应用发布成功",
+                "data": AppSerializer(app).data
+            })
+        
+        return Response({
+            "status": "error",
+            "message": "发布失败",
+            "errors": serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=True, methods=['patch'])
+    def auto_save_prompt(self, request, pk=None):
+        """
+        自动保存 system_prompt
+        仅保存提示词，不保存其他字段
+        """
+        app = self.get_object()
+        system_prompt = request.data.get('system_prompt')
+        
+        if system_prompt is not None:
+            app.system_prompt = system_prompt
+            app.save(update_fields=['system_prompt', 'updated_at'])
+            return Response({
+                "status": "success",
+                "message": "提示词已自动保存"
+            })
+        
+        return Response({
+            "status": "error",
+            "message": "未提供 system_prompt"
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=True, methods=['get'])
+    def function_schema(self, request, pk=None):
+        """
+        获取应用的 Function Calling Schema
+        用于将应用作为工具调用
+        """
+        app = self.get_object()
+        schema = app.get_function_schema()
+        return Response(schema)
 
 class ConversationPagination(PageNumberPagination):
     page_size = 15

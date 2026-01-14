@@ -49,6 +49,26 @@
       </aside>
 
       <main class="apps-content">
+        <!-- 类型筛选器 (新增) -->
+        <div class="type-filter-bar">
+          <button 
+            class="type-filter-btn"
+            :class="{ active: !currentAppTypeId }"
+            @click="currentAppTypeId = null"
+          >
+            全部
+          </button>
+          <button 
+            v-for="type in appTypes.filter(t => t.is_active)" 
+            :key="type.id"
+            class="type-filter-btn"
+            :class="{ active: currentAppTypeId === type.id }"
+            @click="currentAppTypeId = type.id"
+          >
+            {{ type.name }}
+          </button>
+        </div>
+
         <div class="apps-grid">
           <!-- 新建应用卡片 -->
           <div class="app-card add-app-card" @click="openAppModal(null)">
@@ -72,7 +92,7 @@
               <div class="header-text">
                 <h3 class="app-name-text">{{ app.name }}</h3>
                 <div class="header-subtext">
-                  <span class="author-label">官方发布</span>
+                  <span class="author-label">{{ app.app_type_name || 'Agent 1.0' }}</span>
                   <span class="v-divider">|</span>
                   <span class="price-val">免费</span>
                 </div>
@@ -178,21 +198,20 @@
               <div class="type-selector">
                 <label class="section-label">类型</label>
                 <div class="type-cards">
-                  <div class="type-card active">
+                  <div 
+                    v-for="type in appTypes.filter(t => t.is_active)" 
+                    :key="type.id"
+                    class="type-card"
+                    :class="{ active: appForm.app_type === type.id, disabled: !type.is_active }"
+                    @click="type.is_active && (appForm.app_type = type.id)"
+                  >
                     <div class="type-card-header">
-                      <span class="type-card-title">Agent 1.0</span>
-                      <div class="check-icon">
+                      <span class="type-card-title">{{ type.name }}</span>
+                      <div class="check-icon" v-if="appForm.app_type === type.id">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
                       </div>
                     </div>
-                    <p class="type-card-desc">结合 Prompt 与模型参数控制的 Agent 模式，适合快速构建和调试对话应用。</p>
-                  </div>
-                  <div class="type-card disabled">
-                    <div class="type-card-header">
-                      <span class="type-card-title">Agent 2.0</span>
-                      <span class="tag-recommend">推荐</span>
-                    </div>
-                    <p class="type-card-desc">基于复杂框架构建，强化 React 与 Function Call 能力，适用于重逻辑场景。</p>
+                    <p class="type-card-desc">{{ type.description }}</p>
                   </div>
                 </div>
               </div>
@@ -247,7 +266,9 @@ export default {
     return {
       searchQuery: '',
       currentCategoryId: null,
+      currentAppTypeId: null,  // 新增：当前选择的应用类型
       categories: [],
+      appTypes: [],  // 新增：应用类型列表
       apps: [],
       loading: false,
       
@@ -259,17 +280,31 @@ export default {
       // App Modal
       showAppModalFlag: false,
       isEditingApp: false,
-      appForm: { id: null, name: '', description: '', icon_url: '', category: null }
+      appForm: { 
+        id: null, 
+        name: '', 
+        description: '', 
+        icon_url: '', 
+        category: null,
+        app_type: null  // 新增：应用类型
+      }
     }
   },
   computed: {
     filteredApps() {
       let filtered = this.apps
       
+      // 按分类筛选
       if (this.currentCategoryId) {
         filtered = filtered.filter(app => app.category === this.currentCategoryId)
       }
 
+      // 按应用类型筛选（新增）
+      if (this.currentAppTypeId) {
+        filtered = filtered.filter(app => app.app_type === this.currentAppTypeId)
+      }
+
+      // 按搜索关键词筛选
       if (this.searchQuery.trim()) {
         const query = this.searchQuery.toLowerCase()
         filtered = filtered.filter(app => 
@@ -285,12 +320,14 @@ export default {
     async fetchData() {
       this.loading = true
       try {
-        const [catsRes, appsRes] = await Promise.all([
+        const [catsRes, appsRes, typesRes] = await Promise.all([
           axios.get('/api/app-categories/'),
-          axios.get('/api/apps/')
+          axios.get('/api/apps/'),
+          axios.get('/api/app-types/')  // 新增：获取应用类型
         ])
         this.categories = catsRes.data
         this.apps = appsRes.data
+        this.appTypes = typesRes.data  // 新增
         
         if (this.categories.length > 0 && !this.currentCategoryId) {
             this.currentCategoryId = this.categories[0].id
@@ -363,12 +400,42 @@ export default {
         this.appForm = { ...app }
       } else {
         this.isEditingApp = false
-        this.appForm = { id: null, name: '', description: '', icon_url: '', category: this.currentCategoryId }
+        // 获取第一个启用的应用类型作为默认值
+        const defaultAppType = this.appTypes.find(t => t.is_active)
+        this.appForm = { 
+          id: null, 
+          name: '', 
+          description: '', 
+          icon_url: '', 
+          category: this.currentCategoryId,
+          app_type: defaultAppType ? defaultAppType.id : null  // 新增
+        }
       }
       this.showAppModalFlag = true
     },
     async saveApp() {
-      if (!this.appForm.name.trim()) return
+      // 验证必填字段
+      if (!this.appForm.name || !this.appForm.name.trim()) {
+        window.$message.error("应用名称不能为空")
+        return
+      }
+      
+      if (!this.appForm.description || !this.appForm.description.trim()) {
+        window.$message.error("应用描述不能为空")
+        return
+      }
+      
+      // 验证驼峰命名
+      const camelCasePattern = /^[A-Z][a-zA-Z]*$/
+      if (!camelCasePattern.test(this.appForm.name)) {
+        window.$message.error("应用名称必须符合驼峰命名规范（如 GetWeather），只允许英文字母，必须以大写字母开头，不允许空格和标点符号")
+        return
+      }
+      
+      if (!this.appForm.app_type) {
+        window.$message.error("请选择应用类型")
+        return
+      }
       try {
         if (this.isEditingApp) {
           await axios.patch(`/api/apps/${this.appForm.id}/`, this.appForm)
@@ -380,7 +447,11 @@ export default {
         this.showAppModalFlag = false
         await this.fetchData()
       } catch (e) {
-        window.$message.error("保存失败")
+        const errorMsg = e.response?.data?.name?.[0] || 
+                        e.response?.data?.description?.[0] || 
+                        e.response?.data?.error || 
+                        "保存失败"
+        window.$message.error(errorMsg)
       }
     },
     async deleteApp(id) {
@@ -637,6 +708,41 @@ export default {
   padding: 40px;
   position: relative;
   background-color: #f8fafc;
+}
+
+/* 类型筛选器样式 (新增) */
+.type-filter-bar {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 32px;
+  padding: 8px;
+  background-color: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.02);
+  border: 1px solid #f1f5f9;
+}
+
+.type-filter-btn {
+  padding: 10px 24px;
+  border: none;
+  background-color: transparent;
+  color: #64748b;
+  font-size: 0.9rem;
+  font-weight: 600;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.type-filter-btn:hover {
+  background-color: #f8fafc;
+  color: #1e293b;
+}
+
+.type-filter-btn.active {
+  background-color: #6366f1;
+  color: #ffffff;
+  box-shadow: 0 4px 6px -1px rgba(99, 102, 241, 0.3);
 }
 
 .apps-grid {
