@@ -7,6 +7,7 @@
         :key="index"
         :role="msg.role"
         :content="msg.content"
+        :reasoningContent="msg.reasoning_content"
       />
       <div v-if="isStreaming && (!messages.length || messages[messages.length-1].role !== 'assistant')" class="status-message">
         <span class="typing-dot"></span>

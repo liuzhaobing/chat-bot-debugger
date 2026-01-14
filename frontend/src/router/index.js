@@ -4,6 +4,7 @@ import ChatArea from '../components/ChatArea.vue'
 import ModelSquare from '../views/ModelSquare.vue'
 import AppsView from '../views/AppsView.vue'
 import AppDetailView from '../views/AppDetailView.vue'
+import ModelDebugView from '../views/ModelDebugView.vue'
 
 Vue.use(VueRouter)
 
@@ -27,6 +28,11 @@ const routes = [
         path: '/apps/:id',
         name: 'AppDetail',
         component: AppDetailView
+    },
+    {
+        path: '/model-debug',
+        name: 'ModelDebug',
+        component: ModelDebugView
     }
 ]
 

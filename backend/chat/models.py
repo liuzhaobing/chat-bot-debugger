@@ -45,8 +45,10 @@ class Conversation(models.Model):
 
 class Message(models.Model):
     """
-    消息模型 - 支持多模态内容
+    消息模型 - 支持多模态内容和深度思考
     content 字段可以存储纯文本或 JSON 格式的多模态数据
+    reasoning_content 存储深度思考过程
+    token_usage 存储 token 使用统计
     """
     ROLE_CHOICES = (
         ('user', 'User'),
@@ -57,6 +59,17 @@ class Message(models.Model):
     role = models.CharField(max_length=20, choices=ROLE_CHOICES)
     # content 兼容旧文本，推荐存储为JSON字符串，结构为{"content": [...], "raw_text": "..."}
     content = models.TextField(help_text="消息内容，推荐为多模态JSON数组，兼容纯文本")
+    # 深度思考相关字段
+    reasoning_content = models.TextField(
+        blank=True,
+        null=True,
+        help_text='深度思考内容 (reasoning_content)，从 delta.reasoning_content 获取'
+    )
+    token_usage = models.JSONField(
+        blank=True,
+        null=True,
+        help_text='Token 使用统计 {prompt_tokens, completion_tokens, total_tokens}'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

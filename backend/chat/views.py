@@ -222,6 +222,135 @@ class ConversationViewSet(viewsets.ModelViewSet):
         messages = conversation.messages.all()
         serializer = MessageSerializer(messages, many=True)
         return Response(serializer.data)
+    
+    @action(detail=True, methods=['patch'], url_path='messages/(?P<message_id>[^/.]+)/retry')
+    def retry_message(self, request, pk=None, message_id=None):
+        """
+        重试消息功能
+        清空 assistant 消息的 content 和 reasoning_content，然后重新请求
+        """
+        conversation = self.get_object()
+        
+        try:
+            message = Message.objects.get(id=message_id, conversation=conversation)
+        except Message.DoesNotExist:
+            return Response({"error": "消息不存在"}, status=status.HTTP_404_NOT_FOUND)
+        
+        if message.role != 'assistant':
+            return Response({"error": "只能重试 assistant 消息"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # 获取该消息之前的所有消息作为上下文
+        previous_messages = conversation.messages.filter(
+            created_at__lt=message.created_at
+        ).order_by('created_at')
+        
+        # 构建消息列表
+        messages_payload = []
+        for msg in previous_messages:
+            messages_payload.append({
+                "role": msg.role,
+                "content": msg.content
+            })
+        
+        # 获取重试参数
+        enable_thinking = request.data.get('enable_thinking', False)
+        model_name = request.data.get('model')
+        temperature = request.data.get('temperature')
+        max_tokens = request.data.get('max_tokens')
+        
+        if not model_name:
+            return Response({"error": "必须提供 model 参数"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # 获取 Provider 和 Model
+        try:
+            llm_model = LLMModel.objects.get(name=model_name)
+            provider = llm_model.provider
+        except LLMModel.DoesNotExist:
+            return Response({"error": "模型不存在"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # 构建请求 payload
+        headers = {
+            "Authorization": f"Bearer {provider.api_key}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": model_name,
+            "messages": messages_payload,
+            "stream": True
+        }
+        
+        if temperature is not None:
+            payload['temperature'] = float(temperature)
+        if max_tokens is not None:
+            payload['max_tokens'] = int(max_tokens)
+        if enable_thinking:
+            payload['extra_body'] = {"enable_thinking": True}
+        
+        # 调用上游 API
+        try:
+            response = requests.post(
+                f"{provider.base_url}/chat/completions",
+                headers=headers,
+                json=payload,
+                stream=True,
+                timeout=60
+            )
+            response.raise_for_status()
+        except requests.RequestException as e:
+            return Response({"error": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
+        
+        # 流式响应生成器
+        def retry_stream_generator():
+            assistant_content = ""
+            reasoning_content = ""
+            token_usage_data = None
+            buffer = ""
+            
+            for chunk in response.iter_content(chunk_size=1024):
+                if chunk:
+                    text_chunk = chunk.decode('utf-8')
+                    yield text_chunk
+                    buffer += text_chunk
+                    
+                    while '\n' in buffer:
+                        line, buffer = buffer.split('\n', 1)
+                        line = line.strip()
+                        if line.startswith("data: "):
+                            json_str = line[6:]
+                            if json_str == "[DONE]":
+                                continue
+                            try:
+                                data = json.loads(json_str)
+                                
+                                if 'choices' in data and len(data['choices']) > 0:
+                                    delta = data['choices'][0].get('delta', {})
+                                    
+                                    if 'reasoning_content' in delta:
+                                        reasoning_content += delta['reasoning_content']
+                                    
+                                    if 'content' in delta:
+                                        assistant_content += delta['content']
+                                
+                                if 'usage' in data:
+                                    token_usage_data = data['usage']
+                                    
+                            except (json.JSONDecodeError, KeyError, IndexError):
+                                continue
+            
+            # 更新数据库中的消息
+            message.content = assistant_content
+            message.reasoning_content = reasoning_content if reasoning_content else None
+            message.token_usage = token_usage_data
+            message.save()
+            conversation.save()
+        
+        response_stream = StreamingHttpResponse(
+            retry_stream_generator(),
+            content_type='text/event-stream'
+        )
+        response_stream['Cache-Control'] = 'no-cache'
+        response_stream['X-Accel-Buffering'] = 'no'
+        return response_stream
 
 class ChatCompletionView(APIView):
     def post(self, request):
@@ -231,6 +360,8 @@ class ChatCompletionView(APIView):
         max_tokens = request.data.get('max_tokens')
         messages = request.data.get('messages')
         system_prompt = request.data.get('system_prompt')
+        extra_body = request.data.get('extra_body', {})  # 获取 extra_body 参数
+        
         # 1. Get or Create Conversation
         if conversation_id:
             conversation = get_object_or_404(Conversation, id=conversation_id)
@@ -305,6 +436,14 @@ class ChatCompletionView(APIView):
                 pass
         if system_prompt:
             payload['messages'].insert(0, {"role": "system", "content": system_prompt})
+        
+        # 添加 extra_body 支持（深度思考等）
+        if extra_body and isinstance(extra_body, dict):
+            # 验证 enable_thinking 参数
+            enable_thinking = extra_body.get('enable_thinking', False)
+            if isinstance(enable_thinking, bool):
+                payload['extra_body'] = {"enable_thinking": enable_thinking}
+        
         print("payload:", json.dumps(payload, ensure_ascii=False, indent=4))
         try:
             response = requests.post(
@@ -319,6 +458,8 @@ class ChatCompletionView(APIView):
 
         def stream_generator():
             assistant_content = ""
+            reasoning_content = ""  # 存储思考内容
+            token_usage_data = None  # 存储 token 统计
             buffer = ""
             for chunk in response.iter_content(chunk_size=1024):
                 if chunk:
@@ -334,17 +475,34 @@ class ChatCompletionView(APIView):
                                 continue
                             try:
                                 data = json.loads(json_str)
-                                delta = data['choices'][0]['delta']
-                                if 'content' in delta:
-                                    assistant_content += delta['content']
+                                
+                                # 解析 delta 内容
+                                if 'choices' in data and len(data['choices']) > 0:
+                                    delta = data['choices'][0].get('delta', {})
+                                    
+                                    # 获取思考内容
+                                    if 'reasoning_content' in delta:
+                                        reasoning_content += delta['reasoning_content']
+                                    
+                                    # 获取最终回答
+                                    if 'content' in delta:
+                                        assistant_content += delta['content']
+                                
+                                # 解析 token 使用量
+                                if 'usage' in data:
+                                    token_usage_data = data['usage']
+                                    
                             except (json.JSONDecodeError, KeyError, IndexError):
                                 continue
+            
             # Save full message after stream ends
-            if assistant_content:
+            if assistant_content or reasoning_content:
                 Message.objects.create(
                     conversation=conversation,
                     role='assistant',
-                    content=assistant_content
+                    content=assistant_content,
+                    reasoning_content=reasoning_content if reasoning_content else None,
+                    token_usage=token_usage_data
                 )
                 conversation.save()
 

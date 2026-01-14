@@ -21,10 +21,10 @@ class ProviderSerializer(serializers.ModelSerializer):
 
 
 class MessageSerializer(serializers.ModelSerializer):
-    """消息序列化器"""
+    """消息序列化器 - 支持深度思考和 token 统计"""
     class Meta:
         model = Message
-        fields = ['id', 'role', 'content', 'created_at']
+        fields = ['id', 'role', 'content', 'reasoning_content', 'token_usage', 'created_at']
 
 
 class ConversationSerializer(serializers.ModelSerializer):

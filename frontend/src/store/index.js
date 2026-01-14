@@ -82,13 +82,13 @@ export default new Vuex.Store({
             }
             state.messages.push(msg)
         },
-        UPDATE_LAST_MESSAGE(state, content) {
+        UPDATE_LAST_MESSAGE(state, content, reasoning_content) {
             if (state.messages.length > 0) {
                 const index = state.messages.length - 1
                 const lastMsg = state.messages[index]
                 if (lastMsg.role === 'assistant') {
                     // Create a new object to ensure reactivity
-                    const newMsg = { ...lastMsg, content: content }
+                    const newMsg = { ...lastMsg, content: content, reasoning_content: reasoning_content }
                     // Use splice to trigger array reactivity in Vue 2
                     state.messages.splice(index, 1, newMsg)
                 }
@@ -252,6 +252,7 @@ export default new Vuex.Store({
                 const reader = response.body.getReader()
                 const decoder = new TextDecoder()
                 let assistantContent = ''
+                let assistantReasoningContent = ''
                 let buffer = ''
                 for (; ;) {
                     const { done, value } = await reader.read()
@@ -266,9 +267,13 @@ export default new Vuex.Store({
                             if (jsonStr === '[DONE]') continue
                             try {
                                 const data = JSON.parse(jsonStr)
+                                if (data.choices && data.choices[0].delta.reasoning_content) {
+                                    assistantReasoningContent += data.choices[0].delta.reasoning_content
+                                    commit('UPDATE_LAST_MESSAGE', assistantContent, assistantReasoningContent)
+                                }
                                 if (data.choices && data.choices[0].delta.content) {
                                     assistantContent += data.choices[0].delta.content
-                                    commit('UPDATE_LAST_MESSAGE', assistantContent)
+                                    commit('UPDATE_LAST_MESSAGE', assistantContent, assistantReasoningContent)
                                 }
                             } catch (e) {
                                 // 忽略流式解析错误
@@ -284,7 +289,7 @@ export default new Vuex.Store({
                 }
             } catch (e) {
                 console.error("Streaming error", e)
-                commit('UPDATE_LAST_MESSAGE', `Error: ${e.message}`)
+                commit('UPDATE_LAST_MESSAGE', `Error: ${e.message}`, '')
             } finally {
                 commit('SET_STREAMING', false)
             }

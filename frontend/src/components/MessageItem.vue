@@ -1,172 +1,91 @@
 <template>
-  <div class="message-item" :class="role">
-    <div v-if="role === 'user'" class="user-message-content">
-      <!-- 多模态：遍历content，text类型展示为气泡，image_url类型展示为缩略图，顺序与content一致 -->
-      <template v-if="isMultimodal">
-        <div v-for="(seg, idx) in content" :key="idx" style="width:100%">
-          <span v-if="seg.type === 'text' && seg.text" class="user-text-bubble">{{ seg.text }}</span>
-          <div v-else-if="seg.type === 'image_url' && seg.image_url && seg.image_url.url" class="image-thumb-wrapper" style="margin-top:8px;">
-            <img :src="seg.image_url.url" class="user-image-thumb" @click="previewImage(seg.image_url.url)" />
-          </div>
-        </div>
-      </template>
-      <!-- 纯文本直接显示 -->
-      <template v-else>
-        <span class="user-text-bubble">{{ content }}</span>
-      </template>
-    </div>
-    <div v-else class="assistant-message-content">
-      <span>{{ content }}</span>
-    </div>
-    <div v-if="showPreview" class="image-modal" @click="showPreview = false">
-      <img :src="previewUrl" class="modal-img" />
-    </div>
-  </div>
-</template>
-
-<script>
-export default {
-  name: 'MessageItem',
-  props: {
-    role: {
-      type: String,
-      required: true
-    },
-    content: {
-      type: [String, Array],
-      required: true
-    }
-  },
-  data() {
-    return {
-      showPreview: false,
-      previewUrl: ''
-    }
-  },
-  computed: {
-    isMultimodal() {
-      return Array.isArray(this.content)
-    },
-    firstText() {
-      if (Array.isArray(this.content)) {
-        const seg = this.content.find(s => s.type === 'text' && s.text)
-        return seg ? seg.text : ''
-      }
-      return ''
-    },
-    imageThumbs() {
-      if (Array.isArray(this.content)) {
-        // 保持顺序，依次显示所有图片
-        return this.content
-          .filter(s => s.type === 'image_url' && s.image_url && s.image_url.url)
-          .map(s => s.image_url.url)
-      }
-      return []
-    },
-    multimodalContent() {
-      if (typeof this.content === 'string') {
-        try {
-          const obj = JSON.parse(this.content)
-          if (obj && obj.content && Array.isArray(obj.content)) {
-            return obj.content
-          }
-        } catch {
-          // 不是JSON结构，直接返回纯文本
-          return [{ type: 'text', text: this.content }]
-        }
-      } else if (Array.isArray(this.content)) {
-        return this.content
-      } else if (typeof this.content === 'object' && this.content && this.content.content && Array.isArray(this.content.content)) {
-        return this.content.content
-      }
-      return []
-    }
-  },
-  methods: {
-    previewImage(url) {
-      this.previewUrl = url
-      this.showPreview = true
-    }
-  }
-}
-</script>
-
-<style scoped>
-.message-item {
-  margin-bottom: 16px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-}
-.user-message-content {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-}
-.user-text-bubble {
-  background: #f2f2f2;
-  border-radius: 12px;
-  padding: 8px 14px;
-  color: #222;
-  display: inline-block;
-  margin-bottom: 6px;
-  max-width: 420px;
-  word-break: break-word;
-  font-size: 1rem;
-}
-.user-image-wrapper {
-  margin-bottom: 6px;
-}
-.user-image-thumb {
-  max-width: 120px;
-  max-height: 120px;
-  border-radius: 8px;
-  cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-  object-fit: cover;
-}
-.user-image-thumb:hover {
-  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
-}
-.image-modal {
-  position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(0,0,0,0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 9999;
-}
-.modal-img {
-  max-width: 90vw;
-  max-height: 90vh;
-  border-radius: 12px;
-  background: #fff;
-}
-.assistant-message-content {
-  background: #fff;
-  border-radius: 12px;
-  padding: 8px 14px;
-  color: #222;
-  display: inline-block;
-  max-width: 420px;
-  word-break: break-word;
-  font-size: 1rem;
-  margin-bottom: 6px;
-}
-</style>
-<template>
   <div class="message-wrapper">
     <div class="message-container" :class="role">
+      <!-- 头像列 -->
       <div class="avatar-column">
         <div class="avatar" :class="role">
-          <svg v-if="role === 'user'" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-          <svg v-else xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"></rect><circle cx="12" cy="5" r="2"></circle><path d="M12 7v4"></path><line x1="8" y1="16" x2="8" y2="16"></line><line x1="16" y1="16" x2="16" y2="16"></line></svg>
+          <svg v-if="role === 'user'" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+            <circle cx="12" cy="7" r="4"></circle>
+          </svg>
+          <svg v-else xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="11" width="18" height="10" rx="2"></rect>
+            <circle cx="12" cy="5" r="2"></circle>
+            <path d="M12 7v4"></path>
+            <line x1="8" y1="16" x2="8" y2="16"></line>
+            <line x1="16" y1="16" x2="16" y2="16"></line>
+          </svg>
         </div>
       </div>
+
+      <!-- 内容列 -->
       <div class="content-column">
         <div class="sender-name">{{ role === 'user' ? 'You' : 'Assistant' }}</div>
+        
+        <!-- 深度思考区域 (仅 assistant 且有 reasoningContent 时显示) -->
+        <div v-if="role === 'assistant' && reasoningContent" class="thinking-section">
+          <div class="thinking-header" @click="toggleThinking">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+            <span>已思考 (用时 {{ thinkingTime }}秒)</span>
+            <svg 
+              class="collapse-icon" 
+              :class="{ expanded: isThinkingExpanded }"
+              xmlns="http://www.w3.org/2000/svg" 
+              width="14" 
+              height="14" 
+              viewBox="0 0 24 24" 
+              fill="none" 
+              stroke="currentColor" 
+              stroke-width="2" 
+              stroke-linecap="round" 
+              stroke-linejoin="round"
+            >
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </div>
+          <div v-show="isThinkingExpanded" class="thinking-content">
+            {{ reasoningContent }}
+          </div>
+        </div>
+
+        <!-- 最终回答内容 -->
         <div class="markdown-body" v-html="renderedContent"></div>
+
+        <!-- Token 统计 (仅 assistant 且有 tokenUsage) -->
+        <div v-if="role === 'assistant' && tokenUsage" class="token-usage">
+          <span class="usage-item">
+            <span class="usage-label">Prompt tokens:</span>
+            <span class="usage-value">{{ tokenUsage.prompt_tokens }}</span>
+          </span>
+          <span class="usage-item">
+            <span class="usage-label">Completion tokens:</span>
+            <span class="usage-value">{{ tokenUsage.completion_tokens }}</span>
+          </span>
+          <span class="usage-item">
+            <span class="usage-label">Total tokens:</span>
+            <span class="usage-value">{{ tokenUsage.total_tokens }}</span>
+          </span>
+        </div>
+
+        <!-- 操作按钮 (仅 assistant 消息) -->
+        <div v-if="role === 'assistant'" class="message-actions">
+          <button @click="copyContent" class="action-btn" title="复制">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+            </svg>
+          </button>
+          <button @click="retryMessage" class="action-btn" title="重试">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="23 4 23 10 17 10"></polyline>
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+            </svg>
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -202,11 +121,78 @@ export default {
     content: {
       type: String,
       required: true
+    },
+    reasoningContent: {
+      type: String,
+      default: ''
+    },
+    tokenUsage: {
+      type: Object,
+      default: null
+    },
+    messageId: {
+      type: Number,
+      default: null
+    }
+  },
+  data() {
+    return {
+      isThinkingExpanded: false  // 默认折叠
     }
   },
   computed: {
     renderedContent() {
       return md.render(this.content || '')
+    },
+    thinkingTime() {
+      // 简单估算：每 100 字符约 1 秒
+      if (this.reasoningContent) {
+        return Math.max(1, Math.round(this.reasoningContent.length / 100))
+      }
+      return 0
+    }
+  },
+  methods: {
+    toggleThinking() {
+      this.isThinkingExpanded = !this.isThinkingExpanded
+    },
+    copyContent() {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(this.content).then(() => {
+          if (window.$message) {
+            window.$message.success('已复制到剪贴板')
+          } else {
+            alert('已复制到剪贴板')
+          }
+        }).catch(() => {
+          this.fallbackCopy()
+        })
+      } else {
+        this.fallbackCopy()
+      }
+    },
+    fallbackCopy() {
+      // 降级方案
+      const textarea = document.createElement('textarea')
+      textarea.value = this.content
+      textarea.style.position = 'fixed'
+      textarea.style.opacity = '0'
+      document.body.appendChild(textarea)
+      textarea.select()
+      try {
+        document.execCommand('copy')
+        if (window.$message) {
+          window.$message.success('已复制到剪贴板')
+        } else {
+          alert('已复制到剪贴板')
+        }
+      } catch (err) {
+        console.error('复制失败:', err)
+      }
+      document.body.removeChild(textarea)
+    },
+    retryMessage() {
+      this.$emit('retry', this.messageId)
     }
   }
 }
@@ -250,23 +236,133 @@ export default {
 
 .content-column {
   flex: 1;
-  min-width: 0; /* Prevent overflow */
+  min-width: 0;
 }
 
 .sender-name {
   font-weight: 600;
   font-size: 0.9rem;
-  margin-bottom: 4px;
+  margin-bottom: 8px;
   color: var(--text-primary);
 }
 
+/* 深度思考区域样式 - 参考 DeepSeek 官网 */
+.thinking-section {
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+  border: 1px solid #bae6fd;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+
+.thinking-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #0369a1;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.2s;
+}
+
+.thinking-header:hover {
+  background-color: rgba(186, 230, 253, 0.3);
+}
+
+.collapse-icon {
+  margin-left: auto;
+  transition: transform 0.2s;
+}
+
+.collapse-icon.expanded {
+  transform: rotate(180deg);
+}
+
+.thinking-content {
+  padding: 8px 12px 12px 12px;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: #0c4a6e;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-top: 1px solid #bae6fd;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+/* Token 统计样式 */
+.token-usage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 8px 0;
+  margin-top: 8px;
+  font-size: 0.75rem;
+  color: #64748b;
+  border-top: 1px solid #f1f5f9;
+}
+
+.usage-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.usage-label {
+  color: #94a3b8;
+}
+
+.usage-value {
+  font-weight: 600;
+  color: #475569;
+}
+
+/* 操作按钮样式 */
+.message-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.message-container:hover .message-actions {
+  opacity: 1;
+}
+
+.action-btn {
+  background: transparent;
+  border: 1px solid #e2e8f0;
+  color: #64748b;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s;
+}
+
+.action-btn:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #475569;
+}
+
+.action-btn:active {
+  transform: scale(0.95);
+}
+
+/* Markdown 内容样式 */
 .markdown-body {
   color: var(--text-primary);
   line-height: 1.6;
   font-size: 1rem;
 }
 
-/* Deep Styles for Markdown Content */
 .markdown-body :deep(h1), 
 .markdown-body :deep(h2), 
 .markdown-body :deep(h3) {
@@ -282,28 +378,29 @@ export default {
   margin-bottom: 0;
 }
 
-.markdown-body :deep(ul), .markdown-body :deep(ol) {
+.markdown-body :deep(ul), 
+.markdown-body :deep(ol) {
   padding-left: 1.5em;
   margin-bottom: 1em;
 }
 
 .markdown-body :deep(pre) {
-    background: #0d0d0d;
-    padding: 12px;
-    border-radius: 6px;
-    overflow-x: auto;
-    margin: 10px 0;
-    border: 1px solid var(--border-color);
+  background: #0d0d0d;
+  padding: 12px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 10px 0;
+  border: 1px solid var(--border-color);
 }
 
 .markdown-body :deep(code) {
-    font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
-    font-size: 0.9em;
+  font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+  font-size: 0.9em;
 }
 
 .markdown-body :deep(:not(pre) > code) {
-    background: rgba(255,255,255,0.1);
-    padding: 2px 4px;
-    border-radius: 4px;
+  background: rgba(255,255,255,0.1);
+  padding: 2px 4px;
+  border-radius: 4px;
 }
 </style>

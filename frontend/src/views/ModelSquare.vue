@@ -201,11 +201,14 @@ export default {
       return val
     },
     startChat(model) {
-      this.$store.commit('SET_SELECTED_MODEL', {
-        provider_id: this.activeProviderId,
-        model_name: model.name
+      // 跳转到模型调试页面
+      this.$router.push({
+        path: '/model-debug',
+        query: {
+          model: model.name,
+          provider: this.activeProviderId
+        }
       })
-      this.$router.push('/chat')
     },
     openEditModal(provider) {
       this.isEditing = true
