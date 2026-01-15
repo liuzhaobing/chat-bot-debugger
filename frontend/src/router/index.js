@@ -5,6 +5,7 @@ import ModelSquare from '../views/ModelSquare.vue'
 import AppsView from '../views/AppsView.vue'
 import AppDetailView from '../views/AppDetailView.vue'
 import ModelDebugView from '../views/ModelDebugView.vue'
+import VoiceCallView from '../views/VoiceCallView.vue'
 
 Vue.use(VueRouter)
 
@@ -33,6 +34,11 @@ const routes = [
         path: '/model-debug',
         name: 'ModelDebug',
         component: ModelDebugView
+    },
+    {
+        path: '/voice-call',
+        name: 'VoiceCall',
+        component: VoiceCallView
     }
 ]
 
