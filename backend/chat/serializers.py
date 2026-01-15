@@ -1,5 +1,6 @@
 from rest_framework import serializers
 import re
+import json
 from .models import Provider, LLMModel, Conversation, Message, App, AppCategory, AppType
 
 
@@ -22,9 +23,30 @@ class ProviderSerializer(serializers.ModelSerializer):
 
 class MessageSerializer(serializers.ModelSerializer):
     """消息序列化器 - 支持深度思考和 token 统计"""
+    content = serializers.SerializerMethodField()
+    
     class Meta:
         model = Message
         fields = ['id', 'role', 'content', 'reasoning_content', 'token_usage', 'created_at']
+    
+    def get_content(self, obj):
+        """
+        自动解析content字段
+        如果是JSON字符串（多模态），解析为数组
+        如果是普通字符串，直接返回
+        """
+        content = obj.content
+        if not content:
+            return ''
+        
+        # 尝试解析JSON
+        if isinstance(content, str) and content.strip().startswith('['):
+            try:
+                return json.loads(content)
+            except json.JSONDecodeError:
+                pass
+        
+        return content
 
 
 class ConversationSerializer(serializers.ModelSerializer):

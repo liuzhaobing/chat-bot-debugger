@@ -53,7 +53,7 @@
         </div>
 
         <!-- 最终回答内容 -->
-        <div class="markdown-body" v-html="renderedContent"></div>
+        <div class="markdown-body" v-html="renderedContent" @click="handleImageClick"></div>
 
         <!-- Token 统计 (仅 assistant 且有 tokenUsage) -->
         <div v-if="role === 'assistant' && tokenUsage" class="token-usage">
@@ -71,18 +71,12 @@
           </span>
         </div>
 
-        <!-- 操作按钮 (仅 assistant 消息) -->
-        <div v-if="role === 'assistant'" class="message-actions">
+        <!-- 操作按钮 (复制 消息) -->
+        <div class="message-actions">
           <button @click="copyContent" class="action-btn" title="复制">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
               <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-            </svg>
-          </button>
-          <button @click="retryMessage" class="action-btn" title="重试">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="23 4 23 10 17 10"></polyline>
-              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
             </svg>
           </button>
         </div>
@@ -119,7 +113,7 @@ export default {
       required: true
     },
     content: {
-      type: String,
+      type: [String, Array],  // 支持字符串或数组（多模态）
       required: true
     },
     reasoningContent: {
@@ -142,6 +136,23 @@ export default {
   },
   computed: {
     renderedContent() {
+      // 处理多模态内容
+      if (Array.isArray(this.content)) {
+        let htmlParts = []
+        for (const item of this.content) {
+          if (item.type === 'text') {
+            htmlParts.push(md.render(item.text || ''))
+          } else if (item.type === 'image_url') {
+            const imageUrl = item.image_url?.url || ''
+            if (imageUrl) {
+              // 用户消息中的图片显示为缩略图样式
+              htmlParts.push(`<div class="message-image-wrapper"><img src="${imageUrl}" class="message-image-thumbnail" alt="User uploaded image" /></div>`)
+            }
+          }
+        }
+        return htmlParts.join('')
+      }
+      // 处理纯文本内容
       return md.render(this.content || '')
     },
     thinkingTime() {
@@ -156,25 +167,44 @@ export default {
     toggleThinking() {
       this.isThinkingExpanded = !this.isThinkingExpanded
     },
+    handleImageClick(e) {
+      // 点击图片时放大显示
+      if (e.target.classList.contains('message-image-thumbnail')) {
+        const imageUrl = e.target.src
+        this.$emit('preview-image', imageUrl)
+      }
+    },
     copyContent() {
+      // 提取纯文本内容用于复制
+      let textContent = ''
+      if (Array.isArray(this.content)) {
+        for (const item of this.content) {
+          if (item.type === 'text') {
+            textContent += item.text || ''
+          }
+        }
+      } else {
+        textContent = this.content
+      }
+      
       if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(this.content).then(() => {
+        navigator.clipboard.writeText(textContent).then(() => {
           if (window.$message) {
             window.$message.success('已复制到剪贴板')
           } else {
             alert('已复制到剪贴板')
           }
         }).catch(() => {
-          this.fallbackCopy()
+          this.fallbackCopy(textContent)
         })
       } else {
-        this.fallbackCopy()
+        this.fallbackCopy(textContent)
       }
     },
-    fallbackCopy() {
+    fallbackCopy(text) {
       // 降级方案
       const textarea = document.createElement('textarea')
-      textarea.value = this.content
+      textarea.value = text || this.content
       textarea.style.position = 'fixed'
       textarea.style.opacity = '0'
       document.body.appendChild(textarea)
@@ -190,9 +220,6 @@ export default {
         console.error('复制失败:', err)
       }
       document.body.removeChild(textarea)
-    },
-    retryMessage() {
-      this.$emit('retry', this.messageId)
     }
   }
 }
@@ -402,5 +429,42 @@ export default {
   background: rgba(255,255,255,0.1);
   padding: 2px 4px;
   border-radius: 4px;
+}
+
+/* 多模态消息中的图片样式 */
+.message-image-wrapper {
+  margin: 12px 0;
+  display: inline-block;
+}
+
+/* 缩略图样式 - 正方形，类似上传预览 */
+.markdown-body :deep(.message-image-thumbnail) {
+  width: 80px;
+  height: 80px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+  display: block;
+}
+
+.markdown-body :deep(.message-image-thumbnail:hover) {
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* 保留原有的大图样式，以防需要 */
+.message-image {
+  max-width: 100%;
+  max-height: 400px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.message-image:hover {
+  transform: scale(1.02);
 }
 </style>

@@ -84,7 +84,7 @@
               
               <div class="param-test-value">
                 <label>测试值:</label>
-                <input 
+                <textarea
                   v-model="parameterTestValues[param.name]" 
                   :placeholder="`输入 ${param.name} 的测试值`"
                   class="test-value-input"
@@ -96,6 +96,8 @@
                   <input type="checkbox" :checked="param.isRequired" @change="toggleRequired(param.name)" />
                   <span>必填参数</span>
                 </label>
+              </div>
+              <div class="param-footer">
                 <div class="param-default" v-if="param.default">
                   默认值: <code>{{ param.default }}</code>
                 </div>
@@ -165,6 +167,8 @@
           :key="index"
           :role="msg.role"
           :content="msg.content"
+          :reasoning-content="msg.reasoning_content"
+          :token-usage="msg.usage"
         />
         <div v-if="isStreaming" class="streaming-indicator">
            <span class="dot"></span>
@@ -220,7 +224,7 @@
             </div>
             <div class="input-group">
               <label>默认值</label>
-              <input v-model="editParamForm.default" placeholder="可选，设置参数的默认值" />
+              <textarea v-model="editParamForm.default" placeholder="可选，设置参数的默认值" />
             </div>
           </div>
           <div class="modal-footer">
@@ -511,6 +515,7 @@ export default {
       if (this.isStreaming || !this.userInput.trim()) return
       
       const modelName = this.selectedModel ? this.selectedModel.model_name : this.app.model_name
+      const providerId = this.selectedModel ? this.selectedModel.provider_id : null
       if (!modelName) {
         window.$message.warning('请选择一个模型进行调试')
         return
@@ -522,7 +527,7 @@ export default {
       this.scrollToBottom()
 
       this.isStreaming = true
-      let assistantMsg = { role: 'assistant', content: '' }
+      let assistantMsg = { role: 'assistant', content: '', reasoning_content: '', usage: null }
       this.messages.push(assistantMsg)
 
       try {
@@ -538,6 +543,7 @@ export default {
             { role: 'system', content: finalSystemPrompt },
             ...this.messages.slice(0, -1)
           ],
+          provider_id: providerId,
           model: modelName,
           temperature: this.currentTemperature,
           stream: true
@@ -571,8 +577,15 @@ export default {
               if (jsonStr === '[DONE]') continue
               try {
                 const data = JSON.parse(jsonStr)
+                if (data.choices && data.choices[0].delta.reasoning_content) {
+                  assistantMsg.reasoning_content += data.choices[0].delta.reasoning_content
+                }
                 if (data.choices && data.choices[0].delta.content) {
                   assistantMsg.content += data.choices[0].delta.content
+                }
+                // 收集 usage 信息
+                if (data.usage) {
+                  assistantMsg.usage = data.usage
                 }
               } catch (e) {
                 // 忽略流式解析错误

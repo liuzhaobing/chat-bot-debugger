@@ -107,57 +107,17 @@
            <h3>{{ model.display_name || model.name }}</h3>
            <p>输入问题开始调试模型</p>
         </div>
-        <div 
+        <message-item 
           v-for="(msg, index) in messages" 
           :key="index"
-          class="message-wrapper"
-        >
-          <!-- 用户消息 -->
-          <message-item 
-            v-if="msg.role === 'user'"
-            :role="msg.role"
-            :content="msg.content"
-          />
-          
-          <!-- 助手消息（支持思考模式） -->
-          <div v-else-if="msg.role === 'assistant'" class="assistant-message-container">
-            <!-- 思考内容 -->
-            <div v-if="msg.reasoning_content" class="thinking-section">
-              <div class="thinking-header">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
-                <span>Deep thinking</span>
-              </div>
-              <div class="thinking-content">{{ msg.reasoning_content }}</div>
-            </div>
-            
-            <!-- 最终回答 -->
-            <message-item 
-              v-if="msg.content"
-              :role="msg.role"
-              :content="msg.content"
-            />
-          </div>
-        </div>
-        
+          :role="msg.role"
+          :content="msg.content"
+          :reasoning-content="msg.reasoning_content"
+          :token-usage="msg.usage"
+        />
         <div v-if="isStreaming" class="streaming-indicator">
            <span class="dot"></span>
            {{ streamingPhase === 'reasoning' ? '深度思考中...' : '生成回答中...' }}
-        </div>
-        
-        <!-- Token 统计 -->
-        <div v-if="lastTokenUsage" class="token-usage">
-          <div class="usage-item">
-            <span class="usage-label">Prompt tokens:</span>
-            <span class="usage-value">{{ lastTokenUsage.prompt_tokens }}</span>
-          </div>
-          <div class="usage-item">
-            <span class="usage-label">Completion tokens:</span>
-            <span class="usage-value">{{ lastTokenUsage.completion_tokens }}</span>
-          </div>
-          <div class="usage-item">
-            <span class="usage-label">Total tokens:</span>
-            <span class="usage-value">{{ lastTokenUsage.total_tokens }}</span>
-          </div>
         </div>
       </div>
 
@@ -179,7 +139,6 @@
 
 <script>
 import MessageItem from '../components/MessageItem.vue'
-import { mapState } from 'vuex'
 
 export default {
   name: 'ModelDebugView',
@@ -188,28 +147,24 @@ export default {
     return {
       model: null,
       providerName: '',
+      providerId: null,
       userInput: '',
       messages: [],
       isStreaming: false,
       streamingPhase: '', // 'reasoning' or 'content'
-      lastTokenUsage: null, // token统计
-      currentMessageIndex: -1, // 当前正在流式更新的消息索引
       
       // 配置参数
-      systemPrompt: '你是一个专业的AI助手，请根据用户的问题提供准确、有帮助的回答。',
+      systemPrompt: 'You are a helpful assistant.',
       temperature: 0.7,
       topP: 0.9,
-      maxTokens: 2000,
+      maxTokens: 1024,
       enableThinking: false
     }
   },
-  computed: {
-    ...mapState(['providers'])
-  },
   methods: {
-    loadModel() {
+    async loadModel() {
       const modelName = this.$route.query.model
-      const providerId = parseInt(this.$route.query.provider)
+      const providerId = this.$route.query.provider
       
       if (!modelName || !providerId) {
         window.$message.error('缺少模型参数')
@@ -217,23 +172,35 @@ export default {
         return
       }
       
-      // 从 providers 中查找模型
-      const provider = this.providers.find(p => p.id === providerId)
-      if (!provider) {
-        window.$message.error('未找到提供商')
+      try {
+        // 直接从后端获取 provider 信息，不依赖 Vuex
+        const response = await fetch('/api/providers/')
+        if (!response.ok) {
+          throw new Error('Failed to fetch providers')
+        }
+        const providers = await response.json()
+        
+        const provider = providers.find(p => p.id === providerId)
+        if (!provider) {
+          window.$message.error('未找到提供商')
+          this.$router.push('/')
+          return
+        }
+        
+        this.providerName = provider.name
+        const model = provider.models.find(m => m.name === modelName)
+        if (!model) {
+          window.$message.error('未找到模型')
+          this.$router.push('/')
+          return
+        }
+        
+        this.model = { ...model }
+        this.providerId = providerId
+      } catch (e) {
+        window.$message.error('加载模型信息失败')
         this.$router.push('/')
-        return
       }
-      
-      this.providerName = provider.name
-      const model = provider.models.find(m => m.name === modelName)
-      if (!model) {
-        window.$message.error('未找到模型')
-        this.$router.push('/')
-        return
-      }
-      
-      this.model = { ...model, provider_id: providerId }
     },
     
     async sendTestMessage() {
@@ -245,11 +212,12 @@ export default {
       this.scrollToBottom()
 
       this.isStreaming = true
-      let assistantMsg = { role: 'assistant', content: '', reasoning_content: '' }
+      let assistantMsg = { role: 'assistant', content: '', reasoning_content: '', usage: null }
       this.messages.push(assistantMsg)
 
       try {
         const payload = {
+          provider_id: this.providerId,
           messages: [
             { role: 'system', content: this.systemPrompt },
             ...this.messages.slice(0, -1)
@@ -298,6 +266,10 @@ export default {
                 }
                 if (data.choices && data.choices[0].delta.content) {
                   assistantMsg.content += data.choices[0].delta.content
+                }
+                // 收集 usage 信息（通常在最后一个 chunk）
+                if (data.usage) {
+                  assistantMsg.usage = data.usage
                 }
               } catch (e) {
                 // 忽略流式解析错误

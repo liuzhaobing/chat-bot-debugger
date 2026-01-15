@@ -261,9 +261,14 @@ class ConversationViewSet(viewsets.ModelViewSet):
         if not model_name:
             return Response({"error": "必须提供 model 参数"}, status=status.HTTP_400_BAD_REQUEST)
         
-        # 获取 Provider 和 Model
+        # 获取 Provider 和 Model（需要同时匹配 provider_id 和 model_name）
         try:
-            llm_model = LLMModel.objects.get(name=model_name)
+            # 从之前的消息中获取 provider_id，或从请求参数中获取
+            provider_id = request.data.get('provider_id')
+            if not provider_id:
+                return Response({"error": "必须提供 provider_id 参数"}, status=status.HTTP_400_BAD_REQUEST)
+            
+            llm_model = LLMModel.objects.get(name=model_name, provider_id=provider_id)
             provider = llm_model.provider
         except LLMModel.DoesNotExist:
             return Response({"error": "模型不存在"}, status=status.HTTP_400_BAD_REQUEST)
@@ -354,6 +359,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
 
 class ChatCompletionView(APIView):
     def post(self, request):
+        provider_id = request.data.get('provider_id')
         conversation_id = request.data.get('conversation_id')
         model_name = request.data.get('model')
         temperature = request.data.get('temperature')
@@ -391,7 +397,10 @@ class ChatCompletionView(APIView):
                     break
         if user_msg:
             content = user_msg.get('content')
-            # 只存content本身，字符串直接存，list直接存（由Django自动序列化）
+            # 如果content是list（多模态），需要转为JSON字符串存储
+            if isinstance(content, list):
+                content = json.dumps(content, ensure_ascii=False)
+            # 字符串直接存
             Message.objects.create(
                 conversation=conversation,
                 role='user',
@@ -407,12 +416,15 @@ class ChatCompletionView(APIView):
         else:
             messages_payload = []
 
-        # 4. Get Provider and Model Config
+        # 4. Get Provider and Model Config（必须同时匹配 provider_id 和 model_name）
+        if not provider_id:
+            return Response({"error": "provider_id is required"}, status=400)
+        
         try:
-            llm_model = LLMModel.objects.get(name=model_name)
+            llm_model = LLMModel.objects.get(name=model_name, provider_id=provider_id)
             provider = llm_model.provider
         except LLMModel.DoesNotExist:
-            return Response({"error": "Model not found"}, status=400)
+            return Response({"error": f"Model '{model_name}' not found for provider {provider_id}"}, status=400)
 
         # 5. Call Upstream API (OpenAI Compatible)
         headers = {
@@ -444,7 +456,6 @@ class ChatCompletionView(APIView):
             if isinstance(enable_thinking, bool):
                 payload['extra_body'] = {"enable_thinking": enable_thinking}
         
-        print("payload:", json.dumps(payload, ensure_ascii=False, indent=4))
         try:
             response = requests.post(
                 f"{provider.base_url}/chat/completions",
@@ -482,11 +493,11 @@ class ChatCompletionView(APIView):
                                     
                                     # 获取思考内容
                                     if 'reasoning_content' in delta:
-                                        reasoning_content += delta['reasoning_content']
+                                        reasoning_content += delta['reasoning_content'] if delta['reasoning_content'] else ''
                                     
                                     # 获取最终回答
                                     if 'content' in delta:
-                                        assistant_content += delta['content']
+                                        assistant_content += delta['content'] if delta['content'] else ''
                                 
                                 # 解析 token 使用量
                                 if 'usage' in data:

@@ -82,13 +82,18 @@ export default new Vuex.Store({
             }
             state.messages.push(msg)
         },
-        UPDATE_LAST_MESSAGE(state, content, reasoning_content) {
+        UPDATE_LAST_MESSAGE(state, { content, reasoning_content, usage }) {
             if (state.messages.length > 0) {
                 const index = state.messages.length - 1
                 const lastMsg = state.messages[index]
                 if (lastMsg.role === 'assistant') {
                     // Create a new object to ensure reactivity
-                    const newMsg = { ...lastMsg, content: content, reasoning_content: reasoning_content }
+                    const newMsg = { 
+                        ...lastMsg, 
+                        content: content, 
+                        reasoning_content: reasoning_content,
+                        usage: usage || lastMsg.usage
+                    }
                     // Use splice to trigger array reactivity in Vue 2
                     state.messages.splice(index, 1, newMsg)
                 }
@@ -217,7 +222,7 @@ export default new Vuex.Store({
             commit('SET_INPUT_MESSAGE', '')
 
             // 预置assistant消息用于流式更新
-            const assistantMsg = { role: 'assistant', content: '', created_at: new Date().toISOString() }
+            const assistantMsg = { role: 'assistant', content: '', reasoning_content: '', usage: null, created_at: new Date().toISOString() }
             commit('ADD_MESSAGE', assistantMsg)
             commit('SET_STREAMING', true)
 
@@ -253,6 +258,7 @@ export default new Vuex.Store({
                 const decoder = new TextDecoder()
                 let assistantContent = ''
                 let assistantReasoningContent = ''
+                let assistantUsage = null
                 let buffer = ''
                 for (; ;) {
                     const { done, value } = await reader.read()
@@ -269,11 +275,28 @@ export default new Vuex.Store({
                                 const data = JSON.parse(jsonStr)
                                 if (data.choices && data.choices[0].delta.reasoning_content) {
                                     assistantReasoningContent += data.choices[0].delta.reasoning_content
-                                    commit('UPDATE_LAST_MESSAGE', assistantContent, assistantReasoningContent)
+                                    commit('UPDATE_LAST_MESSAGE', { 
+                                        content: assistantContent, 
+                                        reasoning_content: assistantReasoningContent,
+                                        usage: assistantUsage
+                                    })
                                 }
                                 if (data.choices && data.choices[0].delta.content) {
                                     assistantContent += data.choices[0].delta.content
-                                    commit('UPDATE_LAST_MESSAGE', assistantContent, assistantReasoningContent)
+                                    commit('UPDATE_LAST_MESSAGE', { 
+                                        content: assistantContent, 
+                                        reasoning_content: assistantReasoningContent,
+                                        usage: assistantUsage
+                                    })
+                                }
+                                // 收集 usage 信息（通常在最后一个 chunk）
+                                if (data.usage) {
+                                    assistantUsage = data.usage
+                                    commit('UPDATE_LAST_MESSAGE', { 
+                                        content: assistantContent, 
+                                        reasoning_content: assistantReasoningContent,
+                                        usage: assistantUsage
+                                    })
                                 }
                             } catch (e) {
                                 // 忽略流式解析错误
@@ -289,7 +312,7 @@ export default new Vuex.Store({
                 }
             } catch (e) {
                 console.error("Streaming error", e)
-                commit('UPDATE_LAST_MESSAGE', `Error: ${e.message}`, '')
+                commit('UPDATE_LAST_MESSAGE', { content: `Error: ${e.message}`, reasoning_content: '', usage: null })
             } finally {
                 commit('SET_STREAMING', false)
             }

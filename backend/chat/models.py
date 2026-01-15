@@ -1,5 +1,6 @@
 import json
 import re
+import uuid
 from django.db import models
 from django.core.exceptions import ValidationError
 
@@ -8,10 +9,16 @@ class Provider(models.Model):
     LLM 提供商模型
     存储 API 提供商的基本信息和认证凭据
     """
+    id = models.CharField(max_length=32, primary_key=True, editable=False)
     name = models.CharField(max_length=100, unique=True)
     base_url = models.URLField(default="https://api.openai.com/v1")
     api_key = models.CharField(max_length=255, blank=True, help_text="API Key for the provider")
     is_active = models.BooleanField(default=True)
+
+    def save(self, *args, **kwargs):
+        if not self.id:
+            self.id = uuid.uuid4().hex
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.name
@@ -22,9 +29,15 @@ class LLMModel(models.Model):
     LLM 模型配置
     关联到具体的提供商
     """
+    id = models.CharField(max_length=32, primary_key=True, editable=False)
     provider = models.ForeignKey(Provider, on_delete=models.CASCADE, related_name='models')
     name = models.CharField(max_length=100, help_text="Model ID like gpt-4 or claude-3-opus")
     display_name = models.CharField(max_length=100, blank=True)
+
+    def save(self, *args, **kwargs):
+        if not self.id:
+            self.id = uuid.uuid4().hex
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.name
@@ -216,10 +229,11 @@ class App(models.Model):
     )
     
     # 模型和供应商配置
-    provider_id = models.IntegerField(
+    provider_id = models.CharField(
+        max_length=32,
         null=True,
         blank=True,
-        help_text="使用的供应商ID"
+        help_text="使用的供应商ID（UUID格式）"
     )
     model_name = models.CharField(
         max_length=100,

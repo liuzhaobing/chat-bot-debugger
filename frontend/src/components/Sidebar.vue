@@ -1,43 +1,37 @@
 <template>
   <div class="sidebar" :class="{ collapsed: isSidebarCollapsed }">
     <div class="sidebar-top-controls">
-      <button class="icon-btn" @click="toggleCollapse" :title="isSidebarCollapsed ? '展开侧边栏' : '收起侧边栏'">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
-      </button>
-      <button v-if="!isSidebarCollapsed" @click="newChat" class="icon-btn" title="新聊天">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
-      </button>
-    </div>
-
-    <div class="sidebar-header" v-if="!isSidebarCollapsed">
-      <button @click="newChat" class="new-chat-btn">
+      <button v-if="!isSidebarCollapsed" @click="newChat" class="new-chat-btn">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
         <span>新聊天</span>
       </button>
+      <button class="icon-btn collapse-btn" @click="toggleCollapse" :title="isSidebarCollapsed ? '展开侧边栏' : '收起侧边栏'">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
+      </button>
     </div>
 
-    <!-- Collapsed icons only -->
+    <!-- Collapsed icons only - 隐藏对话图标 -->
     <div class="collapsed-icons" v-if="isSidebarCollapsed">
       <button @click="newChat" class="collapsed-nav-item" title="新聊天">
         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
       </button>
-      <router-link to="/chat" class="collapsed-nav-item" title="对话">
+      <!-- <router-link to="/chat" class="collapsed-nav-item" title="对话">
         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-      </router-link>
+      </router-link> -->
     </div>
 
-    <!-- Navigation Section -->
-    <div class="nav-section" v-if="!isSidebarCollapsed">
+    <!-- Navigation Section - 隐藏，因为只有对话功能 -->
+    <!-- <div class="nav-section" v-if="!isSidebarCollapsed">
       <router-link to="/chat" class="nav-item" exact-active-class="active">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
         <span>对话</span>
       </router-link>
-    </div>
+    </div> -->
     
     <div class="history-container" v-if="!isSidebarCollapsed">
       <div class="section-header" @click="isHistoryCollapsed = !isHistoryCollapsed">
         <span class="section-title">你的聊天</span>
-        <svg class="chevron-icon" :class="{ collapsed: isHistoryCollapsed }" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+        <svg class="chevron-icon" :class="{ collapsed: isHistoryCollapsed }" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
       </div>
       
       <div 
@@ -73,25 +67,6 @@
       </div>
     </div>
 
-    <div class="sidebar-footer" v-if="!isSidebarCollapsed">
-      <button @click="toggleTheme" class="footer-btn" :title="theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'">
-        <svg v-if="theme === 'dark'" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-        <svg v-else xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-        <span>{{ theme === 'dark' ? 'Light Mode' : 'Dark Mode' }}</span>
-      </button>
-
-    </div>
-
-
-    <!-- Redesigned Toggle Button -->
-    <div class="toggle-wrapper" :class="{ collapsed: isSidebarCollapsed }">
-      <button class="edge-toggle-btn" @click="toggleCollapse" :title="isSidebarCollapsed ? '展开侧边栏' : '收起侧边栏'">
-        <div class="toggle-icon-container">
-            <svg v-if="!isSidebarCollapsed" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
-            <svg v-else xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
-        </div>
-      </button>
-    </div>
   </div>
 </template>
 
@@ -127,10 +102,6 @@ export default {
         if(confirm("Delete this chat?")) {
             await this.$store.dispatch('deleteConversation', id)
         }
-    },
-    toggleTheme() {
-        const newTheme = this.theme === 'dark' ? 'light' : 'dark'
-        this.$store.commit('SET_THEME', newTheme)
     },
     handleScroll(e) {
       const { scrollTop, clientHeight, scrollHeight } = e.target
@@ -181,12 +152,12 @@ export default {
 <style scoped>
 .sidebar {
   width: 260px;
-  background-color: var(--bg-secondary);
+  background-color: #ffffff;
   display: flex;
   flex-direction: column;
   height: 100vh;
   min-height: 0;
-  border-right: 1px solid var(--border-color);
+  border-right: 1px solid #f1f5f9;
   transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   box-sizing: border-box;
   position: relative;
@@ -198,52 +169,31 @@ export default {
 }
 
 .sidebar-top-controls {
-  padding: 12px;
+  padding: 16px;
   display: flex;
   justify-content: space-between;
   align-items: center;
   flex-shrink: 0;
-  height: 56px;
+  min-height: 64px;
   box-sizing: border-box;
+  border-bottom: 1px solid #f1f5f9;
 }
 
 .sidebar.collapsed .sidebar-top-controls {
   justify-content: center;
-}
-
-.icon-btn {
-  background: transparent;
-  border: none;
-  color: var(--text-secondary);
-  cursor: pointer;
-  padding: 8px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-}
-
-.icon-btn:hover {
-  background-color: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.sidebar-header {
-  padding: 0 12px 12px 12px;
-  flex-shrink: 0;
+  padding: 12px;
 }
 
 .new-chat-btn {
-  width: 100%;
+  flex: 1;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px;
+  padding: 10px 14px;
   border: none;
   border-radius: 8px;
   background: transparent;
-  color: var(--text-primary);
+  color: #1e293b;
   cursor: pointer;
   transition: all 0.2s ease;
   font-size: 0.9rem;
@@ -251,8 +201,30 @@ export default {
 }
 
 .new-chat-btn:hover {
-  background-color: var(--bg-hover);
-  border-color: var(--border-color);
+  background-color: #f8fafc;
+}
+
+.icon-btn {
+  background: transparent;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.icon-btn:hover {
+  background-color: #f8fafc;
+  color: #1e293b;
+}
+
+.collapse-btn {
+  margin-left: 8px;
 }
 
 .collapsed-icons {
@@ -270,7 +242,7 @@ export default {
   align-items: center;
   justify-content: center;
   border-radius: 8px;
-  color: var(--text-secondary);
+  color: #64748b;
   cursor: pointer;
   transition: all 0.2s;
   text-decoration: none;
@@ -279,8 +251,8 @@ export default {
 }
 
 .collapsed-nav-item:hover {
-  background-color: var(--bg-hover);
-  color: var(--text-primary);
+  background-color: #f8fafc;
+  color: #1e293b;
 }
 
 .nav-section {
@@ -296,45 +268,48 @@ export default {
     gap: 12px;
     padding: 10px 12px;
     border-radius: 8px;
-    color: var(--text-primary);
+    color: #1e293b;
     text-decoration: none;
     font-size: 0.9rem;
     transition: background-color 0.2s;
 }
 
 .nav-item:hover {
-    background-color: var(--bg-hover);
+    background-color: #f8fafc;
 }
 
 .nav-item.active {
-    background-color: var(--bg-surface);
+    background-color: #eef2ff;
+    color: #4f46e5;
 }
 
 .section-header {
-  padding: 12px 16px 8px 16px;
+  padding: 16px 16px 12px 16px;
   display: flex;
   align-items: center;
-  justify-content: flex-start;
-  gap: 6px;
+  justify-content: space-between;
   cursor: pointer;
-  transition: opacity 0.2s;
+  transition: all 0.2s;
+  border-radius: 8px;
+  margin: 0 8px;
 }
 
 .section-header:hover {
-  opacity: 0.8;
+  background-color: #f8fafc;
 }
 
 .section-title {
-  font-size: 0.75rem;
-  font-weight: 500;
-  color: var(--text-tertiary);
-  letter-spacing: 0.02em;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #64748b;
+  letter-spacing: 0.01em;
 }
 
 .chevron-icon {
-  color: var(--text-tertiary);
+  color: #94a3b8;
   transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   transform: rotate(0deg);
+  flex-shrink: 0;
 }
 
 .chevron-icon.collapsed {
@@ -352,38 +327,39 @@ export default {
   flex: 1;
   overflow-y: auto;
   min-height: 0;
-  padding: 0 12px;
+  padding: 4px 8px 8px 8px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  scrollbar-width: auto; /* Ensure scrollbar is visible */
-  scrollbar-color: var(--border-color) transparent;
+  gap: 2px;
+  scrollbar-width: thin;
+  scrollbar-color: #e2e8f0 transparent;
 }
 
 .history-list::-webkit-scrollbar {
-  width: 4px;
+  width: 6px;
 }
 .history-list::-webkit-scrollbar-track {
   background: transparent;
 }
 .history-list::-webkit-scrollbar-thumb {
-  background: var(--border-color);
+  background: #e2e8f0;
   border-radius: 10px;
 }
 
 .history-item {
-  padding: 10px 12px;
+  padding: 12px 14px;
   cursor: pointer;
   border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  font-size: 0.9rem;
-  color: var(--text-primary);
-  transition: background-color 0.2s;
+  gap: 12px;
+  font-size: 0.875rem;
+  color: #475569;
+  transition: all 0.2s;
   position: relative;
   overflow: hidden;
+  min-height: 44px;
 }
 
 .item-content {
@@ -400,19 +376,22 @@ export default {
 }
 
 .history-item:hover {
-  background-color: var(--bg-hover);
+  background-color: #f1f5f9;
 }
 
 .history-item.active {
-  background-color: var(--bg-surface);
+  background-color: #eef2ff;
+  color: #4f46e5;
   font-weight: 500;
+  border-left: 3px solid #4f46e5;
+  padding-left: 11px;
 }
 
 .delete-btn {
     display: none;
     background: none;
     border: none;
-    color: var(--text-tertiary);
+    color: #94a3b8;
     cursor: pointer;
     padding: 4px;
     border-radius: 4px;
@@ -424,37 +403,20 @@ export default {
     display: flex;
 }
 
-.sidebar-footer {
-    padding: 12px;
-    border-top: 1px solid var(--border-color);
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    flex-shrink: 0;
-}
-
-.footer-btn {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 12px;
-    border: none;
-    border-radius: 8px;
-    background: transparent;
-    color: var(--text-primary);
-    cursor: pointer;
-    transition: background-color 0.2s;
-    font-size: 0.9rem;
-    text-align: left;
-}
-
-.footer-btn:hover {
-    background-color: var(--bg-hover);
+.delete-btn:hover {
+    background-color: #fee2e2;
+    color: #ef4444;
 }
 
 .loading-more {
   display: none;
+}
+
+.empty-history {
+  padding: 32px 20px;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 0.85rem;
 }
 
 /* Skeleton Loader Styles */
@@ -475,7 +437,7 @@ export default {
 
 .skeleton-text {
     height: 14px;
-    background: var(--bg-surface);
+    background: #f8fafc;
     border-radius: 4px;
     width: 100%;
     position: relative;
@@ -489,74 +451,12 @@ export default {
     left: 0;
     width: 100%;
     height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.05), transparent);
-    animation: placeholder-glow 1.5s infinite;
-}
-
-[data-theme="light"] .skeleton-text::after {
     background: linear-gradient(90deg, transparent, rgba(0, 0, 0, 0.03), transparent);
+    animation: placeholder-glow 1.5s infinite;
 }
 
 @keyframes placeholder-glow {
     0% { transform: translateX(-100%); }
     100% { transform: translateX(100%); }
-}
-
-/* Edge Toggle Button */
-.toggle-wrapper {
-    position: absolute;
-    right: -12px;
-    top: 50%;
-    transform: translateY(-50%);
-    z-index: 1000;
-}
-
-.toggle-wrapper.collapsed {
-    right: -24px;
-}
-
-.edge-toggle-btn {
-    background: transparent;
-    border: none;
-    cursor: pointer;
-    padding: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 100px;
-    position: relative;
-    outline: none;
-}
-
-.toggle-icon-container {
-    width: 4px;
-    height: 30px;
-    background: var(--text-tertiary);
-    border-radius: 4px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s;
-    opacity: 0.3;
-}
-
-.edge-toggle-btn:hover .toggle-icon-container {
-    opacity: 1;
-    width: 20px;
-    height: 20px;
-    background: var(--bg-surface);
-    border-radius: 50%;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-    border: 1px solid var(--border-color);
-}
-
-.edge-toggle-btn svg {
-    display: none;
-    color: var(--text-primary);
-}
-
-.edge-toggle-btn:hover svg {
-    display: block;
 }
 </style>

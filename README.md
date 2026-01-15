@@ -28,6 +28,7 @@
 - 💬 实时流式对话测试
 - 📝 自定义系统提示词
 - 🚫 调试对话不存储（纯测试用途）
+- ✅ 支持多供应商同名模型（通过 provider_id + model_name 唯一标识）
 
 ### 2. 应用类型管理
 - ✅ **Agent 1.0**: 基于 Prompt 的快速对话应用
@@ -57,14 +58,42 @@
 - 🛠️ 可作为 MCP 工具使用
 - 📋 符合 OpenAI Function Calling 规范
 
+### 7. 文本对话 ⭐ UPDATED
+- 💬 独立的文本对话页面
+- 💾 对话历史存储到数据库
+- 🎨 与模型调试页面统一的UI风格
+- 🖼️ 支持多模态输入（文本+图片）
+- 📝 简洁的侧边栏（移除主题切换）
+
 ## 📚 文档
 
 | 文档 | 说明 |
 |------|------|
+| [README.md](./README.md) | 项目主文档（本文件） |
+| [CHANGELOG.md](./CHANGELOG.md) | 更新日志 |
+| [UPGRADE_GUIDE.md](./UPGRADE_GUIDE.md) | 版本升级指南 |
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | 系统架构图和流程图 |
-| [SECURITY_AUDIT.md](./SECURITY_AUDIT.md) | 安全审计报告（评分 6.4/10） |
+| [SECURITY_AUDIT.md](./SECURITY_AUDIT.md) | 安全审计报告 |
 | [IMPLEMENTATION_GUIDE.md](./IMPLEMENTATION_GUIDE.md) | 实现和部署指南 |
-| [README_IMPLEMENTATION.md](./README_IMPLEMENTATION.md) | 实现总结（4900+ 行代码） |
+| [MODEL_DEBUG_GUIDE.md](./MODEL_DEBUG_GUIDE.md) | 模型调试功能使用指南 |
+| [PROJECT_STRUCTURE.md](./PROJECT_STRUCTURE.md) | 项目结构说明 |
+
+## 🔧 技术亮点
+
+### UUID 主键
+- Provider 和 LLMModel 使用 UUID（32位hex字符串）作为主键
+- 更好的辨识度和分布式系统兼容性
+- 避免自增ID的安全隐患
+
+### 模型唯一标识
+- 通过 `provider_id + model_name` 组合唯一标识模型
+- 支持多个供应商提供同名模型（如多个供应商都有 gpt-4）
+- 所有API调用都需要同时传递 provider_id 和 model_name
+
+### 统一UI设计
+- 模型调试、应用调试、文本对话页面采用一致的设计语言
+- 浅色主题，清爽的配色方案
+- 响应式布局，良好的用户体验
 
 ## 🏗️ 技术栈
 
