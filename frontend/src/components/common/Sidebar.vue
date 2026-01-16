@@ -82,11 +82,12 @@ export default {
     }
   },
   computed: {
-    ...mapState(['conversations', 'currentConversationId', 'theme', 'conversationsNextPage', 'conversationsLoading', 'isSidebarCollapsed'])
+    ...mapState('chatCompletion', ['conversations', 'currentConversationId', 'conversationsNextPage', 'conversationsLoading']),
+    ...mapState(['theme', 'isSidebarCollapsed'])
   },
   methods: {
     newChat() {
-      this.$store.dispatch('createNewChat')
+      this.$store.dispatch('chatCompletion/createNewChat')
       this.$nextTick(() => {
         if (this.$refs.historyList) {
           this.$refs.historyList.scrollTop = 0
@@ -94,13 +95,13 @@ export default {
       })
     },
     loadChat(id) {
-      if (id !== this.$store.state.currentConversationId) {
-        this.$store.dispatch('loadConversation', id)
+      if (id !== this.$store.state.chatCompletion.currentConversationId) {
+        this.$store.dispatch('chatCompletion/loadConversation', id)
       }
     },
     async deleteChat(id) {
         if(confirm("Delete this chat?")) {
-            await this.$store.dispatch('deleteConversation', id)
+            await this.$store.dispatch('chatCompletion/deleteConversation', id)
         }
     },
     handleScroll(e) {
@@ -112,7 +113,7 @@ export default {
     },
     loadMore() {
       if (this.conversationsNextPage && !this.conversationsLoading) {
-        this.$store.dispatch('fetchConversations', { append: true }).then(() => {
+        this.$store.dispatch('chatCompletion/fetchConversations', { append: true }).then(() => {
           // After loading, check if we're still at the bottom (e.g. if the new items didn't add enough height)
           this.$nextTick(() => {
             this.checkIfNeedsMore()

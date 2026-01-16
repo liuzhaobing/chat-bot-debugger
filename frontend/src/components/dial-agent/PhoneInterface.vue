@@ -36,26 +36,35 @@
         <div v-if="!isConnected" class="pre-call-screen">
           <!-- 顶部按钮组 -->
           <div class="top-actions">
-            <button class="icon-btn-minimal" @click="openSettings">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <circle cx="12" cy="12" r="3"></circle>
-                <path d="M12 1v6m0 6v6M5.64 5.64l4.24 4.24m4.24 4.24l4.24 4.24M1 12h6m6 0h6M5.64 18.36l4.24-4.24m4.24-4.24l4.24-4.24"></path>
-              </svg>
-            </button>
-            <button class="scenario-btn-minimal" @click="selectScenario">
+            <button 
+              class="panel-btn" 
+              :class="{ active: activePanel === 'scenario' }"
+              @click="switchPanel('scenario')"
+            >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="3" y="3" width="7" height="7" rx="1"></rect>
                 <rect x="14" y="3" width="7" height="7" rx="1"></rect>
                 <rect x="14" y="14" width="7" height="7" rx="1"></rect>
                 <rect x="3" y="14" width="7" height="7" rx="1"></rect>
               </svg>
-              <span>选择场景</span>
             </button>
-            <button class="icon-btn-minimal" @click="toggleSidebar">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
-                <circle cx="5" cy="12" r="2"></circle>
-                <circle cx="12" cy="12" r="2"></circle>
-                <circle cx="19" cy="12" r="2"></circle>
+            <button 
+              class="panel-btn" 
+              :class="{ active: activePanel === 'transcript' }"
+              @click="switchPanel('transcript')"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+              </svg>
+            </button>
+            <button 
+              class="panel-btn" 
+              :class="{ active: activePanel === 'config' }"
+              @click="switchPanel('config')"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M12 1v6m0 6v6M5.64 5.64l4.24 4.24m4.24 4.24l4.24 4.24M1 12h6m6 0h6M5.64 18.36l4.24-4.24m4.24-4.24l4.24-4.24"></path>
               </svg>
             </button>
           </div>
@@ -215,6 +224,10 @@ export default {
     audioLevel: {
       type: Number,
       default: 0
+    },
+    activePanel: {
+      type: String,
+      default: 'transcript'
     }
   },
   data() {
@@ -293,11 +306,14 @@ export default {
     toggleSidebar() {
       this.$emit('toggle-sidebar')
     },
+    switchPanel(panel) {
+      this.$emit('switch-panel', panel)
+    },
     selectScenario() {
-      alert('场景选择功能开发中...')
+      this.$emit('switch-panel', 'scenario')
     },
     openSettings() {
-      this.$emit('open-settings')
+      this.$emit('switch-panel', 'config')
     },
     animateUserAudio() {
       // 根据音频级别生成波动效果
@@ -535,29 +551,35 @@ export default {
   height: 20px;
 }
 
-.scenario-btn-minimal {
+.panel-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  border: none;
+  background: rgba(255, 255, 255, 0.4);
+  backdrop-filter: blur(10px);
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  background: rgba(255, 255, 255, 0.6);
-  backdrop-filter: blur(10px);
-  border: none;
-  border-radius: 18px;
-  color: #1e293b;
-  font-size: 14px;
-  font-weight: 500;
+  justify-content: center;
   cursor: pointer;
   transition: all 0.2s ease;
+  color: #1e293b;
 }
 
-.scenario-btn-minimal:hover {
-  background: rgba(255, 255, 255, 0.8);
+.panel-btn:hover {
+  background: rgba(255, 255, 255, 0.6);
+  transform: translateY(-2px);
 }
 
-.scenario-btn-minimal svg {
-  width: 16px;
-  height: 16px;
+.panel-btn.active {
+  background: rgba(255, 255, 255, 0.9);
+  color: #3b82f6;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+}
+
+.panel-btn svg {
+  width: 20px;
+  height: 20px;
 }
 
 .call-info {

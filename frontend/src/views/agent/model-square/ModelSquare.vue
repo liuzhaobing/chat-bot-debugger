@@ -161,7 +161,7 @@ export default {
     }
   },
   computed: {
-    ...mapState(['providers']),
+    ...mapState('modelSquare', ['providers']),
     filteredModels() {
       if (!this.activeProviderId) return []
       const provider = this.providers.find(p => p.id === this.activeProviderId)
@@ -241,7 +241,7 @@ export default {
         }
         await axios.post('/api/providers/', this.newProvider)
         this.showAddModal = false
-        await this.$store.dispatch('fetchProviders')
+        await this.$store.dispatch('modelSquare/fetchProviders')
         window.$message.success("提供商添加成功")
       } catch (e) {
         console.error(e)
@@ -255,7 +255,7 @@ export default {
         
         await axios.patch(`/api/providers/${this.editingProviderId}/`, payload)
         this.showAddModal = false
-        await this.$store.dispatch('fetchProviders')
+        await this.$store.dispatch('modelSquare/fetchProviders')
         window.$message.success("提供商已更新")
       } catch (e) {
         console.error(e)
@@ -273,7 +273,7 @@ export default {
       try {
         await axios.delete(`/api/providers/${this.editingProviderId}/`)
         this.showAddModal = false
-        await this.$store.dispatch('fetchProviders')
+        await this.$store.dispatch('modelSquare/fetchProviders')
         window.$message.success("提供商已删除")
       } catch (e) {
         console.error(e)
@@ -284,7 +284,7 @@ export default {
         try {
             const res = await axios.post(`/api/providers/${id}/refresh_models/`)
             window.$message.success(`已成功同步 ${res.data.count} 个模型！`)
-            await this.$store.dispatch('fetchProviders')
+            await this.$store.dispatch('modelSquare/fetchProviders')
         } catch (e) {
             console.error(e)
             window.$message.error('同步失败: ' + (e.response?.data?.error || e.message))
@@ -304,7 +304,7 @@ export default {
         
         try {
             await axios.delete(`/api/models/${id}/`)
-            await this.$store.dispatch('fetchProviders')
+            await this.$store.dispatch('modelSquare/fetchProviders')
             window.$message.success("模型已成功删除")
         } catch (e) {
             console.error(e)

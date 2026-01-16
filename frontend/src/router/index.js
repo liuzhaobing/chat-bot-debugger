@@ -1,11 +1,11 @@
 import Vue from 'vue'
 import VueRouter from 'vue-router'
-import ChatArea from '../components/ChatArea.vue'
-import ModelSquare from '../views/ModelSquare.vue'
-import AppsView from '../views/AppsView.vue'
-import AppDetailView from '../views/AppDetailView.vue'
-import ModelDebugView from '../views/ModelDebugView.vue'
-import VoiceCallView from '../views/VoiceCallView.vue'
+import ChatArea from '../components/chat-completion/ChatArea.vue'
+import ModelSquare from '../views/agent/model-square/ModelSquare.vue'
+import AppsView from '../views/agent/app-square/AppsView.vue'
+import AppDetailView from '../views/agent/app-square/AppDetailView.vue'
+import ModelDebugView from '../views/agent/model-square/ModelDebugView.vue'
+import VoiceCallView from '../views/agent/dial-agent/VoiceCallView.vue'
 
 Vue.use(VueRouter)
 

@@ -22,9 +22,9 @@
 </template>
 
 <script>
-import MainSidebar from './components/MainSidebar.vue'
-import Sidebar from './components/Sidebar.vue'
-import ModelSelector from './components/ModelSelector.vue'
+import MainSidebar from './components/common/MainSidebar.vue'
+import Sidebar from './components/common/Sidebar.vue'
+import ModelSelector from './components/model-square/ModelSelector.vue'
 import GlobalToast from './components/common/GlobalToast.vue'
 import GlobalConfirm from './components/common/GlobalConfirm.vue'
 
@@ -45,12 +45,12 @@ export default {
   methods: {
     // toggleRightSidebar removed
     newChat() {
-      this.$store.dispatch('createNewChat')
+      this.$store.dispatch('chatCompletion/createNewChat')
     }
   },
   created() {
-    this.$store.dispatch('fetchProviders')
-    this.$store.dispatch('fetchConversations')
+    this.$store.dispatch('modelSquare/fetchProviders')
+    this.$store.dispatch('chatCompletion/fetchConversations')
     // Initialize theme
     const theme = this.$store.state.theme
     document.documentElement.setAttribute('data-theme', theme)

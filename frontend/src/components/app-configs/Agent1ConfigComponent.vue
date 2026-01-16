@@ -239,8 +239,8 @@
 
 <script>
 import axios from 'axios'
-import ModelSelector from '../ModelSelector.vue'
-import MessageItem from '../MessageItem.vue'
+import ModelSelector from '../model-square/ModelSelector.vue'
+import MessageItem from '../chat-completion/MessageItem.vue'
 import { mapState } from 'vuex'
 
 export default {
@@ -286,7 +286,7 @@ export default {
     }
   },
   computed: {
-    ...mapState(['selectedModel']),
+    ...mapState('modelSquare', ['selectedModel']),
     formattedFunctionSchema() {
       if (!this.app) return '{}'
       return JSON.stringify(this.app.get_function_schema || this.generateFunctionSchema(), null, 2)

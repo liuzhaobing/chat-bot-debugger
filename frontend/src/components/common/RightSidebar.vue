@@ -69,19 +69,19 @@ export default {
   },
   watch: {
     systemPrompt(val) {
-      this.$store.commit('SET_SYSTEM_PROMPT', val)
+      this.$store.commit('chatCompletion/SET_SYSTEM_PROMPT', val)
     },
     temperature(val) {
-      this.$store.commit('SET_TEMPERATURE', val)
+      this.$store.commit('chatCompletion/SET_TEMPERATURE', val)
     },
     maxTokens(val) {
-      this.$store.commit('SET_MAX_TOKENS', val)
+      this.$store.commit('chatCompletion/SET_MAX_TOKENS', val)
     }
   },
   mounted() {
-    this.systemPrompt = this.$store.state.systemPrompt || ''
-    this.temperature = this.$store.state.temperature || 0.7
-    this.maxTokens = this.$store.state.maxTokens || 1024
+    this.systemPrompt = this.$store.state.chatCompletion.systemPrompt || ''
+    this.temperature = this.$store.state.chatCompletion.temperature || 0.7
+    this.maxTokens = this.$store.state.chatCompletion.maxTokens || 1024
   },
   methods: {
     closeSidebar() {

@@ -87,7 +87,7 @@ export default {
     }
   },
   computed: {
-    ...mapState(['providers', 'selectedModel']),
+    ...mapState('modelSquare', ['providers', 'selectedModel']),
     currentModelDisplayName() {
         if (!this.selectedModel) return 'Select Model'
         // Find provider name and model display name if possible
@@ -134,7 +134,7 @@ export default {
                this.selectedModel.model_name === model.name
     },
     selectModel(providerId, model) {
-        this.$store.commit('SET_SELECTED_MODEL', {
+        this.$store.commit('modelSquare/SET_SELECTED_MODEL', {
             provider_id: providerId,
             model_name: model.name
         })
@@ -145,7 +145,7 @@ export default {
         try {
             const res = await axios.post(`/api/providers/${this.activeProviderId}/refresh_models/`)
             alert(`Synced ${res.data.count} models!`)
-            this.$store.dispatch('fetchProviders')
+            this.$store.dispatch('modelSquare/fetchProviders')
         } catch (e) {
             console.error(e)
             alert('Failed to sync: ' + JSON.stringify(e.response?.data || e.message))

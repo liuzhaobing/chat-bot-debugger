@@ -1,10 +1,10 @@
 <template>
-  <div class="transcript-container">
-    <div class="transcript-header">
+  <div class="transcript-panel">
+    <div class="panel-header">
       <h3>通话字幕</h3>
     </div>
 
-    <div class="transcript-content" ref="transcriptContent">
+    <div class="panel-content" ref="transcriptContent">
       <div v-if="transcripts.length === 0" class="empty-state">
         <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
@@ -45,7 +45,7 @@
       </div>
     </div>
 
-    <div class="transcript-footer">
+    <div class="panel-footer">
       <div class="stats">
         <span class="stat-item">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -60,7 +60,7 @@
 
 <script>
 export default {
-  name: 'CallTranscript',
+  name: 'TranscriptPanel',
   props: {
     transcripts: {
       type: Array,
@@ -69,11 +69,9 @@ export default {
   },
   methods: {
     isSipPhone(participantId) {
-      // 判断是否是 sip_phone (AI客服)
       return participantId && participantId.startsWith('sip_')
     },
     getParticipantClass(participantId) {
-      // sip_phone (AI客服) 在左侧，phone (用户) 在右侧
       return this.isSipPhone(participantId) ? 'agent-message' : 'user-message'
     },
     getParticipantName(participantId) {
@@ -110,7 +108,7 @@ export default {
 </script>
 
 <style scoped>
-.transcript-container {
+.transcript-panel {
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -120,23 +118,20 @@ export default {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
-.transcript-header {
+.panel-header {
   padding: 20px 24px;
   border-bottom: 1px solid var(--border-color);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
   background: var(--bg-primary);
 }
 
-.transcript-header h3 {
+.panel-header h3 {
   margin: 0;
   font-size: 18px;
   font-weight: 600;
   color: var(--text-primary);
 }
 
-.transcript-content {
+.panel-content {
   flex: 1;
   overflow-y: auto;
   padding: 20px;
@@ -287,7 +282,7 @@ export default {
   font-style: italic;
 }
 
-.transcript-footer {
+.panel-footer {
   padding: 16px 24px;
   border-top: 1px solid var(--border-color);
   background: var(--bg-primary);
@@ -310,21 +305,20 @@ export default {
   color: var(--text-tertiary);
 }
 
-/* 滚动条样式 */
-.transcript-content::-webkit-scrollbar {
+.panel-content::-webkit-scrollbar {
   width: 6px;
 }
 
-.transcript-content::-webkit-scrollbar-track {
+.panel-content::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.transcript-content::-webkit-scrollbar-thumb {
+.panel-content::-webkit-scrollbar-thumb {
   background: #cbd5e1;
   border-radius: 10px;
 }
 
-.transcript-content::-webkit-scrollbar-thumb:hover {
+.panel-content::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
 </style>

@@ -10,44 +10,44 @@
           :agentState="agentState"
           :userState="userState"
           :audioLevel="currentAudioLevel"
+          :activePanel="activePanel"
           @mute-toggle="handleMuteToggle"
           @transcript-toggle="handleTranscriptToggle"
           @hangup="handleHangup"
           @connect="connectToServer"
           @toggle-sidebar="toggleSidebar"
-          @open-settings="openSettings"
+          @switch-panel="switchPanel"
         />
       </div>
 
-      <!-- 右侧：通话字幕 -->
-      <div class="transcript-section" v-if="showTranscript">
-        <CallTranscript
-          :transcripts="transcripts"
+      <!-- 右侧：动态面板 -->
+      <div class="panel-section" v-if="showPanel">
+        <ScenarioPanel v-if="activePanel === 'scenario'" />
+        <TranscriptPanel v-if="activePanel === 'transcript'" :transcripts="transcripts" />
+        <ConfigPanel 
+          v-if="activePanel === 'config'" 
+          :config="config"
+          @update="handleConfigUpdate"
+          @save="handleConfigSave"
         />
       </div>
     </div>
-
-    <!-- 会话配置面板 -->
-    <SessionConfig
-      v-if="showConfig"
-      :config="config"
-      @close="showConfig = false"
-      @save="handleConfigSave"
-    />
   </div>
 </template>
 
 <script>
-import PhoneInterface from '../components/PhoneInterface.vue'
-import CallTranscript from '../components/CallTranscript.vue'
-import SessionConfig from '../components/SessionConfig.vue'
+import PhoneInterface from '../../../components/dial-agent/PhoneInterface.vue'
+import ScenarioPanel from '../../../components/dial-agent/ScenarioPanel.vue'
+import TranscriptPanel from '../../../components/dial-agent/TranscriptPanel.vue'
+import ConfigPanel from '../../../components/dial-agent/ConfigPanel.vue'
 
 export default {
   name: 'VoiceCallView',
   components: {
     PhoneInterface,
-    CallTranscript,
-    SessionConfig
+    ScenarioPanel,
+    TranscriptPanel,
+    ConfigPanel
   },
   data() {
     return {
@@ -83,18 +83,55 @@ export default {
       // 字幕数据
       transcripts: [],
       
+      // 心跳机制
+      heartbeatInterval: null,
+      heartbeatIntervalTime: 25000, // 25秒
+      
+      // 右侧面板控制
+      showPanel: true,
+      activePanel: 'transcript', // 'scenario' | 'transcript' | 'config'
+      
       // 配置
-      showConfig: false,
       config: {
         serverUrl: 'ws://118.31.127.156:8000/ws/sessions/start',
         userId: '17744270115',
         agentType: 'robam_workflow',
         configTemplate: 'ai_telephone',
-        roomId: '',
-        participantId: '',
-        welcomeMessage: '你好，我是食神，欢迎致电老板电器。',
-        systemPrompt: 'You are a helpful AI voice assistant.',
-        allowInterruptions: true
+        welcomeMessage: '你好，欢迎致电名气，有什么可以帮您？',
+        allowInterruptions: true,
+        // 音频配置
+        inputSampleRate: 16000,
+        inputChannels: 1,
+        outputSampleRate: 24000,
+        outputChannels: 1,
+        // 背景音乐配置
+        backgroundMusic: {
+          enabled: true,
+          urls: ['https://roki-ai-ckb-prod.oss-accelerate.aliyuncs.com/static/test/office_background.wav'],
+          volume: 0.05,
+          loop: true,
+          random: false
+        },
+        // 静默提醒配置
+        idleReminderConfig: {
+          enabled: true,
+          reminderContentType: 'llm',
+          message: '请问您还在吗？',
+          intervalSeconds: 20,
+          maxRemindCount: 2
+        },
+        // 插件配置
+        pluginConfigs: {
+          sileroVad: {
+            minSpeechDuration: 0.05,
+            minSilenceDuration: 0.25,
+            prefixPaddingDuration: 0.5,
+            maxBufferedSpeech: 60.0,
+            activationThreshold: 0.4,
+            sampleRate: 16000,
+            intermediateResultInterval: 320
+          }
+        }
       }
     }
   },
@@ -159,15 +196,12 @@ export default {
       this.transcripts = []
       
       try {
-        // 生成房间ID和参与者ID
-        this.config.roomId = `room_${Date.now()}`
-        this.config.participantId = `sip_${this.config.userId}`
-        
         // 连接 WebSocket
         this.websocket = new WebSocket(this.config.serverUrl)
         
         this.websocket.onopen = () => {
           this.sendInitMessage()
+          this.activePanel = 'transcript'
         }
         
         this.websocket.onmessage = (event) => {
@@ -185,6 +219,7 @@ export default {
           this.isCallActive = false
           this.stopCallDuration()
           this.stopAudioCapture()
+          this.stopHeartbeat()
           
           // 只清空音频队列，保留字幕
           this.audioStreamQueue = []
@@ -200,17 +235,61 @@ export default {
     },
     
     sendInitMessage() {
+      // 生成会话ID和房间ID
+      const sessionId = `DIAL${Date.now()}_myroki_test_com`
+      const roomId = `room_${Date.now()}`
+      const agentUserId = `sip_${this.config.userId}`
+      
       const initMessage = {
         type: 'init',
         config: {
-          room_id: this.config.roomId,
+          room_id: roomId,
+          session_id: sessionId,
           user_id: this.config.userId,
-          participant_id: this.config.participantId,
+          agent_user_id: agentUserId,
           agent_type: this.config.agentType,
           config_template: this.config.configTemplate,
-          welcome_message: this.config.welcomeMessage || '你好，我是食神，欢迎致电老板电器。',
-          system_prompt: this.config.systemPrompt || 'You are a helpful AI voice assistant.',
-          allow_interruptions: this.config.allowInterruptions ? 'true' : 'false'
+          
+          // 音频配置
+          input_sample_rate: this.config.inputSampleRate,
+          input_channels: this.config.inputChannels,
+          output_sample_rate: this.config.outputSampleRate,
+          output_channels: this.config.outputChannels,
+          
+          // 消息配置
+          welcome_message: this.config.welcomeMessage,
+          allow_interruptions: this.config.allowInterruptions,
+          
+          // 背景音乐配置
+          background_music: {
+            enabled: this.config.backgroundMusic.enabled,
+            urls: this.config.backgroundMusic.urls,
+            volume: this.config.backgroundMusic.volume,
+            loop: this.config.backgroundMusic.loop,
+            random: this.config.backgroundMusic.random
+          },
+          
+          // 静默提醒配置
+          idle_reminder_config: {
+            enabled: this.config.idleReminderConfig.enabled,
+            reminder_content_type: this.config.idleReminderConfig.reminderContentType,
+            message: this.config.idleReminderConfig.message,
+            interval_seconds: this.config.idleReminderConfig.intervalSeconds,
+            max_remind_count: this.config.idleReminderConfig.maxRemindCount
+          },
+          
+          // 插件配置
+          plugin_configs: {
+            silero_vad: {
+              min_speech_duration: this.config.pluginConfigs.sileroVad.minSpeechDuration,
+              min_silence_duration: this.config.pluginConfigs.sileroVad.minSilenceDuration,
+              prefix_padding_duration: this.config.pluginConfigs.sileroVad.prefixPaddingDuration,
+              max_buffered_speech: this.config.pluginConfigs.sileroVad.maxBufferedSpeech,
+              activation_threshold: this.config.pluginConfigs.sileroVad.activationThreshold,
+              sample_rate: this.config.pluginConfigs.sileroVad.sampleRate,
+              intermediate_result_interval: this.config.pluginConfigs.sileroVad.intermediateResultInterval
+            }
+          }
         }
       }
       
@@ -239,6 +318,8 @@ export default {
             this.isCallActive = true
             this.startCallDuration()
             this.startAudioCapture()
+            // 启动心跳
+            this.startHeartbeat()
           } else {
             alert('会话启动失败: ' + (message.message || '未知错误'))
             console.error('Session start failed:', message)
@@ -526,6 +607,7 @@ export default {
       this.isCallActive = false
       this.stopCallDuration()
       this.stopAudioCapture()
+      this.stopHeartbeat()
       
       // 只清空音频队列，保留字幕
       this.audioStreamQueue = []
@@ -560,13 +642,62 @@ export default {
       this.callDuration = 0
     },
     
-    toggleSidebar() {
-      // 可以实现侧边栏功能
-      console.log('Toggle sidebar')
+    // 心跳机制
+    startHeartbeat() {
+      // 清除已有的心跳
+      this.stopHeartbeat()
+      
+      // 启动新的心跳定时器
+      this.heartbeatInterval = setInterval(() => {
+        this.sendHeartbeat()
+      }, this.heartbeatIntervalTime)
+      
+      console.log('Heartbeat started')
     },
     
-    openSettings() {
-      this.showConfig = true
+    stopHeartbeat() {
+      if (this.heartbeatInterval) {
+        clearInterval(this.heartbeatInterval)
+        this.heartbeatInterval = null
+        console.log('Heartbeat stopped')
+      }
+    },
+    
+    sendHeartbeat() {
+      if (!this.websocket || this.websocket.readyState !== WebSocket.OPEN) {
+        return
+      }
+      
+      const heartbeatMessage = {
+        type: 'heartbeat',
+        timestamp: Date.now(),
+        data: {
+          client_time: Date.now(),
+          session_id: this.sessionId
+        }
+      }
+      
+      try {
+        this.websocket.send(JSON.stringify(heartbeatMessage))
+        console.log('Heartbeat sent')
+      } catch (error) {
+        console.error('Failed to send heartbeat:', error)
+      }
+    },
+    
+    // 右侧面板控制
+    toggleSidebar() {
+      this.showPanel = !this.showPanel
+    },
+    
+    switchPanel(panel) {
+      this.activePanel = panel
+      this.showPanel = true
+    },
+    
+    handleConfigUpdate(newConfig) {
+      // 实时更新配置（不保存）
+      this.config = { ...newConfig }
     },
     
     handleConfigSave(newConfig) {
@@ -576,6 +707,7 @@ export default {
   },
   
   beforeDestroy() {
+    this.stopHeartbeat()
     this.disconnectFromServer()
   }
 }
@@ -605,7 +737,7 @@ export default {
   gap: 16px;
 }
 
-.transcript-section {
+.panel-section {
   flex: 1;
   min-width: 0;
   display: flex;
@@ -621,7 +753,7 @@ export default {
     flex: 0 0 auto;
   }
   
-  .transcript-section {
+  .panel-section {
     flex: 1;
     min-height: 400px;
   }

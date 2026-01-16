@@ -77,11 +77,11 @@ export default {
     }
   },
   computed: {
-    ...mapState(['providers', 'providerFetchError'])
+    ...mapState('modelSquare', ['providers', 'providerFetchError'])
   },
   created() {
       this.fetchModels()
-      this.$store.dispatch('fetchProviders')
+      this.$store.dispatch('modelSquare/fetchProviders')
   },
   methods: {
     getProviderName(id) {
@@ -104,7 +104,7 @@ export default {
         const payload = { ...this.newProvider }
         await axios.post('/api/providers/', payload)
         this.newProvider = { name: '', base_url: '', api_key: '' }
-        this.$store.dispatch('fetchProviders')
+        this.$store.dispatch('modelSquare/fetchProviders')
       } catch (e) { 
         console.error(e)
         alert('Failed to add provider: ' + JSON.stringify(e.response?.data || e.message))
@@ -121,7 +121,7 @@ export default {
       if(!confirmed) return
       try {
         await axios.delete(`/api/providers/${id}/`)
-        this.$store.dispatch('fetchProviders')
+        this.$store.dispatch('modelSquare/fetchProviders')
         window.$message.success("提供商已删除")
       } catch (e) { 
           window.$message.error('删除失败') 
@@ -132,7 +132,7 @@ export default {
         await axios.post('/api/models/', this.newModel)
         this.newModel = { provider: null, name: '', display_name: '' }
         this.fetchModels()
-        this.$store.dispatch('fetchProviders') 
+        this.$store.dispatch('modelSquare/fetchProviders') 
         window.$message.success("模型添加成功")
       } catch (e) { 
           window.$message.error('模型添加失败') 
@@ -143,7 +143,7 @@ export default {
             const res = await axios.post(`/api/providers/${id}/refresh_models/`)
             window.$message.success(`成功同步 ${res.data.count} 个模型！`)
             this.fetchModels()
-            this.$store.dispatch('fetchProviders')
+            this.$store.dispatch('modelSquare/fetchProviders')
         } catch (e) {
             console.error(e)
             window.$message.error('同步同步失败')
@@ -159,7 +159,7 @@ export default {
        try {
         await axios.delete(`/api/models/${id}/`)
         this.fetchModels()
-        this.$store.dispatch('fetchProviders')
+        this.$store.dispatch('modelSquare/fetchProviders')
         window.$message.success("模型已删除")
       } catch (e) { 
           window.$message.error('删除失败') 

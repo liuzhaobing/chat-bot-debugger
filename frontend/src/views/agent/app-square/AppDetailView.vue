@@ -19,7 +19,7 @@
 
 <script>
 import axios from 'axios'
-import Agent1ConfigComponent from '../components/app-configs/Agent1ConfigComponent.vue'
+import Agent1ConfigComponent from '../../../components/app-configs/Agent1ConfigComponent.vue'
 
 export default {
   name: 'AppDetailView',

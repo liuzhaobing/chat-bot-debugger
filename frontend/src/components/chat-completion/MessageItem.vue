@@ -275,8 +275,8 @@ export default {
 
 /* 深度思考区域样式 - 参考 DeepSeek 官网 */
 .thinking-section {
-  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
-  border: 1px solid #bae6fd;
+  background: #f8f9fa;
+  border: 1px solid #e5e7eb;
   border-radius: 8px;
   margin-bottom: 12px;
   overflow: hidden;
@@ -288,15 +288,15 @@ export default {
   gap: 6px;
   padding: 8px 12px;
   font-size: 0.8rem;
-  font-weight: 600;
-  color: #0369a1;
+  font-weight: 500;
+  color: #6b7280;
   cursor: pointer;
   user-select: none;
   transition: background-color 0.2s;
 }
 
 .thinking-header:hover {
-  background-color: rgba(186, 230, 253, 0.3);
+  background-color: #f3f4f6;
 }
 
 .collapse-icon {
@@ -312,11 +312,11 @@ export default {
   padding: 8px 12px 12px 12px;
   font-size: 0.85rem;
   line-height: 1.6;
-  color: #0c4a6e;
+  color: #9ca3af;
   white-space: pre-wrap;
   word-break: break-word;
-  border-top: 1px solid #bae6fd;
-  background: rgba(255, 255, 255, 0.5);
+  border-top: 1px solid #e5e7eb;
+  background: #fafafa;
 }
 
 /* Token 统计样式 */

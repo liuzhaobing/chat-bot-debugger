@@ -138,7 +138,7 @@
 </template>
 
 <script>
-import MessageItem from '../components/MessageItem.vue'
+import MessageItem from '../../../components/chat-completion/MessageItem.vue'
 
 export default {
   name: 'ModelDebugView',

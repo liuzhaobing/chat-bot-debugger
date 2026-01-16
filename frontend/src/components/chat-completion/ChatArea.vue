@@ -73,7 +73,7 @@ export default {
     ImagePreviewModal
   },
   computed: {
-    ...mapState(['messages', 'isStreaming', 'inputMessage']),
+    ...mapState('chatCompletion', ['messages', 'isStreaming', 'inputMessage']),
     inputContent: {
       get() {
         return this.localInput
@@ -109,13 +109,13 @@ export default {
         }
         userMsg = { role: 'user', content: multimodalContent }
       }
-      let messages = this.$store.state.messages.slice()
+      let messages = this.$store.state.chatCompletion.messages.slice()
       // 过滤掉最后一条assistant空消息（流式占位）
       if (messages.length && messages[messages.length-1].role === 'assistant' && !messages[messages.length-1].content) {
         messages = messages.slice(0, -1)
       }
       messages = [...messages, userMsg]
-      this.$store.dispatch('sendMessage', messages)
+      this.$store.dispatch('chatCompletion/sendMessage', messages)
       this.localInput = ''
       this.imageBase64List = []
       this.$nextTick(() => {
