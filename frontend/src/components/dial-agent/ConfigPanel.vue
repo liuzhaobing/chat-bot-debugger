@@ -39,17 +39,13 @@
         <div class="form-group">
           <label>Agent类型</label>
           <select v-model="localConfig.agentType" @change="handleChange">
-            <option value="robam_workflow">老板电器工作流</option>
-            <option value="general">通用Agent</option>
-            <option value="custom">自定义</option>
+            <option value="robam_workflow">robam_workflow</option>
           </select>
         </div>
         <div class="form-group">
           <label>配置模板</label>
           <select v-model="localConfig.configTemplate" @change="handleChange">
-            <option value="ai_telephone">AI电话</option>
-            <option value="voice_assistant">语音助手</option>
-            <option value="customer_service">客户服务</option>
+            <option value="ai_telephone">ai_telephone</option>
           </select>
         </div>
       </div>
@@ -200,8 +196,7 @@
           <div class="form-group">
             <label>提醒内容类型</label>
             <select v-model="localConfig.idleReminderConfig.reminderContentType" @change="handleChange">
-              <option value="llm">LLM生成</option>
-              <option value="fixed">固定文本</option>
+              <option value="llm">llm</option>
             </select>
           </div>
           <div class="form-group">

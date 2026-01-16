@@ -15,8 +15,8 @@
 
       <div v-else class="transcript-list">
         <div 
-          v-for="(item, index) in transcripts" 
-          :key="index"
+          v-for="item in sortedTranscripts" 
+          :key="`${item.segment_id}_${item.participant_id}`"
           class="transcript-item"
           :class="getParticipantClass(item.participant_id)"
         >
@@ -38,6 +38,11 @@
               </div>
               <div class="message-text" :class="{ interim: !item.is_final }">
                 {{ item.text }}
+                <span v-if="!item.is_final" class="typing-dots">
+                  <span class="dot"></span>
+                  <span class="dot"></span>
+                  <span class="dot"></span>
+                </span>
               </div>
             </div>
           </div>
@@ -51,7 +56,7 @@
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
           </svg>
-          {{ transcripts.length }} 条消息
+          {{ sortedTranscripts.length }} 条消息
         </span>
       </div>
     </div>
@@ -65,6 +70,14 @@ export default {
     transcripts: {
       type: Array,
       default: () => []
+    }
+  },
+  computed: {
+    sortedTranscripts() {
+      // 按照 createTime 排序，确保字幕按照实际对话顺序显示
+      return [...this.transcripts].sort((a, b) => {
+        return (a.createTime || 0) - (b.createTime || 0)
+      })
     }
   },
   methods: {
@@ -97,7 +110,7 @@ export default {
     }
   },
   watch: {
-    transcripts: {
+    sortedTranscripts: {
       handler() {
         this.scrollToBottom()
       },
@@ -278,8 +291,46 @@ export default {
 }
 
 .message-text.interim {
+  opacity: 0.85;
+}
+
+.typing-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 4px;
+}
+
+.typing-dots .dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
   opacity: 0.6;
-  font-style: italic;
+  animation: typingDot 1.4s infinite;
+}
+
+.typing-dots .dot:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.typing-dots .dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.typing-dots .dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes typingDot {
+  0%, 60%, 100% {
+    opacity: 0.3;
+    transform: scale(0.8);
+  }
+  30% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
 }
 
 .panel-footer {

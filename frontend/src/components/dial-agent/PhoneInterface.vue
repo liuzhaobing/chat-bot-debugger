@@ -33,7 +33,7 @@
       <!-- 通话内容区域 -->
       <div class="call-content">
         <!-- 未连接状态 -->
-        <div v-if="!isConnected" class="pre-call-screen">
+        <div v-if="!isConnected && !connecting" class="pre-call-screen">
           <!-- 顶部按钮组 -->
           <div class="top-actions">
             <button 
@@ -136,7 +136,7 @@
       <!-- 底部控制按钮 -->
       <div class="call-controls">
         <button 
-          v-if="!isConnected"
+          v-if="!isConnected && !connecting"
           class="control-btn call-btn"
           @click="handleConnect"
         >
@@ -145,7 +145,18 @@
           </svg>
         </button>
 
-        <template v-else>
+        <button 
+          v-if="connecting"
+          class="control-btn call-btn connecting"
+          disabled
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <path d="M12 6v6l4 2"></path>
+          </svg>
+        </button>
+
+        <template v-if="isConnected && !connecting">
           <button 
             class="control-btn" 
             :class="{ active: isMuted }"
@@ -228,6 +239,10 @@ export default {
     activePanel: {
       type: String,
       default: 'transcript'
+    },
+    connecting: {
+      type: Boolean,
+      default: false
     }
   },
   data() {
@@ -243,11 +258,13 @@ export default {
   },
   computed: {
     connectionStatusText() {
+      if (this.connecting) return '连线中...'
       if (!this.isConnected) return '未连接'
       if (this.isCallActive) return '通话中'
       return '已连接'
     },
     statusClass() {
+      if (this.connecting) return 'connecting'
       if (!this.isConnected) return 'disconnected'
       if (this.isCallActive) return 'active'
       return 'connected'
@@ -655,6 +672,11 @@ export default {
   animation: pulse 2s infinite;
 }
 
+.connection-status.connecting .status-dot {
+  background: #f59e0b;
+  animation: pulse 0.8s infinite;
+}
+
 .connection-status.active .status-dot {
   background: #3b82f6;
   animation: pulse 1s infinite;
@@ -923,6 +945,22 @@ export default {
 .call-btn:hover {
   background: #059669;
   transform: scale(1.05);
+}
+
+.call-btn.connecting {
+  background: #f59e0b;
+  animation: connecting-pulse 1s infinite;
+}
+
+@keyframes connecting-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(0.95);
+  }
 }
 
 .hangup-btn {

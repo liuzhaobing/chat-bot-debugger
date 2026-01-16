@@ -32,11 +32,11 @@ export default {
           let targetModel = null
           let targetProviderId = null
 
-          // 1. Try to find Qwen/Qwen3-8B
+          // 1. Try to find 'qwen-vl-max'
           for (const p of res.data) {
-            const qwen = p.models.find(m => m.name === 'Qwen/Qwen3-8B')
-            if (qwen) {
-              targetModel = qwen
+            const item = p.models.find(m => m.name === 'qwen-vl-max')
+            if (item) {
+              targetModel = item
               targetProviderId = p.id
               break
             }

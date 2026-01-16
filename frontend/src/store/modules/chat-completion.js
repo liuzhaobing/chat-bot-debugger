@@ -14,7 +14,7 @@ export default {
     conversationsLoading: false,
     systemPrompt: 'You are a helpful assistant.',
     temperature: 0.7,
-    maxTokens: 1024
+    maxTokens: 4096
   },
   mutations: {
     SET_SYSTEM_PROMPT(state, prompt) {

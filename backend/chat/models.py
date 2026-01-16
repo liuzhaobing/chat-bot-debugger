@@ -48,9 +48,15 @@ class Conversation(models.Model):
     对话会话模型
     用于组织和管理消息历史
     """
+    id = models.CharField(max_length=32, primary_key=True, editable=False)
     title = models.CharField(max_length=255, blank=True, default="New Chat")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    def save(self, *args, **kwargs):
+        if not self.id:
+            self.id = uuid.uuid4().hex
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.title
@@ -68,6 +74,7 @@ class Message(models.Model):
         ('assistant', 'Assistant'),
         ('system', 'System'),
     )
+    id = models.CharField(max_length=32, primary_key=True, editable=False)
     conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name='messages')
     role = models.CharField(max_length=20, choices=ROLE_CHOICES)
     # content 兼容旧文本，推荐存储为JSON字符串，结构为{"content": [...], "raw_text": "..."}
@@ -87,6 +94,11 @@ class Message(models.Model):
 
     class Meta:
         ordering = ['created_at']
+
+    def save(self, *args, **kwargs):
+        if not self.id:
+            self.id = uuid.uuid4().hex
+        super().save(*args, **kwargs)
 
     def __str__(self):
         try:
@@ -190,6 +202,7 @@ class App(models.Model):
     可作为 Function Calling 工具或 MCP 工具使用
     """
     # 基本信息
+    id = models.CharField(max_length=32, primary_key=True, editable=False)
     name = models.CharField(
         max_length=100, 
         validators=[validate_camel_case_name],
@@ -255,6 +268,11 @@ class App(models.Model):
         ordering = ['-created_at']
         verbose_name = "应用"
         verbose_name_plural = "应用"
+
+    def save(self, *args, **kwargs):
+        if not self.id:
+            self.id = uuid.uuid4().hex
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.name} ({self.app_type.name})"

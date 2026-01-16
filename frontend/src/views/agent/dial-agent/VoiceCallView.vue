@@ -11,6 +11,7 @@
           :userState="userState"
           :audioLevel="currentAudioLevel"
           :activePanel="activePanel"
+          :connecting="connecting"
           @mute-toggle="handleMuteToggle"
           @transcript-toggle="handleTranscriptToggle"
           @hangup="handleHangup"
@@ -182,24 +183,33 @@ export default {
     async connectToServer() {
       if (this.connecting || this.isConnected) return
       
-      // 首先检查媒体权限
-      const permissionCheck = await this.checkMediaPermissions()
-      if (!permissionCheck.success) {
-        alert(permissionCheck.error)
-        console.error(permissionCheck.error)
-        return
-      }
-      
       this.connecting = true
       
-      // 重新连接时清空字幕
-      this.transcripts = []
-      
       try {
-        // 连接 WebSocket
+        // 步骤1: 首先检查并请求麦克风权限
+        console.log('步骤1: 检查麦克风权限...')
+        const permissionCheck = await this.checkMediaPermissions()
+        if (!permissionCheck.success) {
+          alert(permissionCheck.error)
+          console.error(permissionCheck.error)
+          this.connecting = false
+          return
+        }
+        
+        // 步骤2: 启动音频采集
+        console.log('步骤2: 启动音频采集...')
+        await this.startAudioCapture()
+        console.log('音频采集已就绪')
+        
+        // 步骤3: 连接 WebSocket
+        console.log('步骤3: 连接 WebSocket...')
         this.websocket = new WebSocket(this.config.serverUrl)
         
+        // 重新连接时清空字幕
+        this.transcripts = []
+        
         this.websocket.onopen = () => {
+          console.log('WebSocket 已连接，发送初始化消息...')
           this.sendInitMessage()
           this.activePanel = 'transcript'
         }
@@ -212,11 +222,14 @@ export default {
           console.error('WebSocket error:', error)
           alert('连接失败，请检查服务器地址')
           this.connecting = false
+          this.stopAudioCapture()
         }
         
         this.websocket.onclose = () => {
+          console.log('WebSocket 连接已关闭')
           this.isConnected = false
           this.isCallActive = false
+          this.connecting = false
           this.stopCallDuration()
           this.stopAudioCapture()
           this.stopHeartbeat()
@@ -231,6 +244,7 @@ export default {
         console.error('Connection error:', error)
         alert('连接失败: ' + error.message)
         this.connecting = false
+        this.stopAudioCapture()
       }
     },
     
@@ -292,7 +306,7 @@ export default {
           }
         }
       }
-      
+      console.log('init', initMessage)
       this.websocket.send(JSON.stringify(initMessage))
     },
     
@@ -302,28 +316,31 @@ export default {
       switch (type) {
         case 'init_ack':
           if (status === 'success') {
-            // 初始化成功，静默处理
+            console.log('初始化确认成功，等待会话启动...')
           } else {
             alert('初始化失败: ' + (message.message || '未知错误'))
             console.error('Init failed:', message)
             this.connecting = false
+            this.stopAudioCapture()
           }
           break
           
         case 'session_started':
           if (status === 'success') {
+            console.log('会话启动成功')
             this.sessionId = message.session_id
             this.isConnected = true
             this.connecting = false
             this.isCallActive = true
             this.startCallDuration()
-            this.startAudioCapture()
+            // 音频采集已经在 connectToServer 中启动了，这里不需要再启动
             // 启动心跳
             this.startHeartbeat()
           } else {
             alert('会话启动失败: ' + (message.message || '未知错误'))
             console.error('Session start failed:', message)
             this.connecting = false
+            this.stopAudioCapture()
           }
           break
           
@@ -362,30 +379,67 @@ export default {
     },
     
     handleTranscription(data) {
-      const { text, final: is_final, participant_id } = data
+      console.log(data)
+      const { text, final: is_final, participant_id, segment_id } = data
       
-      if (is_final && text && text.trim()) {
-        // 直接使用 participant_id: sip_phone 在左侧，phone 在右侧
-        this.transcripts.push({
-          participant_id: participant_id,
-          text: text,
-          is_final: true,
-          timestamp: new Date().toISOString()
+      // 查找是否已存在相同 segment_id 和 participant_id 的字幕
+      const existingIndex = this.transcripts.findIndex(
+        item => item.segment_id === segment_id && item.participant_id === participant_id
+      )
+      
+      if (existingIndex !== -1) {
+        // 更新已存在的字幕 - 直接替换文本
+        this.$set(this.transcripts, existingIndex, {
+          ...this.transcripts[existingIndex],
+          text: text || this.transcripts[existingIndex].text, // 如果text为空，保留原文本
+          is_final: is_final,
+          updateTime: Date.now() // 更新时间戳用于排序
         })
+      } else {
+        // 添加新字幕（只有当text不为空时才添加）
+        if (text && text.trim()) {
+          this.transcripts.push({
+            participant_id: participant_id,
+            segment_id: segment_id,
+            text: text,
+            is_final: is_final,
+            timestamp: new Date().toISOString(),
+            createTime: Date.now(), // 创建时间戳用于排序
+            updateTime: Date.now()
+          })
+        }
       }
     },
     
     handleTextOutput(data) {
-      const { text, participant_id } = data
+      const { text, participant_id, segment_id } = data
       
-      if (text && text.trim()) {
-        // AI客服的回复，使用 participant_id
-        this.transcripts.push({
-          participant_id: participant_id || 'sip_phone',
-          text: text,
+      // 查找是否已存在相同 segment_id 和 participant_id 的字幕
+      const existingIndex = this.transcripts.findIndex(
+        item => item.segment_id === segment_id && item.participant_id === participant_id
+      )
+      
+      if (existingIndex !== -1) {
+        // 更新已存在的字幕 - 直接替换文本
+        this.$set(this.transcripts, existingIndex, {
+          ...this.transcripts[existingIndex],
+          text: text || this.transcripts[existingIndex].text, // 如果text为空，保留原文本
           is_final: true,
-          timestamp: new Date().toISOString()
+          updateTime: Date.now() // 更新时间戳用于排序
         })
+      } else {
+        // 添加新字幕（只有当text不为空时才添加）
+        if (text && text.trim()) {
+          this.transcripts.push({
+            participant_id: participant_id || 'sip_phone',
+            segment_id: segment_id,
+            text: text,
+            is_final: true,
+            timestamp: new Date().toISOString(),
+            createTime: Date.now(), // 创建时间戳用于排序
+            updateTime: Date.now()
+          })
+        }
       }
     },
     
@@ -500,7 +554,9 @@ export default {
         const source = this.audioContext.createMediaStreamSource(this.mediaStream)
         
         // 创建 ScriptProcessor 用于捕获音频数据
-        const bufferSize = 4096
+        // 使用较小的 bufferSize 以降低延迟，但仍需要是 256 的倍数
+        // 256 samples = 16ms @ 16kHz，接近 Python 的 10ms
+        const bufferSize = 256
         const processor = this.audioContext.createScriptProcessor(bufferSize, 1, 1)
         
         processor.onaudioprocess = (e) => {
@@ -519,7 +575,7 @@ export default {
           // 更新音频级别用于可视化
           this.currentAudioLevel = Math.min(1, average * 10)
           
-          // 只有当音量超过阈值时才发送
+          // 只有当音量超过阈值时才发送（与 Python 的 VAD 逻辑一致）
           if (average > 0.01) {
             // 优化的 PCM 转换
             const pcmData = new Int16Array(len)
