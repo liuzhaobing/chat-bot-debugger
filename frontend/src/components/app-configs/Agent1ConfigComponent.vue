@@ -283,6 +283,7 @@ import ModelSelector from '../model-square/ModelSelector.vue'
 import MessageItem from '../chat-completion/MessageItem.vue'
 import TaskDebugPanel from './TaskDebugPanel.vue'
 import { mapState } from 'vuex'
+import nunjucks from 'nunjucks'
 
 export default {
   name: 'Agent1ConfigComponent',
@@ -639,11 +640,9 @@ export default {
 
       try {
         // 使用测试值替换提示词中的参数
-        let finalPrompt = this.app.system_prompt || ''
-        Object.keys(this.parameterTestValues).forEach(paramName => {
-          const regex = new RegExp(`\\{\\{\\s*${paramName}\\s*\\}\\}`, 'g')
-          finalPrompt = finalPrompt.replace(regex, this.parameterTestValues[paramName] || '')
-        })
+        // 使用 nunjucks 渲染模板，支持更复杂的 Jinja2 语法
+        nunjucks.configure({ autoescape: false })
+        const finalPrompt = nunjucks.renderString(this.app.system_prompt || '', this.parameterTestValues)
 
         let payload
         
