@@ -29,9 +29,41 @@
           </div>
         </section>
 
+        <!-- 执行模式选择器 -->
+        <section class="config-section">
+          <div class="section-title">执行模式</div>
+          <p class="section-hint">
+            选择应用的执行模式，不同模式适用于不同的使用场景
+          </p>
+          <div class="mode-selector">
+            <div 
+              class="mode-option" 
+              :class="{ active: app.execution_mode === 'chat' }"
+              @click="setExecutionMode('chat')"
+            >
+              <div class="mode-icon">💬</div>
+              <div class="mode-info">
+                <div class="mode-name">对话聊天式</div>
+                <div class="mode-desc">支持多轮对话，适合助手、顾问类应用</div>
+              </div>
+            </div>
+            <div 
+              class="mode-option" 
+              :class="{ active: app.execution_mode === 'task' }"
+              @click="setExecutionMode('task')"
+            >
+              <div class="mode-icon">⚡</div>
+              <div class="mode-info">
+                <div class="mode-name">任务执行式</div>
+                <div class="mode-desc">单次执行，适合翻译、生成、处理类应用</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <section class="config-section">
           <div class="section-title">
-            系统提示词
+            {{ app.execution_mode === 'task' ? '任务提示词模板' : '系统提示词' }}
             <div class="prompt-tools">
               <button class="optimize-btn" @click="optimizePrompt" title="优化提示词">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path><path d="M5 3v4"></path><path d="M19 17v4"></path><path d="M3 5h4"></path><path d="M17 19h4"></path></svg>
@@ -40,13 +72,13 @@
             </div>
           </div>
           <p class="section-hint">
-            编写应用的系统提示词，定义应用的行为和能力
+            {{ promptSectionHint }}
           </p>
           <div class="prompt-editor-container">
             <textarea 
               v-model="app.system_prompt" 
               class="prompt-textarea"
-              placeholder="你是一个专业的助手..."
+              :placeholder="promptPlaceholder"
               @input="handlePromptInput"
             ></textarea>
           </div>
@@ -112,7 +144,7 @@
         <section class="config-section">
           <div class="section-title">模型配置</div>
           <div class="model-select-wrapper">
-             <model-selector ref="modelSelector" :initial-model="app.model_name" />
+             <model-selector ref="modelSelector" v-model="appModel" />
           </div>
           <div class="params-list">
             <div class="param-item">
@@ -143,8 +175,16 @@
       </div>
     </div>
 
-    <!-- Right Pane: Debug Chat -->
-    <div class="debug-pane">
+    <!-- Right Pane: Debug Chat or Task -->
+    <task-debug-panel 
+      v-if="isTaskMode"
+      class="debug-pane"
+      :app="app"
+      :parameter-values="parameterTestValues"
+      :temperature="currentTemperature"
+    />
+
+    <div v-else class="debug-pane">
       <div class="debug-header">
         <div class="debug-title">文本对话</div>
         <div class="debug-actions">
@@ -241,11 +281,12 @@
 import axios from 'axios'
 import ModelSelector from '../model-square/ModelSelector.vue'
 import MessageItem from '../chat-completion/MessageItem.vue'
+import TaskDebugPanel from './TaskDebugPanel.vue'
 import { mapState } from 'vuex'
 
 export default {
   name: 'Agent1ConfigComponent',
-  components: { ModelSelector, MessageItem },
+  components: { ModelSelector, MessageItem, TaskDebugPanel },
   props: {
     appId: {
       type: [String, Number],
@@ -287,6 +328,21 @@ export default {
   },
   computed: {
     ...mapState('modelSquare', ['selectedModel']),
+    appModel: {
+      get() {
+        if (!this.app) return null
+        return {
+          provider_id: this.app.provider_id,
+          model_name: this.app.model_name
+        }
+      },
+      set(val) {
+        if (this.app && val) {
+          this.app.provider_id = val.provider_id
+          this.app.model_name = val.model_name
+        }
+      }
+    },
     formattedFunctionSchema() {
       if (!this.app) return '{}'
       return JSON.stringify(this.app.get_function_schema || this.generateFunctionSchema(), null, 2)
@@ -299,6 +355,24 @@ export default {
         ...def,
         isRequired: this.parameters.required && this.parameters.required.includes(name)
       }))
+    },
+    // 根据执行模式动态显示提示词提示文本
+    promptSectionHint() {
+      if (!this.app) return ''
+      return this.app.execution_mode === 'task'
+        ? '编写任务模板，使用 {{ variable }} 定义参数，执行时将直接作为用户消息发送'
+        : '编写应用的系统提示词，定义应用的行为和能力'
+    },
+    // 根据执行模式动态显示提示词占位符
+    promptPlaceholder() {
+      if (!this.app) return ''
+      return this.app.execution_mode === 'task'
+        ? '请将以下文本翻译成{{target_language}}:\n\n{{text}}'
+        : '你是一个专业的助手...'
+    },
+    // 是否为任务执行模式
+    isTaskMode() {
+      return this.app && this.app.execution_mode === 'task'
     }
   },
   methods: {
@@ -310,6 +384,11 @@ export default {
         if (!this.app.configuration) this.app.configuration = { temperature: 0.7 }
         this.currentTemperature = this.app.configuration.temperature || 0.7
         this.currentProviderId = this.app.provider_id || null
+        
+        // 初始化 execution_mode（向后兼容旧应用）
+        if (!this.app.execution_mode) {
+          this.app.execution_mode = 'chat'
+        }
         
         // 加载 parameters
         if (this.app.parameters && this.app.parameters.properties) {
@@ -331,6 +410,27 @@ export default {
         window.$message.error('加载应用失败')
       } finally {
         this.loading = false
+      }
+    },
+    
+    // 设置执行模式
+    async setExecutionMode(mode) {
+      if (this.app) {
+        if (this.app.execution_mode === mode) return
+
+        const confirmed = await window.$confirm({
+          title: '切换执行模式',
+          message: '切换模式可能会影响当前的调试上下文，确定要切换吗？',
+          type: 'warning',
+          confirmText: '切换'
+        })
+
+        if (confirmed) {
+          this.app.execution_mode = mode
+          // 切换模式时清空调试对话
+          this.messages = []
+          this.triggerAutoSavePrompt()
+        }
       }
     },
     
@@ -480,9 +580,9 @@ export default {
     async publishApp() {
       if (!this.app) return
       
-      // 获取当前选择的模型和供应商
-      const modelName = this.selectedModel ? this.selectedModel.model_name : this.app.model_name
-      const providerId = this.selectedModel ? this.selectedModel.provider_id : this.currentProviderId
+      // 获取当前选择的模型和供应商 (已通过 v-model 绑定到 this.app)
+      const modelName = this.app.model_name
+      const providerId = this.app.provider_id
       
       if (!modelName) {
         window.$message.warning('请选择一个模型')
@@ -491,6 +591,7 @@ export default {
       
       try {
         const payload = {
+          execution_mode: this.app.execution_mode || 'chat',
           name: this.app.name,
           description: this.app.description,
           icon_url: this.app.icon_url,
@@ -514,8 +615,8 @@ export default {
     async sendTestMessage() {
       if (this.isStreaming || !this.userInput.trim()) return
       
-      const modelName = this.selectedModel ? this.selectedModel.model_name : this.app.model_name
-      const providerId = this.selectedModel ? this.selectedModel.provider_id : null
+      const modelName = this.app.model_name
+      const providerId = this.app.provider_id
       if (!modelName) {
         window.$message.warning('请选择一个模型进行调试')
         return
@@ -523,6 +624,12 @@ export default {
 
       const userText = this.userInput.trim()
       this.userInput = ''
+      
+      // Task 模式：每次执行前清空历史消息
+      if (this.app.execution_mode === 'task') {
+        this.messages = []
+      }
+      
       this.messages.push({ role: 'user', content: userText })
       this.scrollToBottom()
 
@@ -531,22 +638,41 @@ export default {
       this.messages.push(assistantMsg)
 
       try {
-        // 使用测试值替换 system_prompt 中的参数
-        let finalSystemPrompt = this.app.system_prompt || ''
+        // 使用测试值替换提示词中的参数
+        let finalPrompt = this.app.system_prompt || ''
         Object.keys(this.parameterTestValues).forEach(paramName => {
           const regex = new RegExp(`\\{\\{\\s*${paramName}\\s*\\}\\}`, 'g')
-          finalSystemPrompt = finalSystemPrompt.replace(regex, this.parameterTestValues[paramName] || '')
+          finalPrompt = finalPrompt.replace(regex, this.parameterTestValues[paramName] || '')
         })
 
-        const payload = {
-          messages: [
-            { role: 'system', content: finalSystemPrompt },
-            ...this.messages.slice(0, -1)
-          ],
-          provider_id: providerId,
-          model: modelName,
-          temperature: this.currentTemperature,
-          stream: true
+        let payload
+        
+        if (this.app.execution_mode === 'task') {
+          // ========== 任务执行式 (Task Mode) ==========
+          // 模板替换后 + 用户输入，作为单条 user 消息发送
+          const taskMessage = finalPrompt ? `${finalPrompt}\n\n${userText}` : userText
+          payload = {
+            messages: [
+              { role: 'user', content: taskMessage }
+            ],
+            provider_id: providerId,
+            model: modelName,
+            temperature: this.currentTemperature,
+            stream: true
+          }
+        } else {
+          // ========== 对话聊天式 (Chat Mode, 默认) ==========
+          // system_prompt 作为 system 消息，支持多轮上下文
+          payload = {
+            messages: [
+              { role: 'system', content: finalPrompt },
+              ...this.messages.slice(0, -1)  // 不包含刚刚添加的空 assistant 消息
+            ],
+            provider_id: providerId,
+            model: modelName,
+            temperature: this.currentTemperature,
+            stream: true
+          }
         }
 
         const response = await fetch('/api/chat/completions', {
@@ -766,6 +892,57 @@ export default {
   font-size: 0.75rem;
   color: #94a3b8;
   margin: -4px 0 0 0;
+}
+
+/* 执行模式选择器样式 */
+.mode-selector {
+  display: flex;
+  gap: 12px;
+}
+
+.mode-option {
+  flex: 1;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  border: 2px solid #e2e8f0;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background-color: #ffffff;
+}
+
+.mode-option:hover {
+  border-color: #c7d2fe;
+  background-color: #fafafa;
+}
+
+.mode-option.active {
+  border-color: #6366f1;
+  background-color: #f5f3ff;
+}
+
+.mode-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.mode-info {
+  flex: 1;
+}
+
+.mode-name {
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: #1e293b;
+  margin-bottom: 4px;
+}
+
+.mode-desc {
+  font-size: 0.75rem;
+  color: #64748b;
+  line-height: 1.4;
 }
 
 .input-group {

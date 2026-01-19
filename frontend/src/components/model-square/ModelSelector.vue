@@ -86,15 +86,26 @@ export default {
       searchQuery: ''
     }
   },
+  props: {
+    // Optional: v-model support for local state management
+    value: {
+      type: Object,
+      default: null
+    }
+  },
   computed: {
     ...mapState('modelSquare', ['providers', 'selectedModel']),
+    // Determine which model state to use (prop vs store)
+    effectiveModel() {
+        return this.value !== null ? this.value : this.selectedModel
+    },
     currentModelDisplayName() {
-        if (!this.selectedModel) return 'Select Model'
+        if (!this.effectiveModel) return 'Select Model'
         // Find provider name and model display name if possible
-        const provider = this.providers.find(p => p.id === this.selectedModel.provider_id)
-        if (!provider) return this.selectedModel.model_name
+        const provider = this.providers.find(p => p.id === this.effectiveModel.provider_id)
+        if (!provider) return this.effectiveModel.model_name
         
-        const model = provider.models.find(m => m.name === this.selectedModel.model_name)
+        const model = provider.models.find(m => m.name === this.effectiveModel.model_name)
         return (model?.display_name || model?.name)
     },
     currentProviderModels() {
@@ -122,22 +133,30 @@ export default {
         immediate: true
     },
     showModal(val) {
-        if (val && this.selectedModel) {
-            this.activeProviderId = this.selectedModel.provider_id
+        if (val && this.effectiveModel) {
+            this.activeProviderId = this.effectiveModel.provider_id
         }
     }
   },
   methods: {
     isSelected(model) {
-        return this.selectedModel && 
-               this.selectedModel.provider_id === this.activeProviderId && 
-               this.selectedModel.model_name === model.name
+        return this.effectiveModel && 
+               this.effectiveModel.provider_id === this.activeProviderId && 
+               this.effectiveModel.model_name === model.name
     },
     selectModel(providerId, model) {
-        this.$store.commit('modelSquare/SET_SELECTED_MODEL', {
+        const selection = {
             provider_id: providerId,
             model_name: model.name
-        })
+        }
+        
+        // If controlled via v-model (prop 'value' is present), emit event
+        if (this.value !== null) {
+            this.$emit('input', selection)
+        } else {
+            // Otherwise use Vuex store
+            this.$store.commit('modelSquare/SET_SELECTED_MODEL', selection)
+        }
         this.showModal = false
     },
     async syncCurrentProvider() {

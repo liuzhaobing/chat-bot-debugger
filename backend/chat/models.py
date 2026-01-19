@@ -228,10 +228,20 @@ class App(models.Model):
     )
     
     # Agent 1.0 配置字段
+    EXECUTION_MODE_CHOICES = (
+        ('chat', 'Chat Mode (对话聊天式)'),
+        ('task', 'Task Mode (任务执行式)'),
+    )
+    execution_mode = models.CharField(
+        max_length=10,
+        choices=EXECUTION_MODE_CHOICES,
+        default='chat',
+        help_text="执行模式：chat=对话聊天式(system_prompt作为system消息)，task=任务执行式(prompt作为user消息)"
+    )
     system_prompt = models.TextField(
         default="", 
         blank=True, 
-        help_text="应用的系统提示词"
+        help_text="应用的提示词（chat模式下为系统提示词，task模式下为任务模板）"
     )
     
     # Function Calling Parameters (替代原来的 variables)

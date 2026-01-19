@@ -8,11 +8,15 @@ from django.shortcuts import get_object_or_404
 from django.db.models import Q
 import requests
 import json
+import uuid
+import time
 from .models import Provider, LLMModel, Conversation, Message, App, AppCategory, AppType
 from .serializers import (
     ProviderSerializer, ConversationSerializer, MessageSerializer, 
     LLMModelSerializer, AppSerializer, AppCategorySerializer,
-    AppTypeSerializer, AppPublishSerializer, AppListSerializer
+    AppTypeSerializer, AppPublishSerializer, AppListSerializer,
+    AppInvokeRequestSerializer, AppFunctionCallingRequestSerializer,
+    AppMCPRequestSerializer, AppExecuteResponseSerializer
 )
 
 class ProviderViewSet(viewsets.ModelViewSet):
@@ -205,6 +209,522 @@ class AppViewSet(viewsets.ModelViewSet):
         app = self.get_object()
         schema = app.get_function_schema()
         return Response(schema)
+    
+    # ============================
+    # App 执行核心方法
+    # ============================
+    
+    def _execute_agent_1_0(self, app, user_message=None, context=None, parameters=None):
+        """
+        执行 Agent 1.0 类型的应用
+        
+        支持两种执行模式：
+        - chat: 对话聊天式，system_prompt 作为 system 消息，支持上下文
+        - task: 任务执行式，prompt_template 替换参数后作为 user 消息，无上下文
+        
+        Args:
+            app: App 模型实例
+            user_message: 用户输入的消息
+            context: 可选的历史消息上下文（仅 chat 模式有效）
+            parameters: 可选的参数（用于替换提示词中的变量）
+            
+        Returns:
+            dict: 包含 content, usage, error 的结果字典
+        """
+        start_time = time.time()
+        
+        try:
+            # 1. 获取 Provider
+            if not app.provider_id:
+                return {
+                    "status": "error",
+                    "content": "",
+                    "error": "应用未配置 Provider",
+                    "usage": None
+                }
+            
+            try:
+                provider = Provider.objects.get(id=app.provider_id)
+            except Provider.DoesNotExist:
+                return {
+                    "status": "error",
+                    "content": "",
+                    "error": f"Provider {app.provider_id} 不存在",
+                    "usage": None
+                }
+            
+            # 2. 验证模型配置
+            if not app.model_name:
+                return {
+                    "status": "error",
+                    "content": "",
+                    "error": "应用未配置模型",
+                    "usage": None
+                }
+            
+            # 3. 构建消息列表 - 根据执行模式采用不同策略
+            messages_payload = []
+            execution_mode = getattr(app, 'execution_mode', 'chat')
+            
+            if execution_mode == 'task':
+                # ========== 任务执行式 (Task Mode) ==========
+                # 将 system_prompt（任务模板）替换参数后作为 user 消息
+                # 每次执行独立，不保留上下文历史
+                
+                prompt_template = app.system_prompt or ""
+                
+                # 参数替换：将 parameters 中的值替换到模板中
+                if parameters and isinstance(parameters, dict):
+                    for key, value in parameters.items():
+                        # 支持 {{key}} 和 {key} 两种格式的变量替换
+                        prompt_template = prompt_template.replace(f"{{{{{key}}}}}", str(value))
+                        prompt_template = prompt_template.replace(f"{{{key}}}", str(value))
+                
+                # 最终消息：模板 + 用户输入（如有）
+                final_message = prompt_template
+                if user_message and user_message.strip():
+                    # 如果有额外的用户输入，追加到模板后面
+                    final_message = f"{prompt_template}\n\n{user_message}"
+                
+                # Task 模式：只有一条 user 消息
+                messages_payload.append({
+                    "role": "user",
+                    "content": final_message
+                })
+                
+            else:
+                # ========== 对话聊天式 (Chat Mode, 默认) ==========
+                # system_prompt 作为 system 消息，支持多轮上下文
+                
+                system_prompt = app.system_prompt or ""
+                
+                # 参数替换：将 parameters 中的值替换到 system_prompt 中
+                if parameters and isinstance(parameters, dict):
+                    for key, value in parameters.items():
+                        # 支持 {{key}} 和 {key} 两种格式的变量替换
+                        system_prompt = system_prompt.replace(f"{{{{{key}}}}}", str(value))
+                        system_prompt = system_prompt.replace(f"{{{key}}}", str(value))
+                
+                # 添加系统提示词
+                if system_prompt:
+                    messages_payload.append({
+                        "role": "system",
+                        "content": system_prompt
+                    })
+                
+                # 添加上下文消息（历史对话）
+                if context and isinstance(context, list):
+                    for msg in context:
+                        if isinstance(msg, dict) and 'role' in msg and 'content' in msg:
+                            messages_payload.append({
+                                "role": msg['role'],
+                                "content": msg['content']
+                            })
+                if user_message:
+                    # 添加用户消息
+                    messages_payload.append({
+                        "role": "user",
+                        "content": user_message
+                    })
+            
+            # 4. 构建请求 payload
+            headers = {
+                "Authorization": f"Bearer {provider.api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            payload = {
+                "model": app.model_name,
+                "messages": messages_payload,
+                "stream": False
+            }
+            
+            # 添加配置参数（temperature, max_tokens 等）
+            configuration = app.configuration or {}
+            if 'temperature' in configuration:
+                payload['temperature'] = float(configuration['temperature'])
+            if 'max_tokens' in configuration:
+                payload['max_tokens'] = int(configuration['max_tokens'])
+            
+            # 5. 调用大模型 API
+            response = requests.post(
+                f"{provider.base_url}/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=60
+            )
+            response.raise_for_status()
+            
+            result = response.json()
+            
+            # 6. 解析响应
+            content = ""
+            if 'choices' in result and len(result['choices']) > 0:
+                content = result['choices'][0].get('message', {}).get('content', '')
+            
+            usage = result.get('usage', None)
+            
+            latency_ms = int((time.time() - start_time) * 1000)
+            
+            return {
+                "status": "success",
+                "content": content,
+                "error": None,
+                "usage": usage,
+                "latency_ms": latency_ms,
+                "execution_mode": execution_mode  # 返回执行模式供调用方参考
+            }
+            
+        except requests.RequestException as e:
+            return {
+                "status": "error",
+                "content": "",
+                "error": f"调用大模型失败: {str(e)}",
+                "usage": None,
+                "latency_ms": int((time.time() - start_time) * 1000)
+            }
+        except Exception as e:
+            return {
+                "status": "error",
+                "content": "",
+                "error": f"执行失败: {str(e)}",
+                "usage": None,
+                "latency_ms": int((time.time() - start_time) * 1000)
+            }
+    
+    def _execute_app(self, app, user_message=None, context=None, parameters=None):
+        """
+        App 执行调度器
+        根据 app_type 调用对应的执行方法
+        
+        Args:
+            app: App 模型实例
+            user_message: 用户输入的消息
+            context: 可选的历史消息上下文
+            parameters: 可选的参数
+            
+        Returns:
+            dict: 执行结果
+        """
+        app_type_code = app.app_type.code if app.app_type else None
+        
+        if app_type_code == 'agent_1_0':
+            return self._execute_agent_1_0(app, user_message, context, parameters)
+        else:
+            # 其他类型暂未实现
+            return {
+                "status": "error",
+                "content": "",
+                "error": f"应用类型 '{app_type_code}' 暂未支持执行",
+                "usage": None,
+                "latency_ms": 0
+            }
+    
+    # ============================
+    # 1. API 直接调用接口
+    # ============================
+    
+    @action(detail=True, methods=['get'], url_path='invoke')
+    def invoke_info(self, request, pk=None):
+        """
+        [GET] 获取 API 直接调用的信息
+        
+        返回应用的基本信息和调用说明
+        """
+        app = self.get_object()
+        
+        return Response({
+            "app_id": app.id,
+            "app_name": app.name,
+            "description": app.description,
+            "app_type": app.app_type.code if app.app_type else None,
+            "endpoint": f"/api/chat/apps/{app.id}/invoke/",
+            "method": "POST",
+            "request_format": {
+                "message": "string (必填) - 用户输入的消息",
+                "context": "array (可选) - 历史消息上下文 [{'role': 'user|assistant', 'content': '...'}]",
+                "parameters": "object (可选) - Function Calling 参数",
+                "stream": "boolean (可选, 默认 false) - 是否启用流式响应"
+            },
+            "response_format": {
+                "request_id": "string - 请求唯一标识",
+                "app_id": "string - 应用 ID",
+                "app_name": "string - 应用名称",
+                "status": "string - 执行状态 (success/error)",
+                "content": "string - 执行结果内容",
+                "usage": "object - Token 使用统计",
+                "latency_ms": "integer - 执行耗时（毫秒）"
+            }
+        })
+    
+    @action(detail=True, methods=['post'], url_path='invoke')
+    def invoke_execute(self, request, pk=None):
+        """
+        [POST] API 直接调用执行接口
+        
+        执行 App 并返回结果
+        """
+        app = self.get_object()
+        request_id = uuid.uuid4().hex
+        
+        # 验证请求数据
+        serializer = AppInvokeRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response({
+                "request_id": request_id,
+                "app_id": app.id,
+                "app_name": app.name,
+                "status": "error",
+                "content": "",
+                "error": serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        data = serializer.validated_data
+        
+        # 执行 App
+        result = self._execute_app(
+            app=app,
+            user_message=data.get('message', ''),
+            context=data.get('context'),
+            parameters=data.get('parameters')
+        )
+        
+        # 构建响应
+        response_data = {
+            "request_id": request_id,
+            "app_id": app.id,
+            "app_name": app.name,
+            "status": result['status'],
+            "content": result['content'],
+        }
+        
+        if result.get('error'):
+            response_data['error'] = result['error']
+        if result.get('usage'):
+            response_data['usage'] = result['usage']
+        if result.get('latency_ms'):
+            response_data['latency_ms'] = result['latency_ms']
+        
+        status_code = status.HTTP_200_OK if result['status'] == 'success' else status.HTTP_500_INTERNAL_SERVER_ERROR
+        return Response(response_data, status=status_code)
+    
+    # ============================
+    # 2. Function Calling 调用接口
+    # ============================
+    
+    @action(detail=True, methods=['get'], url_path='function')
+    def function_info(self, request, pk=None):
+        """
+        [GET] 获取 Function Calling 调用信息
+        
+        返回符合 OpenAI Function Calling 格式的 Schema
+        """
+        app = self.get_object()
+        schema = app.get_function_schema()
+        
+        return Response({
+            "app_id": app.id,
+            "app_name": app.name,
+            "endpoint": f"/api/chat/apps/{app.id}/function/",
+            "method": "POST",
+            "function_schema": schema,
+            "request_format": {
+                "name": "string (必填) - 函数名称（即 App 名称）",
+                "arguments": "object (必填) - 函数参数，JSON 格式"
+            },
+            "response_format": {
+                "request_id": "string - 请求唯一标识",
+                "name": "string - 函数名称",
+                "content": "string - 执行结果内容",
+                "status": "string - 执行状态"
+            }
+        })
+    
+    @action(detail=True, methods=['post'], url_path='function')
+    def function_execute(self, request, pk=None):
+        """
+        [POST] Function Calling 执行接口
+        
+        按照 OpenAI Function Calling 格式执行函数并返回结果
+        """
+        app = self.get_object()
+        request_id = uuid.uuid4().hex
+        
+        # 验证请求数据
+        serializer = AppFunctionCallingRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response({
+                "request_id": request_id,
+                "name": app.name,
+                "status": "error",
+                "content": "",
+                "error": serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        data = serializer.validated_data
+        
+        # 验证函数名是否匹配
+        if data['name'] != app.name:
+            return Response({
+                "request_id": request_id,
+                "name": data['name'],
+                "status": "error",
+                "content": "",
+                "error": f"函数名 '{data['name']}' 与应用名 '{app.name}' 不匹配"
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # 解析 arguments
+        arguments = data['arguments']
+        if isinstance(arguments, str):
+            try:
+                arguments = json.loads(arguments)
+            except json.JSONDecodeError:
+                return Response({
+                    "request_id": request_id,
+                    "name": app.name,
+                    "status": "error",
+                    "content": "",
+                    "error": "arguments 必须是有效的 JSON 格式"
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # 从 arguments 中提取 message（如果有），否则将 arguments 作为参数传入
+        user_message = arguments.pop('message', None) or arguments.pop('query', None) or json.dumps(arguments, ensure_ascii=False)
+        
+        # 执行 App
+        result = self._execute_app(
+            app=app,
+            user_message=user_message,
+            parameters=arguments
+        )
+        
+        # 构建 Function Calling 格式的响应
+        response_data = {
+            "request_id": request_id,
+            "name": app.name,
+            "status": result['status'],
+            "content": result['content'],
+        }
+        
+        if result.get('error'):
+            response_data['error'] = result['error']
+        if result.get('usage'):
+            response_data['usage'] = result['usage']
+        if result.get('latency_ms'):
+            response_data['latency_ms'] = result['latency_ms']
+        
+        status_code = status.HTTP_200_OK if result['status'] == 'success' else status.HTTP_500_INTERNAL_SERVER_ERROR
+        return Response(response_data, status=status_code)
+    
+    # ============================
+    # 3. MCP 调用接口
+    # ============================
+    
+    @action(detail=True, methods=['get'], url_path='mcp')
+    def mcp_info(self, request, pk=None):
+        """
+        [GET] 获取 MCP (Model Context Protocol) 调用信息
+        
+        返回符合 MCP 协议格式的工具定义
+        """
+        app = self.get_object()
+        
+        # 构建 MCP 格式的工具定义
+        mcp_tool_definition = {
+            "name": app.name,
+            "description": app.description,
+            "inputSchema": app.parameters or {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        }
+        
+        return Response({
+            "app_id": app.id,
+            "app_name": app.name,
+            "endpoint": f"/api/chat/apps/{app.id}/mcp/",
+            "method": "POST",
+            "mcp_tool_definition": mcp_tool_definition,
+            "request_format": {
+                "call_id": "string (可选) - 工具调用 ID，若不传则自动生成",
+                "tool_name": "string (必填) - 工具名称（即 App 名称）",
+                "input": "object (可选) - 工具调用输入参数"
+            },
+            "response_format": {
+                "call_id": "string - 工具调用 ID",
+                "tool_name": "string - 工具名称",
+                "content": "string - 执行结果内容",
+                "status": "string - 执行状态",
+                "isError": "boolean - 是否发生错误"
+            }
+        })
+    
+    @action(detail=True, methods=['post'], url_path='mcp')
+    def mcp_execute(self, request, pk=None):
+        """
+        [POST] MCP (Model Context Protocol) 执行接口
+        
+        按照 MCP 协议格式执行工具并返回结果
+        """
+        app = self.get_object()
+        
+        # 验证请求数据
+        serializer = AppMCPRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response({
+                "call_id": request.data.get('call_id', uuid.uuid4().hex),
+                "tool_name": app.name,
+                "status": "error",
+                "content": "",
+                "isError": True,
+                "error": serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        data = serializer.validated_data
+        call_id = data.get('call_id') or uuid.uuid4().hex
+        
+        # 验证工具名是否匹配
+        if data['tool_name'] != app.name:
+            return Response({
+                "call_id": call_id,
+                "tool_name": data['tool_name'],
+                "status": "error",
+                "content": "",
+                "isError": True,
+                "error": f"工具名 '{data['tool_name']}' 与应用名 '{app.name}' 不匹配"
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # 获取输入参数
+        tool_input = data.get('input', {})
+        
+        # 从 input 中提取 message（如果有），否则将 input 作为参数传入
+        user_message = tool_input.pop('message', None) or tool_input.pop('query', None) or json.dumps(tool_input, ensure_ascii=False)
+        
+        # 执行 App
+        result = self._execute_app(
+            app=app,
+            user_message=user_message,
+            parameters=tool_input
+        )
+        
+        # 构建 MCP 格式的响应
+        response_data = {
+            "call_id": call_id,
+            "tool_name": app.name,
+            "status": result['status'],
+            "content": result['content'],
+            "isError": result['status'] != 'success'
+        }
+        
+        if result.get('error'):
+            response_data['error'] = result['error']
+        if result.get('usage'):
+            response_data['usage'] = result['usage']
+        if result.get('latency_ms'):
+            response_data['latency_ms'] = result['latency_ms']
+        
+        status_code = status.HTTP_200_OK if result['status'] == 'success' else status.HTTP_500_INTERNAL_SERVER_ERROR
+        return Response(response_data, status=status_code)
 
 class ConversationPagination(PageNumberPagination):
     page_size = 15

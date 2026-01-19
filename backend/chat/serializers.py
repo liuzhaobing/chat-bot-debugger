@@ -97,7 +97,7 @@ class AppSerializer(serializers.ModelSerializer):
             'id', 'name', 'description', 'icon_url', 
             'category', 'category_name',
             'app_type', 'app_type_name', 'app_type_code',
-            'system_prompt', 'parameters', 
+            'execution_mode', 'system_prompt', 'parameters', 
             'provider_id', 'model_name', 'configuration',
             'is_featured', 'created_at', 'updated_at'
         ]
@@ -176,6 +176,7 @@ class AppPublishSerializer(serializers.ModelSerializer):
     class Meta:
         model = App
         fields = [
+            'execution_mode',
             'name', 'description', 'icon_url',
             'system_prompt', 'parameters',
             'provider_id', 'model_name', 'configuration'
@@ -234,7 +235,7 @@ class AppListSerializer(serializers.ModelSerializer):
             'id', 'name', 'description', 'icon_url',
             'category', 'category_name',
             'app_type', 'app_type_name', 'app_type_code',
-            'is_featured', 'created_at'
+            'execution_mode', 'is_featured', 'created_at'
         ]
     
     def validate_name(self, value):
@@ -255,3 +256,118 @@ class AppListSerializer(serializers.ModelSerializer):
         if not value or not value.strip():
             raise serializers.ValidationError("应用描述不能为空")
         return value
+
+
+# ============================
+# App 执行相关序列化器
+# ============================
+
+class AppInvokeRequestSerializer(serializers.Serializer):
+    """
+    API 直接调用请求序列化器
+    用于通过 API 直接执行 App
+    """
+    # 用户输入的消息
+    message = serializers.CharField(
+        required=False, 
+        allow_blank=True,
+        help_text="用户输入的消息内容"
+    )
+    # 可选的上下文消息（历史对话）
+    context = serializers.ListField(
+        child=serializers.DictField(),
+        required=False,
+        default=list,
+        help_text="可选的历史消息上下文，格式为 [{'role': 'user|assistant', 'content': '...'}]"
+    )
+    # Function Calling 参数传入
+    parameters = serializers.DictField(
+        required=False,
+        default=dict,
+        help_text="传入的 Function Calling 参数"
+    )
+    # 是否启用流式响应
+    stream = serializers.BooleanField(
+        required=False,
+        default=False,
+        help_text="是否启用流式响应"
+    )
+
+
+class AppFunctionCallingRequestSerializer(serializers.Serializer):
+    """
+    Function Calling 调用请求序列化器
+    格式符合 OpenAI Function Calling 规范
+    """
+    # 函数名（即 App 名称）
+    name = serializers.CharField(
+        required=True,
+        help_text="函数名称（即 App 名称）"
+    )
+    # 函数参数
+    arguments = serializers.JSONField(
+        required=True,
+        help_text="函数参数，JSON 格式"
+    )
+
+
+class AppMCPRequestSerializer(serializers.Serializer):
+    """
+    MCP (Model Context Protocol) 调用请求序列化器
+    符合 MCP 协议规范
+    """
+    # 工具调用 ID
+    call_id = serializers.CharField(
+        required=False,
+        help_text="工具调用 ID，若不传则自动生成"
+    )
+    # 工具名（即 App 名称）
+    tool_name = serializers.CharField(
+        required=True,
+        help_text="工具名称（即 App 名称）"
+    )
+    # 工具参数
+    input = serializers.JSONField(
+        required=False,
+        default=dict,
+        help_text="工具调用输入参数"
+    )
+
+
+class AppExecuteResponseSerializer(serializers.Serializer):
+    """
+    App 执行响应序列化器
+    统一的执行结果返回格式
+    """
+    # 请求 ID
+    request_id = serializers.CharField(help_text="请求唯一标识")
+    # 应用 ID
+    app_id = serializers.CharField(help_text="执行的应用 ID")
+    # 应用名称
+    app_name = serializers.CharField(help_text="执行的应用名称")
+    # 执行状态
+    status = serializers.ChoiceField(
+        choices=['success', 'error', 'pending'],
+        help_text="执行状态"
+    )
+    # 执行结果
+    content = serializers.CharField(
+        allow_blank=True,
+        help_text="执行结果内容"
+    )
+    # 错误信息（如有）
+    error = serializers.CharField(
+        allow_blank=True,
+        required=False,
+        help_text="错误信息"
+    )
+    # Token 使用统计
+    usage = serializers.DictField(
+        required=False,
+        help_text="Token 使用统计"
+    )
+    # 执行耗时（毫秒）
+    latency_ms = serializers.IntegerField(
+        required=False,
+        help_text="执行耗时（毫秒）"
+    )
