@@ -10,6 +10,7 @@ import requests
 import json
 import uuid
 import time
+from jinja2 import Template
 from .models import Provider, LLMModel, Conversation, Message, App, AppCategory, AppType
 from .serializers import (
     ProviderSerializer, ConversationSerializer, MessageSerializer, 
@@ -271,14 +272,13 @@ class AppViewSet(viewsets.ModelViewSet):
                 # 将 system_prompt（任务模板）替换参数后作为 user 消息
                 # 每次执行独立，不保留上下文历史
                 
-                prompt_template = app.system_prompt or ""
-                
-                # 参数替换：将 parameters 中的值替换到模板中
-                if parameters and isinstance(parameters, dict):
-                    for key, value in parameters.items():
-                        # 支持 {{key}} 和 {key} 两种格式的变量替换
-                        prompt_template = prompt_template.replace(f"{{{{{key}}}}}", str(value))
-                        prompt_template = prompt_template.replace(f"{{{key}}}", str(value))
+                # 参数替换：使用 Jinja2 渲染模板
+                try:
+                    prompt_template = Template(app.system_prompt or "").render(**(parameters or {}))
+                except Exception as e:
+                    # 如果渲染失败，回退到原始 prompt，记录日志（此处暂略），或者直接报错
+                    # 为保证鲁棒性，先回退，但通常 Jinja2 很宽容
+                    prompt_template = app.system_prompt or ""
                 
                 # 最终消息：模板 + 用户输入（如有）
                 final_message = prompt_template
@@ -296,14 +296,11 @@ class AppViewSet(viewsets.ModelViewSet):
                 # ========== 对话聊天式 (Chat Mode, 默认) ==========
                 # system_prompt 作为 system 消息，支持多轮上下文
                 
-                system_prompt = app.system_prompt or ""
-                
-                # 参数替换：将 parameters 中的值替换到 system_prompt 中
-                if parameters and isinstance(parameters, dict):
-                    for key, value in parameters.items():
-                        # 支持 {{key}} 和 {key} 两种格式的变量替换
-                        system_prompt = system_prompt.replace(f"{{{{{key}}}}}", str(value))
-                        system_prompt = system_prompt.replace(f"{{{key}}}", str(value))
+                # 参数替换：使用 Jinja2 渲染模板
+                try:
+                    system_prompt = Template(app.system_prompt or "").render(**(parameters or {}))
+                except Exception:
+                    system_prompt = app.system_prompt or ""
                 
                 # 添加系统提示词
                 if system_prompt:
