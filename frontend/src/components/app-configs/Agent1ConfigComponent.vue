@@ -87,6 +87,9 @@
         <section class="config-section">
           <div class="section-title">
             参数
+            <button class="add-param-icon-btn" @click="openEditParamModal()" title="添加参数">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            </button>
           </div>
           <p class="section-hint" v-pre>
             系统会自动从提示词中检测 {{ variable }} 格式的参数，您也可以手动编辑参数配置
@@ -131,13 +134,25 @@
               </div>
               <div class="param-footer">
                 <div class="param-default" v-if="param.default">
-                  默认值: <code>{{ param.default }}</code>
+                  <div class="param-default-header" @click="toggleDefaultExpand(param.name)">
+                    <span class="label">默认值:</span>
+                    <button class="toggle-expand-btn" v-if="param.default.length > 50">
+                      {{ isDefaultExpanded(param.name) ? '收起' : '展开' }}
+                    </button>
+                  </div>
+                  <div class="param-default-content" :class="{ 'collapsed': !isDefaultExpanded(param.name) && param.default.length > 50 }">
+                    <code>{{ param.default }}</code>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-          <div v-else class="empty-parameters" v-pre>
-            <p>在提示词中使用 {{ variable }} 格式定义参数，系统会自动识别</p>
+          <div v-else class="empty-parameters">
+            <button class="add-param-btn-large" @click="openEditParamModal()">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              点击添加参数
+            </button>
+            <p v-pre>或在提示词中使用 {{ variable }} 格式定义</p>
           </div>
         </section>
 
@@ -324,7 +339,8 @@ export default {
         type: 'string',
         description: '',
         default: ''
-      }
+      },
+      expandedDefaults: {}
     }
   },
   computed: {
@@ -443,41 +459,64 @@ export default {
     parseParametersFromPrompt() {
       /**
        * 从 system_prompt 中自动解析参数
-       * 格式：{{parameter_name}}
+       * 改进版：排除 for 循环中的局部变量
        */
       const prompt = this.app.system_prompt || ''
-      const regex = /\{\{\s*([a-zA-Z0-9_-]+)\s*\}\}/g
-      let match
       const detectedParams = new Set()
-      
-      while ((match = regex.exec(prompt)) !== null) {
-        detectedParams.add(match[1])
+      const localVars = new Set()
+
+      // 1. 先识别 for 循环产生的局部变量
+      // 匹配 {% for item in list %} 或 {% for k, v in dict %}
+      const loopDefRegex = /\{%\s*for\s+([a-zA-Z0-9_$,\s]+)\s+in\s+/g
+      let match
+      while ((match = loopDefRegex.exec(prompt)) !== null) {
+        // match[1] 可能是 "item" 或 "key, value"
+        const vars = match[1].split(',').map(s => s.trim())
+        vars.forEach(v => {
+          if (v) localVars.add(v)
+        })
       }
-      
+
+      // 2. 匹配引用 {{ variable... }}
+      const printRegex = /\{\{\s*([a-zA-Z0-9_$]+)/g
+      while ((match = printRegex.exec(prompt)) !== null) {
+        const varName = match[1]
+        // 排除局部变量、保留字、已存在的
+        if (varName !== 'super' && !localVars.has(varName)) {
+           detectedParams.add(varName)
+        }
+      }
+
+      // 3. 匹配循环源对象 {% for x in variable %}
+      // 注意：循环源对象本身应该是参数
+      const loopSourceRegex = /\{%\s*for\s+[\w,\s]+\s+in\s+([a-zA-Z0-9_$]+)/g
+      while ((match = loopSourceRegex.exec(prompt)) !== null) {
+        const sourceName = match[1]
+        if (!localVars.has(sourceName)) {
+           detectedParams.add(sourceName)
+        }
+      }
+
       // 为新检测到的参数添加默认配置
       detectedParams.forEach(paramName => {
         if (!this.parameters.properties[paramName]) {
+          // 尝试根据名称推断类型
+          let type = 'string'
+          if (paramName.includes('list') || paramName.includes('array') || paramName.endsWith('s') || paramName.includes('messages')) {
+             type = 'array'
+          } else if (paramName.includes('obj') || paramName.includes('data') || paramName.includes('meta')) {
+             type = 'object'
+          }
+          
           this.$set(this.parameters.properties, paramName, {
-            type: 'string',
+            type: type,
             description: `参数 ${paramName}`,
             default: ''
           })
         }
       })
       
-      // 移除不再使用的参数（提示词中已删除的参数）
-      Object.keys(this.parameters.properties).forEach(paramName => {
-        if (!detectedParams.has(paramName)) {
-          this.$delete(this.parameters.properties, paramName)
-          // 从 required 中移除
-          const index = this.parameters.required.indexOf(paramName)
-          if (index > -1) {
-            this.parameters.required.splice(index, 1)
-          }
-          // 删除测试值
-          this.$delete(this.parameterTestValues, paramName)
-        }
-      })
+      // 不删除未检测到的参数，保留用户手动配置
     },
     
     initializeTestValues() {
@@ -506,14 +545,24 @@ export default {
     },
     
     // 参数管理方法
-    openEditParamModal(paramName) {
-      const param = this.parameters.properties[paramName]
-      this.editingParam = paramName
-      this.editParamForm = {
-        name: paramName,
-        type: param.type || 'string',
-        description: param.description || '',
-        default: param.default || ''
+    openEditParamModal(paramName = null) {
+      if (paramName) {
+        const param = this.parameters.properties[paramName]
+        this.editingParam = paramName
+        this.editParamForm = {
+          name: paramName,
+          type: param.type || 'string',
+          description: param.description || '',
+          default: param.default || ''
+        }
+      } else {
+        this.editingParam = null
+        this.editParamForm = {
+          name: '',
+          type: 'string',
+          description: '',
+          default: ''
+        }
       }
       this.showEditParamModal = true
     },
@@ -524,14 +573,26 @@ export default {
         return
       }
       
+      // 检查名称冲突
+      if ((!this.editingParam || this.editingParam !== this.editParamForm.name) && 
+          this.parameters.properties[this.editParamForm.name]) {
+        window.$message.error('参数名称已存在')
+        return
+      }
+      
       // 如果修改了参数名称，需要删除旧的
-      if (this.editingParam !== this.editParamForm.name) {
+      if (this.editingParam && this.editingParam !== this.editParamForm.name) {
         this.$delete(this.parameters.properties, this.editingParam)
         // 更新 required 数组
         const reqIndex = this.parameters.required.indexOf(this.editingParam)
         if (reqIndex > -1) {
           this.parameters.required.splice(reqIndex, 1)
           this.parameters.required.push(this.editParamForm.name)
+        }
+        // 迁移测试值
+        if (this.parameterTestValues[this.editingParam]) {
+           this.$set(this.parameterTestValues, this.editParamForm.name, this.parameterTestValues[this.editingParam])
+           this.$delete(this.parameterTestValues, this.editingParam)
         }
       }
       
@@ -541,6 +602,11 @@ export default {
         description: this.editParamForm.description || `参数 ${this.editParamForm.name}`,
         default: this.editParamForm.default
       })
+      
+      // 初始化新参数的测试值
+      if (!this.parameterTestValues[this.editParamForm.name]) {
+         this.$set(this.parameterTestValues, this.editParamForm.name, this.editParamForm.default || '')
+      }
       
       this.showEditParamModal = false
       this.triggerAutoSavePrompt()
@@ -777,6 +843,14 @@ export default {
         window.$message.error('复制失败，请手动复制')
       }
       document.body.removeChild(textarea)
+    },
+    
+    toggleDefaultExpand(paramName) {
+      this.$set(this.expandedDefaults, paramName, !this.expandedDefaults[paramName])
+    },
+    
+    isDefaultExpanded(paramName) {
+      return !!this.expandedDefaults[paramName]
     }
   },
   mounted() {
@@ -1223,14 +1297,54 @@ export default {
 .param-default {
   font-size: 0.8rem;
   color: #94a3b8;
+  width: 100%;
 }
 
-.param-default code {
+.param-default-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.param-default-header .label {
+  font-weight: 600;
+}
+
+.toggle-expand-btn {
+  background: none;
+  border: none;
+  color: #6366f1;
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 0;
+}
+
+.toggle-expand-btn:hover {
+  text-decoration: underline;
+}
+
+.param-default-content {
   background-color: #f1f5f9;
-  padding: 2px 8px;
   border-radius: 4px;
+  overflow: hidden;
+}
+
+.param-default-content code {
+  display: block;
+  padding: 6px 8px;
   font-family: monospace;
   color: #475569;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.param-default-content.collapsed code {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .param-actions {
@@ -1255,18 +1369,77 @@ export default {
 }
 
 .empty-parameters {
-  padding: 60px 40px;
-  text-align: center;
+  padding: 48px 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
   color: #94a3b8;
   background-color: #f8fafc;
   border-radius: 12px;
   border: 2px dashed #e2e8f0;
+  transition: all 0.2s;
+}
+
+.empty-parameters:hover {
+  border-color: #cbd5e1;
+  background-color: #f1f5f9;
 }
 
 .empty-parameters p {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: 0.85rem;
   line-height: 1.6;
+}
+
+.add-param-btn-large {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: white;
+  color: #6366f1;
+  border: 1px solid #e2e8f0;
+  padding: 12px 24px;
+  border-radius: 12px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+
+.add-param-btn-large:hover {
+  border-color: #6366f1;
+  background-color: #f5f3ff;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 6px -1px rgba(99, 102, 241, 0.2);
+}
+
+.add-param-btn-large svg {
+  width: 18px;
+  height: 18px;
+}
+
+.add-param-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background-color: #ffffff;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.add-param-icon-btn:hover {
+  border-color: #6366f1;
+  color: #6366f1;
+  background-color: #f5f3ff;
+  transform: scale(1.05);
 }
 
 /* 参数模态框样式 */

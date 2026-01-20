@@ -970,7 +970,7 @@ class ChatCompletionView(APIView):
         if extra_body and isinstance(extra_body, dict):
             # 验证 enable_thinking 参数
             enable_thinking = extra_body.get('enable_thinking', False)
-            if isinstance(enable_thinking, bool):
+            if "gpt" not in model_name.lower():
                 payload['extra_body'] = {"enable_thinking": enable_thinking}
         
         try:
