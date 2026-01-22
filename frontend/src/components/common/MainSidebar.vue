@@ -3,12 +3,14 @@
     <div class="logo-container">
       <div class="logo-box">
         <!-- SVG 标志，保持简洁且色彩协调 -->
-        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="logo-icon"><path d="M12 2L2 7l10 5 10-5-10-5z"></path><path d="M2 17l10 5 10-5"></path><path d="M2 12l10 5 10-5"></path></svg>
+        <router-link to="/chat" :class="{ active: $route.path === '/chat' }" title="文本对话">
+          <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="logo-icon"><path d="M12 2L2 7l10 5 10-5-10-5z"></path><path d="M2 17l10 5 10-5"></path><path d="M2 12l10 5 10-5"></path></svg>
+        </router-link>
       </div>
     </div>
     
     <div class="nav-items">
-      <router-link to="/" class="nav-item" :class="{ active: $route.path === '/' }" title="模型广场">
+      <router-link to="/models" class="nav-item" :class="{ active: $route.path === '/models' }" title="模型广场">
         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg>
         <span class="nav-text">模型广场</span>
       </router-link>
@@ -17,11 +19,6 @@
         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
         <span class="nav-text">应用广场</span>
       </router-link>
-      
-      <router-link to="/chat" class="nav-item" :class="{ active: $route.path === '/chat' }" title="文本对话">
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-        <span class="nav-text">文本对话</span>
-      </router-link>
 
       <router-link to="/voice-call" class="nav-item" :class="{ active: $route.path === '/voice-call' }" title="电话客服">
         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
@@ -29,11 +26,11 @@
       </router-link>
     </div>
 
-    <div class="sidebar-footer">
-      <div class="user-avatar" title="User Profile">
-        <div class="avatar-placeholder">U</div>
-      </div>
-    </div>
+<!--    <div class="sidebar-footer">-->
+<!--      <div class="user-avatar" title="User Profile">-->
+<!--        <div class="avatar-placeholder">U</div>-->
+<!--      </div>-->
+<!--    </div>-->
   </nav>
 </template>
 
