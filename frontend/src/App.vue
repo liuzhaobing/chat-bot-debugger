@@ -3,28 +3,20 @@
     <div class="app-container">
       <MainSidebar />
       <div class="layout">
-        <Sidebar v-if="$route.path === '/chat'" />
         <main class="main-content">
-          <header class="main-header" v-if="$route.name === 'Home'">
-            <div class="header-left-tools">
-              <ModelSelector />
-            </div>
-          </header>
           <div class="content-view">
             <router-view />
           </div>
         </main>
-    <GlobalToast />
-    <GlobalConfirm />
+        <GlobalToast />
+        <GlobalConfirm />
       </div>
     </div>
   </div>
 </template>
 
 <script>
-import MainSidebar from './components/common/MainSidebar.vue'
-import Sidebar from './components/common/Sidebar.vue'
-import ModelSelector from './components/model-square/ModelSelector.vue'
+import MainSidebar from './views/layouts/MainSidebar.vue'
 import GlobalToast from './components/common/GlobalToast.vue'
 import GlobalConfirm from './components/common/GlobalConfirm.vue'
 
@@ -32,18 +24,10 @@ export default {
   name: 'App',
   components: {
     MainSidebar,
-    Sidebar,
-    ModelSelector,
     GlobalToast,
     GlobalConfirm
   },
-  data() {
-    return {
-      // showSettings removed
-    }
-  },
   methods: {
-    // toggleRightSidebar removed
     newChat() {
       this.$store.dispatch('chatCompletion/createNewChat')
     }
@@ -117,25 +101,6 @@ body {
   position: relative;
   background-color: var(--bg-secondary);
   min-width: 0;
-}
-
-.main-header {
-  height: 64px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 24px;
-  background-color: var(--bg-primary);
-  border-bottom: 1px solid var(--border-color);
-  flex-shrink: 0;
-  z-index: 100;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
-}
-
-.header-left-tools {
-    display: flex;
-    align-items: center;
-    width: auto;
 }
 
 .content-view {

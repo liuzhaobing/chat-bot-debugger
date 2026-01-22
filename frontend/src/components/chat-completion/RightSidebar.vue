@@ -1,11 +1,11 @@
 <template>
-  <div class="right-sidebar" :class="{ open: isRightSidebarOpen }">
+  <div class="right-sidebar">
     <div class="sidebar-header">
       <div class="header-title">
         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20v-6M9 20v-10M15 20V4M18 20V12M6 20v-4" /></svg>
-        <span>模型设置</span>
+        <span>聊天设置</span>
       </div>
-      <button class="close-btn" @click="closeSidebar" title="收起">
+      <button class="close-btn" @click="$emit('close')" title="收起">
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
       </button>
     </div>
@@ -48,6 +48,13 @@
           </div>
         </div>
       </div>
+
+      <div class="param-section">
+        <button class="apply-btn" @click="applySettings">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"></path></svg>
+          应用设置
+        </button>
+      </div>
     </div>
   </div>
 </template>
@@ -65,27 +72,28 @@ export default {
     }
   },
   computed: {
-    ...mapState(['isRightSidebarOpen'])
-  },
-  watch: {
-    systemPrompt(val) {
-      this.$store.commit('chatCompletion/SET_SYSTEM_PROMPT', val)
-    },
-    temperature(val) {
-      this.$store.commit('chatCompletion/SET_TEMPERATURE', val)
-    },
-    maxTokens(val) {
-      this.$store.commit('chatCompletion/SET_MAX_TOKENS', val)
-    }
+    ...mapState('chatCompletion', ['systemPrompt', 'temperature', 'maxTokens'])
   },
   mounted() {
+    // 从 store 初始化本地状态
     this.systemPrompt = this.$store.state.chatCompletion.systemPrompt || ''
     this.temperature = this.$store.state.chatCompletion.temperature || 0.7
     this.maxTokens = this.$store.state.chatCompletion.maxTokens || 1024
   },
   methods: {
-    closeSidebar() {
-      this.$store.commit('SET_RIGHT_SIDEBAR_OPEN', false)
+    applySettings() {
+      // 应用设置到 store
+      this.$store.commit('chatCompletion/SET_SYSTEM_PROMPT', this.systemPrompt)
+      this.$store.commit('chatCompletion/SET_TEMPERATURE', this.temperature)
+      this.$store.commit('chatCompletion/SET_MAX_TOKENS', this.maxTokens)
+      
+      // 显示成功提示
+      if (window.$message) {
+        window.$message.success('设置已应用')
+      }
+      
+      // 关闭侧边栏
+      this.$emit('close')
     }
   }
 }
@@ -101,14 +109,40 @@ export default {
   background: var(--bg-secondary);
   border-left: 1px solid var(--border-color);
   box-shadow: -4px 0 15px rgba(0,0,0,0.08);
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 1000;
   display: flex;
   flex-direction: column;
+  animation: slideInRight 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.right-sidebar:not(.open) {
-  transform: translateX(100%);
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.apply-btn {
+  width: 100%;
+  padding: 12px 16px;
+  background: var(--accent-blue);
+  border: none;
+  color: white;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.2s;
+}
+
+.apply-btn:hover {
+  background: var(--accent-blue-hover);
+  transform: translateY(-1px);
 }
 
 .sidebar-header {

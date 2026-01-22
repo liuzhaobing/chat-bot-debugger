@@ -87,7 +87,7 @@ export default {
   },
   methods: {
     newChat() {
-      this.$store.dispatch('chatCompletion/createNewChat')
+      this.$router.push({ name: 'NewChat' })
       this.$nextTick(() => {
         if (this.$refs.historyList) {
           this.$refs.historyList.scrollTop = 0
@@ -96,11 +96,19 @@ export default {
     },
     loadChat(id) {
       if (id !== this.$store.state.chatCompletion.currentConversationId) {
-        this.$store.dispatch('chatCompletion/loadConversation', id)
+        this.$router.push({ name: 'Chat', params: { id } })
       }
     },
     async deleteChat(id) {
-        if(confirm("Delete this chat?")) {
+        const confirmed = await window.$confirm({
+            title: '删除会话',
+            message: '确定要删除这个会话吗？删除后无法恢复。',
+            type: 'warning',
+            confirmText: '删除',
+            cancelText: '取消'
+        })
+        
+        if (confirmed) {
             await this.$store.dispatch('chatCompletion/deleteConversation', id)
         }
     },

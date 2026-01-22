@@ -34,6 +34,9 @@
         <button class="image-btn no-border" @click.prevent="triggerFileInput" :disabled="isStreaming" title="上传图片">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
         </button>
+        <button class="settings-btn no-border" @click="$emit('toggle-settings')" :disabled="isStreaming" title="聊天设置">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M12 1v6m0 6v6m11-7h-6m-6 0H1"></path></svg>
+        </button>
         <button @click="sendMessage" :disabled="isStreaming || (!inputContent.trim() && imageBase64List.length === 0)" class="send-btn">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
         </button>
@@ -73,7 +76,7 @@ export default {
     ImagePreviewModal
   },
   computed: {
-    ...mapState('chatCompletion', ['messages', 'isStreaming', 'inputMessage']),
+    ...mapState('chatCompletion', ['messages', 'isStreaming', 'inputMessage', 'currentConversationId']),
     inputContent: {
       get() {
         return this.localInput
@@ -86,24 +89,49 @@ export default {
   watch: {
     messages() {
       this.scrollToBottom()
+    },
+    '$route'() {
+      this.handleRouteChange()
     }
   },
 
   methods: {
-    sendMessage() {
+    async handleRouteChange() {
+      const sessionId = this.$route.params.id
+      if (sessionId) {
+        // 加载指定会话
+        if (this.currentConversationId !== sessionId) {
+          await this.$store.dispatch('chatCompletion/loadConversation', sessionId)
+        }
+      } else {
+        // 创建新会话
+        await this.$store.dispatch('chatCompletion/createNewChat')
+      }
+    },
+    async sendMessage() {
       if (this.isStreaming || (!this.localInput.trim() && this.imageBase64List.length === 0)) return
 
+      // 先保存输入内容，然后立即清空界面
+      const inputText = this.localInput.trim()
+      const images = [...this.imageBase64List]
+      
+      this.localInput = ''
+      this.imageBase64List = []
+      this.$nextTick(() => {
+        this.autoResize()
+      })
+
       let userMsg
-      if (this.imageBase64List.length === 0) {
+      if (images.length === 0) {
         // 仅文本，content为字符串
-        userMsg = { role: 'user', content: this.localInput.trim() }
+        userMsg = { role: 'user', content: inputText }
       } else {
         // 多模态，content为list
         const multimodalContent = []
-        if (this.localInput.trim()) {
-          multimodalContent.push({ type: 'text', text: this.localInput.trim() })
+        if (inputText) {
+          multimodalContent.push({ type: 'text', text: inputText })
         }
-        for (const img of this.imageBase64List) {
+        for (const img of images) {
           // 发送完整图片给模型，但在前端显示时使用缩略图
           multimodalContent.push({ type: 'image_url', image_url: { url: img.full } })
         }
@@ -115,12 +143,13 @@ export default {
         messages = messages.slice(0, -1)
       }
       messages = [...messages, userMsg]
-      this.$store.dispatch('chatCompletion/sendMessage', messages)
-      this.localInput = ''
-      this.imageBase64List = []
-      this.$nextTick(() => {
-        this.autoResize()
-      })
+      
+      await this.$store.dispatch('chatCompletion/sendMessage', messages)
+      
+      // 如果是新会话且发送成功，重定向到会话页面
+      if (!this.$route.params.id && this.currentConversationId && this.$route.name === 'NewChat') {
+        this.$router.replace({ name: 'Chat', params: { id: this.currentConversationId } })
+      }
     },
     handleKeydown(e) {
       if (e.key === 'Enter') {
@@ -144,8 +173,24 @@ export default {
     autoResize() {
         const el = this.$refs.textarea
         if(el) {
+            // 重置高度以获取正确的 scrollHeight
             el.style.height = 'auto'
-            el.style.height = Math.min(el.scrollHeight, 200) + 'px'
+            
+            // 计算内容高度，考虑行高和内边距
+            const lineHeight = parseInt(window.getComputedStyle(el).lineHeight) || 24
+            const minHeight = lineHeight + 8 // 最小高度：一行 + padding
+            const maxHeight = lineHeight * 8 + 8 // 最大高度：8行 + padding
+            
+            // 设置新高度，在最小和最大高度之间
+            const newHeight = Math.max(minHeight, Math.min(el.scrollHeight, maxHeight))
+            el.style.height = newHeight + 'px'
+            
+            // 如果内容超过最大高度，显示滚动条
+            if (el.scrollHeight > maxHeight) {
+                el.style.overflowY = 'auto'
+            } else {
+                el.style.overflowY = 'hidden'
+            }
         }
     },
     async handlePaste(e) {
@@ -279,9 +324,10 @@ export default {
       this.previewImageUrl = ''
     },
   },
-  mounted() {
-      this.autoResize()
-      this.scrollToBottom()
+  async mounted() {
+    this.autoResize()
+    this.scrollToBottom()
+    await this.handleRouteChange()
   }
 }
 </script>
@@ -372,10 +418,16 @@ textarea {
   font-size: 1rem;
   line-height: 1.5;
   resize: none;
-  max-height: 200px;
   padding: 4px;
   outline: none;
-  min-height: 24px;
+  min-height: 32px;
+  overflow-y: hidden;
+  transition: height 0.1s ease;
+}
+
+textarea:focus {
+  background: rgba(99, 102, 241, 0.02);
+  border-radius: 6px;
 }
 
 textarea::placeholder {
@@ -408,6 +460,36 @@ textarea::placeholder {
 }
 
 .image-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.settings-btn {
+  background: transparent;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.settings-btn.no-border {
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.settings-btn:hover:not(:disabled) {
+  background: #f1f5f9;
+  color: #4f46e5;
+}
+
+.settings-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
