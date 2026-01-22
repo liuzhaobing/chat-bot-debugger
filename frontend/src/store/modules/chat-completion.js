@@ -175,6 +175,10 @@ export default {
         if (!payload.system_prompt && window && window.localStorage) {
           payload.system_prompt = window.localStorage.getItem('systemPrompt') || ''
         }
+        
+        if (payload.system_prompt) {
+          payload.messages.unshift({ role: 'system', content: payload.system_prompt })
+        }
 
         const response = await fetch(`${API_BASE}/chat/completions`, {
           method: 'POST',
