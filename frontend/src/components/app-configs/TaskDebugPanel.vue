@@ -201,9 +201,8 @@ export default {
     },
     async runTask() {
       if (this.isRunning) return
-      
-      const modelName = this.selectedModel ? this.selectedModel.model_name : this.app.model_name
-      const providerId = this.selectedModel ? this.selectedModel.provider_id : this.app.provider_id
+      const modelName = this.app.model_name
+      const providerId = this.app.provider_id
       
       if (!modelName) {
         window.$message.warning('请选择一个模型进行调试')
