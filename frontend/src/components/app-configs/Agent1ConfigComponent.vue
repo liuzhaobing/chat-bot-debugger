@@ -7,8 +7,18 @@
           <button class="back-btn" @click="$router.push('/apps')">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
           </button>
-          <h1>{{ app.name }}</h1>
-          <span class="app-type-badge">{{ app.app_type_name }}</span>
+          <div class="header-info">
+            <div class="header-row-top">
+              <h1>{{ app.name }}</h1>
+              <span class="app-type-badge">{{ app.app_type_name }}</span>
+            </div>
+            <div class="header-row-bottom">
+              <span class="app-id-badge">{{ app.id }}</span>
+              <button class="copy-id-btn" @click="copyAppId" title="复制 App ID">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              </button>
+            </div>
+          </div>
         </div>
         <div class="header-actions">
           <span class="save-status">{{ saveStatus }}</span>
@@ -156,6 +166,15 @@
           </div>
         </section>
 
+        <!-- 场景管理 -->
+        <section class="config-section">
+          <scenario-manager 
+            v-if="app && app.id" 
+            :app-id="app.id" 
+            @load-scenario="handleLoadScenario" 
+          />
+        </section>
+
         <section class="config-section">
           <div class="section-title">模型配置</div>
           <div class="model-select-wrapper">
@@ -297,12 +316,13 @@ import axios from 'axios'
 import ModelSelector from '../model-square/ModelSelector.vue'
 import MessageItem from '../chat-completion/MessageItem.vue'
 import TaskDebugPanel from './TaskDebugPanel.vue'
+import ScenarioManager from './ScenarioManager.vue'
 import { mapState } from 'vuex'
 import nunjucks from 'nunjucks'
 
 export default {
   name: 'Agent1ConfigComponent',
-  components: { ModelSelector, MessageItem, TaskDebugPanel },
+  components: { ModelSelector, MessageItem, TaskDebugPanel, ScenarioManager },
   props: {
     appId: {
       type: [String, Number],
@@ -430,6 +450,20 @@ export default {
       }
     },
     
+    handleLoadScenario(parameters) {
+      if (!parameters) return
+      
+      // 更新参数测试值
+      Object.entries(parameters).forEach(([key, value]) => {
+        // 如果该参数在当前定义中存在，则更新值
+        // 或者即使不存在也更新（视需求而定，这里选择直接更新，支持动态参数）
+        this.$set(this.parameterTestValues, key, value)
+      })
+      
+      // 如果有新的参数不在 parameters 定义中，是否要自动添加？
+      // 暂时只更新值，不修改参数定义（Definition）
+    },
+    
     // 设置执行模式
     async setExecutionMode(mode) {
       if (this.app) {
@@ -454,6 +488,15 @@ export default {
     handlePromptInput() {
       this.parseParametersFromPrompt()
       this.triggerAutoSavePrompt()
+    },
+    
+    async copyAppId() {
+      try {
+        await navigator.clipboard.writeText(this.app.id)
+        window.$message.success('App ID 已复制')
+      } catch (e) {
+        window.$message.error('复制失败')
+      }
     },
     
     parseParametersFromPrompt() {
@@ -1837,5 +1880,48 @@ export default {
     0% { opacity: 0.2; }
     50% { opacity: 1; }
     100% { opacity: 0.2; }
+}
+/* New Header Styles */
+.header-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.header-row-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-row-bottom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.app-id-badge {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+  font-size: 11px;
+  color: #a0aec0;
+  letter-spacing: 0.02em;
+}
+
+.copy-id-btn {
+  padding: 2px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: #cbd5e0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  transition: color 0.2s;
+}
+
+.copy-id-btn:hover {
+  color: #718096;
+  background-color: #f7fafc;
 }
 </style>

@@ -11,13 +11,14 @@ import json
 import uuid
 import time
 from jinja2 import Template
-from .models import Provider, LLMModel, Conversation, Message, App, AppCategory, AppType
+from .models import Provider, LLMModel, Conversation, Message, App, AppCategory, AppType, AppScenario
 from .serializers import (
     ProviderSerializer, ConversationSerializer, MessageSerializer, 
     LLMModelSerializer, AppSerializer, AppCategorySerializer,
     AppTypeSerializer, AppPublishSerializer, AppListSerializer,
     AppInvokeRequestSerializer, AppFunctionCallingRequestSerializer,
-    AppMCPRequestSerializer, AppExecuteResponseSerializer
+    AppMCPRequestSerializer, AppExecuteResponseSerializer,
+    AppScenarioSerializer
 )
 
 class ProviderViewSet(viewsets.ModelViewSet):
@@ -1038,3 +1039,22 @@ class ChatCompletionView(APIView):
         response_stream['Cache-Control'] = 'no-cache'
         response_stream['X-Accel-Buffering'] = 'no'
         return response_stream
+
+
+class AppScenarioViewSet(viewsets.ModelViewSet):
+    """
+    应用场景视图集
+    提供应用场景的 CRUD 操作
+    """
+    queryset = AppScenario.objects.all().order_by('-updated_at')
+    serializer_class = AppScenarioSerializer
+    
+    def get_queryset(self):
+        """
+        支持按 app_id 筛选
+        """
+        queryset = super().get_queryset()
+        app_id = self.request.query_params.get('app_id')
+        if app_id:
+            queryset = queryset.filter(app_id=app_id)
+        return queryset

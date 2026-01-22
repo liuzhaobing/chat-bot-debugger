@@ -157,8 +157,8 @@ def validate_camel_case_name(value):
         raise ValidationError("应用名称不能为空")
     
     # 驼峰命名正则：以大写字母开头，后续可以是大小写字母
-    pattern = r'^[A-Z][a-zA-Z]*$'
-    if not re.match(pattern, value):
+    pattern = r'^[A-Z][a-z]+(?:[A-Z][a-z]+)+$'
+    if not re.fullmatch(pattern, value):
         raise ValidationError(
             "应用名称必须符合驼峰命名规范（如 GetWeather），"
             "只允许英文字母，必须以大写字母开头，不允许空格和标点符号"
@@ -316,3 +316,30 @@ class App(models.Model):
         }
         
         return schema
+
+
+class AppScenario(models.Model):
+    """
+    应用场景模型
+    用于存储应用的测试场景（预设参数集合）
+    """
+    id = models.CharField(max_length=32, primary_key=True, editable=False)
+    app = models.ForeignKey(App, on_delete=models.CASCADE, related_name='scenarios')
+    name = models.CharField(max_length=100, help_text="场景名称")
+    description = models.TextField(blank=True, help_text="场景描述")
+    parameters = models.JSONField(default=dict, help_text="场景参数集合")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-updated_at']
+        verbose_name = "应用场景"
+        verbose_name_plural = "应用场景"
+
+    def save(self, *args, **kwargs):
+        if not self.id:
+            self.id = uuid.uuid4().hex
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.name} ({self.app.name})"

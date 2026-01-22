@@ -1,7 +1,7 @@
 from rest_framework import serializers
 import re
 import json
-from .models import Provider, LLMModel, Conversation, Message, App, AppCategory, AppType
+from .models import Provider, LLMModel, Conversation, Message, App, AppCategory, AppType, AppScenario
 
 
 class LLMModelSerializer(serializers.ModelSerializer):
@@ -371,3 +371,13 @@ class AppExecuteResponseSerializer(serializers.Serializer):
         required=False,
         help_text="执行耗时（毫秒）"
     )
+
+
+class AppScenarioSerializer(serializers.ModelSerializer):
+    """
+    应用场景序列化器
+    """
+    class Meta:
+        model = AppScenario
+        fields = ['id', 'app', 'name', 'description', 'parameters', 'created_at', 'updated_at']
+        read_only_fields = ['created_at', 'updated_at']
