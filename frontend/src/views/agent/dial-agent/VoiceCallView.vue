@@ -23,7 +23,12 @@
 
       <!-- 右侧：动态面板 -->
       <div class="panel-section" v-if="showPanel">
-        <ScenarioPanel v-if="activePanel === 'scenario'" />
+        <ScenarioPanel 
+          v-if="activePanel === 'scenario'" 
+          :testing="scenarioTesting"
+          @test-scenario="handleScenarioTest"
+          @error="handleError"
+        />
         <TranscriptPanel v-if="activePanel === 'transcript'" :transcripts="transcripts" />
         <ConfigPanel 
           v-if="activePanel === 'config'" 
@@ -91,6 +96,11 @@ export default {
       // 右侧面板控制
       showPanel: true,
       activePanel: 'transcript', // 'scenario' | 'transcript' | 'config'
+      
+      // 场景测试相关
+      scenarioTesting: false,
+      currentScenario: null,
+      scenarioEventSource: null,
       
       // 配置
       config: {
@@ -680,6 +690,10 @@ export default {
     },
     
     handleHangup() {
+      // 如果正在进行场景测试，先停止测试
+      if (this.scenarioTesting) {
+        this.stopScenarioTest()
+      }
       this.disconnectFromServer()
     },
     
@@ -759,11 +773,236 @@ export default {
     handleConfigSave(newConfig) {
       this.config = { ...newConfig }
       console.log('Config saved:', this.config)
+    },
+
+    // 场景测试相关方法
+    async handleScenarioTest(scenario) {
+      if (this.scenarioTesting) {
+        console.log('场景测试已在进行中')
+        return
+      }
+
+      this.currentScenario = scenario
+      this.scenarioTesting = true
+      
+      // 清空之前的字幕
+      this.transcripts = []
+      
+      try {
+        // 调用后端SSE接口开始场景测试
+        const response = await fetch('/api/dial/scenario-test/', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            scenario_id: scenario.id,
+            app_id: '37ccee2a148f46199061c955fa70f9b7'
+          })
+        })
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
+
+        // 处理SSE流
+        const reader = response.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
+        let reading = true
+
+        while (reading) {
+          const { done, value } = await reader.read()
+          if (done) {
+            reading = false
+            break
+          }
+
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          
+          // 保留最后一个可能不完整的行
+          buffer = lines.pop() || ''
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = line.slice(6).trim()
+              if (data === '[DONE]') {
+                this.stopScenarioTest()
+                return
+              }
+
+              try {
+                const eventData = JSON.parse(data)
+                this.handleScenarioTestEvent(eventData)
+              } catch (e) {
+                console.error('解析SSE数据失败:', e, 'data:', data)
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error('场景测试失败:', error)
+        this.handleError('场景测试启动失败: ' + error.message)
+        this.scenarioTesting = false
+      }
+    },
+
+    handleScenarioTestEvent(eventData) {
+      const { type, data } = eventData
+
+      switch (type) {
+        case 'status':
+          console.log('场景测试状态:', data.message)
+          break
+
+        case 'ai_user_query':
+          // AI用户生成的查询
+          this.transcripts.push({
+            participant_id: 'ai_user',
+            segment_id: `ai_user_${Date.now()}`,
+            text: data.query,
+            is_final: true,
+            timestamp: new Date().toISOString(),
+            createTime: Date.now(),
+            updateTime: Date.now()
+          })
+          console.log('场景测试状态:', data.query)
+          break
+
+        case 'tts_audio':
+          // TTS生成的音频，播放音频
+          if (data.audio_data) {
+            this.playTTSAudio(data.audio_data, data.sample_rate || 24000)
+          }
+          break
+
+        case 'dial_response':
+          // 电话客服的回复
+          this.transcripts.push({
+            participant_id: 'sip_phone',
+            segment_id: `sip_phone_${Date.now()}`,
+            text: data.response,
+            is_final: true,
+            timestamp: new Date().toISOString(),
+            createTime: Date.now(),
+            updateTime: Date.now()
+          })
+          break
+
+        case 'judger_result':
+          // 判断器结果
+          console.log('判断器结果:', data)
+          if (data.should_continue === false) {
+            console.log('场景测试完成，原因:', data.reason)
+            this.stopScenarioTest()
+          }
+          break
+
+        case 'error':
+          console.error('场景测试错误:', data.message)
+          this.handleError('场景测试错误: ' + data.message)
+          this.stopScenarioTest()
+          break
+
+        case 'completed':
+          console.log('场景测试完成')
+          this.addSystemMessage('场景测试已完成')
+          this.stopScenarioTest()
+          break
+
+        default:
+          console.log('未知事件类型:', type, data)
+      }
+    },
+
+    async playTTSAudio(base64Audio, sampleRate) {
+      try {
+        // 创建音频上下文（如果还没有）
+        if (!this.audioContext) {
+          this.audioContext = new (window.AudioContext || window.webkitAudioContext)()
+        }
+
+        // 确保音频上下文已恢复
+        if (this.audioContext.state === 'suspended') {
+          await this.audioContext.resume()
+        }
+
+        // 解码base64音频数据
+        const binaryString = atob(base64Audio)
+        const len = binaryString.length
+        const bytes = new Uint8Array(len)
+        
+        for (let i = 0; i < len; i++) {
+          bytes[i] = binaryString.charCodeAt(i)
+        }
+
+        // 转换为Float32Array
+        const int16Array = new Int16Array(bytes.buffer)
+        const float32Array = new Float32Array(int16Array.length)
+        const scale = 1.0 / 32768.0
+        
+        for (let i = 0; i < int16Array.length; i++) {
+          float32Array[i] = int16Array[i] * scale
+        }
+
+        // 创建AudioBuffer
+        const audioBuffer = this.audioContext.createBuffer(1, float32Array.length, sampleRate)
+        audioBuffer.getChannelData(0).set(float32Array)
+
+        // 播放音频
+        const source = this.audioContext.createBufferSource()
+        source.buffer = audioBuffer
+        source.connect(this.audioContext.destination)
+        source.start()
+
+      } catch (error) {
+        console.error('播放TTS音频失败:', error)
+      }
+    },
+
+    async stopScenarioTest() {
+      if (!this.scenarioTesting) return
+
+      this.scenarioTesting = false
+      this.currentScenario = null
+
+      try {
+        // 调用后端接口停止场景测试
+        await fetch('/api/dial/scenario-test/stop/', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          }
+        })
+      } catch (error) {
+        console.error('停止场景测试失败:', error)
+      }
+    },
+
+    handleError(message) {
+      console.error(message)
+      // 添加系统消息到字幕中
+      this.addSystemMessage(`错误: ${message}`)
+    },
+
+    addSystemMessage(message) {
+      // 添加系统消息到字幕显示
+      this.transcripts.push({
+        participant_id: 'system',
+        segment_id: `system_${Date.now()}`,
+        text: message,
+        is_final: true,
+        timestamp: new Date().toISOString(),
+        createTime: Date.now(),
+        updateTime: Date.now()
+      })
     }
   },
   
   beforeDestroy() {
     this.stopHeartbeat()
+    this.stopScenarioTest()
     this.disconnectFromServer()
   }
 }

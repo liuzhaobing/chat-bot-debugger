@@ -22,7 +22,18 @@
         >
           <div class="message-wrapper">
             <div class="speaker-avatar">
-              <svg v-if="isSipPhone(item.participant_id)" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <svg v-if="item.participant_id === 'system'" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M12 1v6m0 6v6M5.64 5.64l4.24 4.24m4.24 4.24l4.24 4.24M1 12h6m6 0h6M5.64 18.36l4.24-4.24m4.24-4.24l4.24-4.24"></path>
+              </svg>
+              <svg v-else-if="item.participant_id === 'ai_user'" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M9 12l2 2 4-4"></path>
+                <path d="M21 12c.552 0 1-.448 1-1s-.448-1-1-1-1 .448-1 1 .448 1 1 1z"></path>
+                <path d="M3 12c.552 0 1-.448 1-1s-.448-1-1-1-1 .448-1 1 .448 1 1 1z"></path>
+                <path d="M12 21c.552 0 1-.448 1-1s-.448-1-1-1-1 .448-1 1 .448 1 1 1z"></path>
+                <path d="M12 3c.552 0 1-.448 1-1s-.448-1-1-1-1 .448-1 1 .448 1 1 1z"></path>
+              </svg>
+              <svg v-else-if="isSipPhone(item.participant_id)" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
                 <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
               </svg>
@@ -85,9 +96,13 @@ export default {
       return participantId && participantId.startsWith('sip_')
     },
     getParticipantClass(participantId) {
+      if (participantId === 'system') return 'system-message'
+      if (participantId === 'ai_user') return 'ai-user-message'
       return this.isSipPhone(participantId) ? 'agent-message' : 'user-message'
     },
     getParticipantName(participantId) {
+      if (participantId === 'system') return '系统'
+      if (participantId === 'ai_user') return 'AI用户'
       return this.isSipPhone(participantId) ? 'AI客服' : '用户'
     },
     formatTime(timestamp) {
@@ -236,6 +251,16 @@ export default {
   color: #10b981;
 }
 
+.ai-user-message .speaker-avatar {
+  background: #fef3c7;
+  color: #f59e0b;
+}
+
+.system-message .speaker-avatar {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
 .speaker-avatar svg {
   width: 20px;
   height: 20px;
@@ -288,6 +313,20 @@ export default {
 .agent-message .message-text {
   background: var(--bg-primary);
   border-bottom-left-radius: 4px;
+}
+
+.ai-user-message .message-text {
+  background: #fef3c7;
+  color: #92400e;
+  border-bottom-right-radius: 4px;
+}
+
+.system-message .message-text {
+  background: #f3f4f6;
+  color: #374151;
+  border-radius: 8px;
+  font-style: italic;
+  text-align: center;
 }
 
 .message-text.interim {
