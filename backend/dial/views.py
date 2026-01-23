@@ -19,6 +19,8 @@ from .client import DialClient, generate_trace_id, text_to_speech
 from chat.models import App, AppScenario
 from chat.views import AppViewSet
 
+from ..utils import extract_output_json
+
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
@@ -193,10 +195,7 @@ class ScenarioTestRunner:
 
             if result["status"] == "success":
                 content = result["content"].strip()
-                try:
-                    return json.loads(content)
-                except json.JSONDecodeError:
-                    return {"user_input": content}
+                return extract_output_json(content) or {"user_input": content}
             else:
                 self.logger.error(f'AI USER生成query失败: {result.get("error")}')
                 return None
