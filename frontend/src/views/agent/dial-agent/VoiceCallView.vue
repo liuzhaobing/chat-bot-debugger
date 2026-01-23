@@ -1,41 +1,106 @@
 <template>
   <div class="voice-call-view">
-    <div class="call-layout">
-      <!-- 左侧：iPhone 通话界面 -->
-      <div class="phone-section">
-        <PhoneInterface
-          :isConnected="isConnected"
-          :isCallActive="isCallActive"
-          :callDuration="callDuration"
-          :agentState="agentState"
-          :userState="userState"
-          :audioLevel="currentAudioLevel"
-          :activePanel="activePanel"
-          :connecting="connecting"
-          @mute-toggle="handleMuteToggle"
-          @transcript-toggle="handleTranscriptToggle"
-          @hangup="handleHangup"
-          @connect="connectToServer"
-          @toggle-sidebar="toggleSidebar"
-          @switch-panel="switchPanel"
-        />
+    <!-- 顶部工具栏 -->
+    <div class="top-toolbar">
+      <div class="toolbar-left">
+        <h1 class="page-title">AI客服中心</h1>
+        <span class="page-subtitle">老板电器客服测试平台</span>
       </div>
+      
+      <div class="toolbar-center">
+        <div class="panel-tabs">
+          <button 
+            class="tab-btn" 
+            :class="{ active: activePanel === 'transcript' }"
+            @click="switchPanel('transcript')"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            </svg>
+            <span>通话字幕</span>
+          </button>
+          <button 
+            class="tab-btn" 
+            :class="{ active: activePanel === 'scenario' }"
+            @click="switchPanel('scenario')"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="7" height="7" rx="1"></rect>
+              <rect x="14" y="3" width="7" height="7" rx="1"></rect>
+              <rect x="14" y="14" width="7" height="7" rx="1"></rect>
+              <rect x="3" y="14" width="7" height="7" rx="1"></rect>
+            </svg>
+            <span>场景测试</span>
+          </button>
+        </div>
+      </div>
+      
+      <div class="toolbar-right">
+        <div class="connection-status" :class="statusClass">
+          <div class="status-dot"></div>
+          <span>{{ connectionStatusText }}</span>
+        </div>
+        
+        <!-- 语音调试按钮 -->
+        <button 
+          class="voice-debug-btn" 
+          @click="togglePhoneModal"
+          :class="{ connected: isConnected }"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56-.35-.12-.74-.03-1.01.24l-1.57 1.97c-2.83-1.35-5.48-3.9-6.89-6.83l1.95-1.66c.27-.28.35-.67.24-1.02-.37-1.11-.56-2.3-.56-3.53 0-.54-.45-.99-.99-.99H4.19C3.65 3 3 3.24 3 3.99 3 13.28 10.73 21 20.01 21c.71 0 .99-.63.99-1.18v-3.45c0-.54-.45-.99-.99-.99z"/>
+          </svg>
+        </button>
+      </div>
+    </div>
 
-      <!-- 右侧：动态面板 -->
-      <div class="panel-section" v-if="showPanel">
-        <ScenarioPanel 
-          v-if="activePanel === 'scenario'" 
-          :testing="scenarioTesting"
-          @test-scenario="handleScenarioTest"
-          @error="handleError"
-        />
-        <TranscriptPanel v-if="activePanel === 'transcript'" :transcripts="transcripts" />
-        <ConfigPanel 
-          v-if="activePanel === 'config'" 
-          :config="config"
-          @update="handleConfigUpdate"
-          @save="handleConfigSave"
-        />
+    <!-- 主内容区域 -->
+    <div class="main-content">
+      <ScenarioPanel 
+        v-if="activePanel === 'scenario'" 
+        :testing="scenarioTesting"
+        @test-scenario="handleScenarioTest"
+        @error="handleError"
+      />
+      <TranscriptPanel 
+        v-if="activePanel === 'transcript'" 
+        :transcripts="transcripts"
+        :consoleLogs="consoleLogs"
+        :showAILogs="showAILogs"
+      />
+    </div>
+
+    <!-- 悬浮iPhone模态框 -->
+    <div v-if="showPhoneModal" class="phone-modal-overlay" @click="closePhoneModal">
+      <div class="phone-modal" @click.stop>
+        <div class="modal-header">
+          <h3>语音调试</h3>
+          <button class="close-btn" @click="closePhoneModal">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+        <div class="modal-content">
+          <PhoneInterface
+            :isConnected="isConnected"
+            :isCallActive="isCallActive"
+            :callDuration="callDuration"
+            :agentState="agentState"
+            :userState="userState"
+            :audioLevel="currentAudioLevel"
+            :connecting="connecting"
+            :config="config"
+            @mute-toggle="handleMuteToggle"
+            @transcript-toggle="handleTranscriptToggle"
+            @hangup="handleHangup"
+            @connect="connectToServer"
+            @config-update="handleConfigUpdate"
+            @config-save="handleConfigSave"
+            @close-modal="closePhoneModal"
+          />
+        </div>
       </div>
     </div>
   </div>
@@ -45,15 +110,13 @@
 import PhoneInterface from '../../../components/dial-agent/PhoneInterface.vue'
 import ScenarioPanel from '../../../components/dial-agent/ScenarioPanel.vue'
 import TranscriptPanel from '../../../components/dial-agent/TranscriptPanel.vue'
-import ConfigPanel from '../../../components/dial-agent/ConfigPanel.vue'
 
 export default {
   name: 'VoiceCallView',
   components: {
     PhoneInterface,
     ScenarioPanel,
-    TranscriptPanel,
-    ConfigPanel
+    TranscriptPanel
   },
   data() {
     return {
@@ -89,18 +152,26 @@ export default {
       // 字幕数据
       transcripts: [],
       
+      // 控制台日志
+      consoleLogs: [],
+      
       // 心跳机制
       heartbeatInterval: null,
       heartbeatIntervalTime: 25000, // 25秒
       
-      // 右侧面板控制
-      showPanel: true,
-      activePanel: 'transcript', // 'scenario' | 'transcript' | 'config'
+      // 面板控制
+      activePanel: 'transcript', // 'scenario' | 'transcript'
+      
+      // iPhone模态框控制
+      showPhoneModal: false,
       
       // 场景测试相关
       scenarioTesting: false,
       currentScenario: null,
       scenarioEventSource: null,
+      
+      // AI日志显示控制（独立于场景测试状态）
+      showAILogs: false,
       
       // 配置
       config: {
@@ -144,6 +215,20 @@ export default {
           }
         }
       }
+    }
+  },
+  computed: {
+    connectionStatusText() {
+      if (this.connecting) return '连线中...'
+      if (!this.isConnected) return '未连接'
+      if (this.isCallActive) return '通话中'
+      return '已连接'
+    },
+    statusClass() {
+      if (this.connecting) return 'connecting'
+      if (!this.isConnected) return 'disconnected'
+      if (this.isCallActive) return 'active'
+      return 'connected'
     }
   },
   methods: {
@@ -755,14 +840,23 @@ export default {
       }
     },
     
-    // 右侧面板控制
-    toggleSidebar() {
-      this.showPanel = !this.showPanel
-    },
-    
+    // 面板控制
     switchPanel(panel) {
       this.activePanel = panel
-      this.showPanel = true
+    },
+
+    // iPhone模态框控制
+    togglePhoneModal() {
+      this.showPhoneModal = !this.showPhoneModal
+    },
+
+    closePhoneModal() {
+      this.showPhoneModal = false
+    },
+
+    // 右侧面板控制（保留兼容性）
+    toggleSidebar() {
+      // 不再需要，保留以防组件调用
     },
     
     handleConfigUpdate(newConfig) {
@@ -784,9 +878,11 @@ export default {
 
       this.currentScenario = scenario
       this.scenarioTesting = true
+      this.showAILogs = true // 开始显示AI日志
       
-      // 清空之前的字幕
+      // 清空之前的字幕和日志
       this.transcripts = []
+      this.consoleLogs = []
       
       try {
         // 调用后端SSE接口开始场景测试
@@ -850,6 +946,9 @@ export default {
 
     handleScenarioTestEvent(eventData) {
       const { type, data } = eventData
+
+      // 添加到控制台日志
+      this.addConsoleLog(type, data)
 
       switch (type) {
         case 'status':
@@ -966,6 +1065,7 @@ export default {
 
       this.scenarioTesting = false
       this.currentScenario = null
+      // 注意：不设置 showAILogs = false，保持AI日志显示
 
       try {
         // 调用后端接口停止场景测试
@@ -997,6 +1097,16 @@ export default {
         createTime: Date.now(),
         updateTime: Date.now()
       })
+    },
+
+    addConsoleLog(type, data) {
+      // 添加控制台日志
+      this.consoleLogs.push({
+        type: type,
+        data: data,
+        timestamp: Date.now(),
+        message: data.message || ''
+      })
     }
   },
   
@@ -1010,47 +1120,269 @@ export default {
 
 <style scoped>
 .voice-call-view {
-  height: 100%;
+  height: 100vh;
   display: flex;
   flex-direction: column;
   background: var(--bg-secondary);
   position: relative;
 }
 
-.call-layout {
-  flex: 1;
+/* 顶部工具栏 - 进一步紧凑化 */
+.top-toolbar {
   display: flex;
-  gap: 24px;
-  padding: 24px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 20px;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-color);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  z-index: 10;
+}
+
+.toolbar-left {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.page-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.page-subtitle {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+.panel-tabs {
+  display: flex;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+  padding: 2px;
+  gap: 1px;
+}
+
+.tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tab-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.connection-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+}
+
+.voice-debug-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: #6b7280;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.voice-debug-btn:hover {
+  background: var(--bg-hover);
+  border-color: #6b7280;
+}
+
+.voice-debug-btn.connected {
+  background: #ecfdf5;
+  color: #10b981;
+  border-color: #10b981;
+}
+
+.voice-debug-btn.connected:hover {
+  background: #d1fae5;
+}
+
+.voice-debug-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.connection-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #94a3b8;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #94a3b8;
+}
+
+.connection-status.connected .status-dot {
+  background: #10b981;
+  animation: pulse 2s infinite;
+}
+
+.connection-status.connecting .status-dot {
+  background: #f59e0b;
+  animation: pulse 0.8s infinite;
+}
+
+.connection-status.active .status-dot {
+  background: #3b82f6;
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* 主内容区域 - 进一步紧凑化 */
+.main-content {
+  flex: 1;
+  padding: 12px 20px;
   overflow: hidden;
 }
 
-.phone-section {
-  flex: 0 0 auto;
+/* iPhone模态框 - 完全透明背景，纯阴影效果 */
+.phone-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: transparent;
   display: flex;
-  flex-direction: column;
-  gap: 16px;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 100px;
+  z-index: 1000;
+  animation: fadeIn 0.3s ease;
+  pointer-events: none;
 }
 
-.panel-section {
-  flex: 1;
-  min-width: 0;
+.phone-modal {
+  background: transparent;
+  border-radius: 0;
+  box-shadow: 
+    0 25px 50px rgba(0, 0, 0, 0.25),
+    0 12px 24px rgba(0, 0, 0, 0.15),
+    0 6px 12px rgba(0, 0, 0, 0.1);
+  overflow: visible;
+  animation: slideInRight 0.3s ease;
   display: flex;
   flex-direction: column;
+  pointer-events: auto;
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(50px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.modal-header {
+  display: none;
+}
+
+.modal-content {
+  display: flex;
+  gap: 0;
+  padding: 0;
+  overflow: visible;
+  background: transparent;
 }
 
 @media (max-width: 1200px) {
-  .call-layout {
+  .toolbar-left {
+    display: none;
+  }
+  
+  .toolbar-center {
+    justify-content: flex-start;
+  }
+  
+  .main-content {
+    padding: 16px 20px;
+  }
+  
+  .modal-content {
     flex-direction: column;
+    padding: 16px;
+  }
+}
+
+@media (max-width: 768px) {
+  .top-toolbar {
+    padding: 16px 20px;
   }
   
-  .phone-section {
-    flex: 0 0 auto;
+  .page-title {
+    font-size: 20px;
   }
   
-  .panel-section {
-    flex: 1;
-    min-height: 400px;
+  .tab-btn {
+    padding: 10px 16px;
+    font-size: 13px;
+  }
+  
+  .tab-btn svg {
+    width: 16px;
+    height: 16px;
   }
 }
 </style>

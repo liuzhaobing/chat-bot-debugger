@@ -32,102 +32,127 @@
 
       <!-- 通话内容区域 -->
       <div class="call-content">
-        <!-- 未连接状态 -->
-        <div v-if="!isConnected && !connecting" class="pre-call-screen">
-          <!-- 顶部按钮组 -->
-          <div class="top-actions">
-            <button 
-              class="panel-btn" 
-              :class="{ active: activePanel === 'scenario' }"
-              @click="switchPanel('scenario')"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="3" width="7" height="7" rx="1"></rect>
-                <rect x="14" y="3" width="7" height="7" rx="1"></rect>
-                <rect x="14" y="14" width="7" height="7" rx="1"></rect>
-                <rect x="3" y="14" width="7" height="7" rx="1"></rect>
-              </svg>
-            </button>
-            <button 
-              class="panel-btn" 
-              :class="{ active: activePanel === 'transcript' }"
-              @click="switchPanel('transcript')"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-              </svg>
-            </button>
-            <button 
-              class="panel-btn" 
-              :class="{ active: activePanel === 'config' }"
-              @click="switchPanel('config')"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="3"></circle>
-                <path d="M12 1v6m0 6v6M5.64 5.64l4.24 4.24m4.24 4.24l4.24 4.24M1 12h6m6 0h6M5.64 18.36l4.24-4.24m4.24-4.24l4.24-4.24"></path>
-              </svg>
-            </button>
-          </div>
-
-          <div class="call-animation">
-            <div class="avatar-circle large">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                <circle cx="12" cy="7" r="4"></circle>
-              </svg>
+        <!-- 通话页面 -->
+        <div v-if="currentPage === 'call'">
+          <!-- 未连接状态 -->
+          <div v-if="!isConnected && !connecting" class="pre-call-screen">
+            <div class="call-animation">
+              <div class="avatar-circle large">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="12" cy="7" r="4"></circle>
+                </svg>
+              </div>
+            </div>
+            
+            <div class="call-info">
+              <h2>AI客服中心</h2>
+              <p class="service-name">老板电器客服中心</p>
+              <p class="call-hint-text">点击下方按钮开始通话</p>
             </div>
           </div>
-          
-          <div class="call-info">
-            <h2>AI客服中心</h2>
-            <p class="service-name">老板电器客服中心</p>
-            <p class="call-hint-text">点击下方按钮开始通话</p>
+
+          <!-- 已连接/通话中状态 -->
+          <div v-else class="in-call-screen">
+            <!-- 连接状态指示 -->
+            <div class="connection-status" :class="statusClass">
+              <div class="status-dot"></div>
+              <span>{{ connectionStatusText }}</span>
+            </div>
+
+            <!-- 通话动画 -->
+            <div class="call-animation">
+              <div class="avatar-circle" :class="{ active: isCallActive, speaking: isSpeaking, listening: isListening, thinking: isThinking }">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                </svg>
+              </div>
+              <!-- 音频波动效果 - Agent说话 -->
+              <div class="audio-waves" v-if="isSpeaking">
+                <div class="wave"></div>
+                <div class="wave"></div>
+                <div class="wave"></div>
+                <div class="wave"></div>
+              </div>
+              <div class="pulse-ring" v-if="isCallActive && !isSpeaking && !isUserSpeaking"></div>
+              <div class="pulse-ring pulse-ring-2" v-if="isCallActive && !isSpeaking && !isUserSpeaking"></div>
+            </div>
+
+            <!-- 状态提示 -->
+            <div class="call-hint">
+              <p class="hint-text">{{ agentStateText }}</p>
+            </div>
+
+            <!-- 通话时长 -->
+            <div class="call-duration">
+              <span>{{ formattedDuration }}</span>
+            </div>
+
+            <!-- 用户说话状态指示器 -->
+            <div class="user-speaking-indicator" v-if="isUserSpeaking">
+              <div class="user-audio-dots">
+                <div class="dot" :style="{ height: userAudioLevels[0] + 'px' }"></div>
+                <div class="dot" :style="{ height: userAudioLevels[1] + 'px' }"></div>
+                <div class="dot" :style="{ height: userAudioLevels[2] + 'px' }"></div>
+              </div>
+            </div>
           </div>
         </div>
 
-        <!-- 已连接/通话中状态 -->
-        <div v-else class="in-call-screen">
-          <!-- 连接状态指示 -->
-          <div class="connection-status" :class="statusClass">
-            <div class="status-dot"></div>
-            <span>{{ connectionStatusText }}</span>
-          </div>
-
-          <!-- 通话动画 -->
-          <div class="call-animation">
-            <div class="avatar-circle" :class="{ active: isCallActive, speaking: isSpeaking, listening: isListening, thinking: isThinking }">
+        <!-- 配置页面 -->
+        <div v-else-if="currentPage === 'config'" class="config-screen">
+          <div class="config-header">
+            <button class="back-btn" @click="goToCallPage">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                <polyline points="15 18 9 12 15 6"></polyline>
               </svg>
+            </button>
+            <h3>会话配置</h3>
+          </div>
+
+          <div class="config-content">
+            <!-- 服务器配置 -->
+            <div class="config-section">
+              <h4>服务器配置</h4>
+              <div class="form-group">
+                <label>服务器地址</label>
+                <input 
+                  v-model="localConfig.serverUrl" 
+                  type="text" 
+                  placeholder="ws://118.31.127.156:8000/ws/sessions/start"
+                  @change="handleConfigChange"
+                />
+              </div>
             </div>
-            <!-- 音频波动效果 - Agent说话 -->
-            <div class="audio-waves" v-if="isSpeaking">
-              <div class="wave"></div>
-              <div class="wave"></div>
-              <div class="wave"></div>
-              <div class="wave"></div>
+
+            <!-- 用户信息 -->
+            <div class="config-section">
+              <h4>用户信息</h4>
+              <div class="form-group">
+                <label>用户ID</label>
+                <input 
+                  v-model="localConfig.userId" 
+                  type="text" 
+                  placeholder="17744270115"
+                  @change="handleConfigChange"
+                />
+              </div>
             </div>
-            <div class="pulse-ring" v-if="isCallActive && !isSpeaking && !isUserSpeaking"></div>
-            <div class="pulse-ring pulse-ring-2" v-if="isCallActive && !isSpeaking && !isUserSpeaking"></div>
-          </div>
 
-          <!-- 状态提示 -->
-          <div class="call-hint">
-            <p class="hint-text">{{ agentStateText }}</p>
-          </div>
+            <!-- Agent配置 -->
+            <div class="config-section">
+              <h4>Agent配置</h4>
+              <div class="form-group">
+                <label>Agent类型</label>
+                <select v-model="localConfig.agentType" @change="handleConfigChange">
+                  <option value="robam_workflow">robam_workflow</option>
+                </select>
+              </div>
+            </div>
 
-          <!-- 通话时长 -->
-          <div class="call-duration">
-            <span>{{ formattedDuration }}</span>
-          </div>
-
-          <!-- 用户说话状态指示器 -->
-          <div class="user-speaking-indicator" v-if="isUserSpeaking">
-            <div class="user-audio-dots">
-              <div class="dot" :style="{ height: userAudioLevels[0] + 'px' }"></div>
-              <div class="dot" :style="{ height: userAudioLevels[1] + 'px' }"></div>
-              <div class="dot" :style="{ height: userAudioLevels[2] + 'px' }"></div>
+            <div class="config-actions">
+              <button class="save-btn" @click="saveConfig">保存配置</button>
             </div>
           </div>
         </div>
@@ -135,71 +160,82 @@
 
       <!-- 底部控制按钮 -->
       <div class="call-controls">
-        <button 
-          v-if="!isConnected && !connecting"
-          class="control-btn call-btn"
-          @click="handleConnect"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56-.35-.12-.74-.03-1.01.24l-1.57 1.97c-2.83-1.35-5.48-3.9-6.89-6.83l1.95-1.66c.27-.28.35-.67.24-1.02-.37-1.11-.56-2.3-.56-3.53 0-.54-.45-.99-.99-.99H4.19C3.65 3 3 3.24 3 3.99 3 13.28 10.73 21 20.01 21c.71 0 .99-.63.99-1.18v-3.45c0-.54-.45-.99-.99-.99z"/>
-          </svg>
-        </button>
-
-        <button 
-          v-if="connecting"
-          class="control-btn call-btn connecting"
-          disabled
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10"></circle>
-            <path d="M12 6v6l4 2"></path>
-          </svg>
-        </button>
-
-        <template v-if="isConnected && !connecting">
+        <template v-if="currentPage === 'call'">
           <button 
-            class="control-btn" 
-            :class="{ active: isMuted }"
-            @click="toggleMute"
-          >
-            <svg v-if="!isMuted" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-              <line x1="12" y1="19" x2="12" y2="23"></line>
-              <line x1="8" y1="23" x2="16" y2="23"></line>
-            </svg>
-            <svg v-else xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="1" y1="1" x2="23" y2="23"></line>
-              <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"></path>
-              <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"></path>
-              <line x1="12" y1="19" x2="12" y2="23"></line>
-              <line x1="8" y1="23" x2="16" y2="23"></line>
-            </svg>
-          </button>
-
-          <button 
-            class="control-btn hangup-btn"
-            @click="handleHangup"
+            v-if="!isConnected && !connecting"
+            class="control-btn call-btn"
+            @click="handleConnect"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85-.18.18-.43.28-.7.28-.28 0-.53-.11-.71-.29L.29 13.08c-.18-.17-.29-.42-.29-.7 0-.28.11-.53.29-.71C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67c.18.18.29.43.29.71 0 .28-.11.53-.29.71l-2.48 2.48c-.18.18-.43.29-.71.29-.27 0-.52-.11-.7-.28-.79-.74-1.68-1.36-2.66-1.85-.33-.16-.56-.5-.56-.9v-3.1C15.15 9.25 13.6 9 12 9z"/>
+              <path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56-.35-.12-.74-.03-1.01.24l-1.57 1.97c-2.83-1.35-5.48-3.9-6.89-6.83l1.95-1.66c.27-.28.35-.67.24-1.02-.37-1.11-.56-2.3-.56-3.53 0-.54-.45-.99-.99-.99H4.19C3.65 3 3 3.24 3 3.99 3 13.28 10.73 21 20.01 21c.71 0 .99-.63.99-1.18v-3.45c0-.54-.45-.99-.99-.99z"/>
             </svg>
           </button>
 
           <button 
-            class="control-btn"
-            :class="{ active: showTranscript }"
-            @click="toggleTranscript"
+            v-if="connecting"
+            class="control-btn call-btn connecting"
+            disabled
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-              <polyline points="14 2 14 8 20 8"></polyline>
-              <line x1="16" y1="13" x2="8" y2="13"></line>
-              <line x1="16" y1="17" x2="8" y2="17"></line>
-              <polyline points="10 9 9 9 8 9"></polyline>
+              <circle cx="12" cy="12" r="10"></circle>
+              <path d="M12 6v6l4 2"></path>
+            </svg>
+          </button>
+
+          <template v-if="isConnected && !connecting">
+            <button 
+              class="control-btn" 
+              :class="{ active: isMuted }"
+              @click="toggleMute"
+            >
+              <svg v-if="!isMuted" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                <line x1="12" y1="19" x2="12" y2="23"></line>
+                <line x1="8" y1="23" x2="16" y2="23"></line>
+              </svg>
+              <svg v-else xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="1" y1="1" x2="23" y2="23"></line>
+                <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"></path>
+                <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"></path>
+                <line x1="12" y1="19" x2="12" y2="23"></line>
+                <line x1="8" y1="23" x2="16" y2="23"></line>
+              </svg>
+            </button>
+
+            <button 
+              class="control-btn hangup-btn"
+              @click="handleHangup"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85-.18.18-.43.28-.7.28-.28 0-.53-.11-.71-.29L.29 13.08c-.18-.17-.29-.42-.29-.7 0-.28.11-.53.29-.71C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67c.18.18.29.43.29.71 0 .28-.11.53-.29.71l-2.48 2.48c-.18.18-.43.29-.71.29-.27 0-.52-.11-.7-.28-.79-.74-1.68-1.36-2.66-1.85-.33-.16-.56-.5-.56-.9v-3.1C15.15 9.25 13.6 9 12 9z"/>
+              </svg>
+            </button>
+          </template>
+
+          <!-- 配置按钮 - 只在未连接时显示 -->
+          <button 
+            v-if="!isConnected && !connecting"
+            class="control-btn"
+            @click="goToConfigPage"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M12 1v6m0 6v6M5.64 5.64l4.24 4.24m4.24 4.24l4.24 4.24M1 12h6m6 0h6M5.64 18.36l4.24-4.24m4.24-4.24l4.24-4.24"></path>
             </svg>
           </button>
         </template>
+
+        <!-- 关闭按钮 -->
+        <button 
+          class="control-btn close-btn"
+          @click="closeModal"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
       </div>
 
       <!-- 底部指示器 -->
@@ -236,13 +272,13 @@ export default {
       type: Number,
       default: 0
     },
-    activePanel: {
-      type: String,
-      default: 'transcript'
-    },
     connecting: {
       type: Boolean,
       default: false
+    },
+    config: {
+      type: Object,
+      default: () => ({})
     }
   },
   data() {
@@ -253,7 +289,11 @@ export default {
       timeInterval: null,
       batteryLevel: 85,
       userAudioLevels: [4, 4, 4], // 用户音频波动高度（像素）
-      audioAnimationInterval: null
+      audioAnimationInterval: null,
+      
+      // 内部页面状态
+      currentPage: 'call', // 'call' | 'config'
+      localConfig: {}
     }
   },
   computed: {
@@ -332,6 +372,30 @@ export default {
     openSettings() {
       this.$emit('switch-panel', 'config')
     },
+    
+    // 页面切换方法
+    goToConfigPage() {
+      this.currentPage = 'config'
+      this.localConfig = { ...this.config }
+    },
+    
+    goToCallPage() {
+      this.currentPage = 'call'
+    },
+    
+    closeModal() {
+      this.$emit('close-modal')
+    },
+    
+    // 配置相关方法
+    handleConfigChange() {
+      this.$emit('config-update', this.localConfig)
+    },
+    
+    saveConfig() {
+      this.$emit('config-save', this.localConfig)
+      this.goToCallPage()
+    },
     animateUserAudio() {
       // 根据音频级别生成波动效果
       const baseHeight = 8
@@ -387,8 +451,10 @@ export default {
   display: flex;
   justify-content: center;
   align-items: center;
-  padding: 20px;
+  padding: 0;
   height: 100%;
+  background: transparent;
+  overflow: hidden;
 }
 
 .iphone-frame {
@@ -534,17 +600,6 @@ export default {
   position: relative;
 }
 
-.top-actions {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0 20px;
-}
-
 .icon-btn-minimal {
   width: 36px;
   height: 36px;
@@ -568,36 +623,6 @@ export default {
   height: 20px;
 }
 
-.panel-btn {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  border: none;
-  background: rgba(255, 255, 255, 0.4);
-  backdrop-filter: blur(10px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  color: #1e293b;
-}
-
-.panel-btn:hover {
-  background: rgba(255, 255, 255, 0.6);
-  transform: translateY(-2px);
-}
-
-.panel-btn.active {
-  background: rgba(255, 255, 255, 0.9);
-  color: #3b82f6;
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
-}
-
-.panel-btn svg {
-  width: 20px;
-  height: 20px;
-}
 
 .call-info {
   text-align: center;
@@ -982,5 +1007,135 @@ export default {
   background: rgba(0, 0, 0, 0.3);
   border-radius: 100px;
   margin: 0 auto 8px;
+}
+
+/* 配置页面样式 */
+.config-screen {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  padding: 20px;
+}
+
+.config-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(30, 41, 59, 0.1);
+}
+
+.back-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.3);
+  backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: #1e293b;
+}
+
+.back-btn:hover {
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.back-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+.config-header h3 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.config-content {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.config-section {
+  margin-bottom: 24px;
+}
+
+.config-section h4 {
+  margin: 0 0 12px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
+}
+
+.form-group input,
+.form-group select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid rgba(30, 41, 59, 0.2);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(10px);
+  font-size: 14px;
+  color: #1e293b;
+  transition: all 0.2s ease;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.config-actions {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(30, 41, 59, 0.1);
+}
+
+.save-btn {
+  width: 100%;
+  padding: 12px;
+  border: none;
+  border-radius: 8px;
+  background: #10b981;
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.save-btn:hover {
+  background: #059669;
+}
+
+.close-btn {
+  background: #ef4444;
+  color: white;
+}
+
+.close-btn:hover:not(:disabled) {
+  background: #dc2626;
+  transform: scale(1.05);
 }
 </style>
