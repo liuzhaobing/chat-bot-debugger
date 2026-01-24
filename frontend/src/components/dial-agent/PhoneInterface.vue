@@ -471,14 +471,12 @@ export default {
   height: 812px;
   background: linear-gradient(135deg, #fbc2eb 0%, #a6c1ee 100%);
   border-radius: 40px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  /* 只保留纯黑色阴影，完全去掉任何白色或浅色效果 */
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
   position: relative;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  /* 确保iPhone边框没有白色蒙层 */
-  border: none;
-  outline: none;
 }
 
 /* 状态栏 */

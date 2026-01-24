@@ -63,6 +63,8 @@ export default {
   z-index: 1000;
   animation: fadeIn 0.3s ease;
   pointer-events: none;
+  /* 确保没有任何背景色 */
+  backdrop-filter: none;
 }
 
 .iphone-modal {
@@ -80,6 +82,9 @@ export default {
   /* 确保没有任何背景色或边框 */
   border: none;
   outline: none;
+  /* 去掉任何可能的白色背景 */
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 @keyframes fadeIn {
@@ -112,6 +117,10 @@ export default {
   padding: 0;
   overflow: visible;
   background: transparent;
+  /* 确保内容区域也没有任何背景 */
+  border: none;
+  outline: none;
+  box-shadow: none;
 }
 
 @media (max-width: 1200px) {
