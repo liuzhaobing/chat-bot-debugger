@@ -48,7 +48,7 @@ export default {
 </script>
 
 <style scoped>
-/* iPhone模态框 - 完全透明背景，纯阴影效果 */
+/* iPhone模态框 - 完全透明背景，纯阴影效果，去除白色蒙层 */
 .iphone-modal-overlay {
   position: fixed;
   top: 0;
@@ -77,6 +77,9 @@ export default {
   display: flex;
   flex-direction: column;
   pointer-events: auto;
+  /* 确保没有任何背景色或边框 */
+  border: none;
+  outline: none;
 }
 
 @keyframes fadeIn {

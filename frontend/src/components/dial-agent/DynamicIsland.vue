@@ -1,21 +1,8 @@
 <template>
   <div v-if="isVisible" class="dynamic-island-container">
-    <div class="dynamic-island" :class="{ expanded: isExpanded }" @click="toggleExpanded">
-      <!-- 紧凑状态 -->
-      <div v-if="!isExpanded" class="island-compact">
-        <div class="call-indicator">
-          <div class="status-dot active"></div>
-          <span class="call-duration">{{ formattedDuration }}</span>
-        </div>
-        <div class="audio-wave" v-if="isSpeaking">
-          <div class="wave-bar"></div>
-          <div class="wave-bar"></div>
-          <div class="wave-bar"></div>
-        </div>
-      </div>
-
-      <!-- 展开状态 -->
-      <div v-if="isExpanded" class="island-expanded">
+    <div class="dynamic-island expanded" @click="handleBackgroundClick">
+      <!-- 展开状态 - 始终显示 -->
+      <div class="island-expanded">
         <div class="call-info">
           <div class="call-status">
             <div class="status-dot active"></div>
@@ -56,6 +43,13 @@
             </svg>
           </button>
         </div>
+
+        <!-- 音频波动效果 -->
+        <div class="audio-wave" v-if="isSpeaking">
+          <div class="wave-bar"></div>
+          <div class="wave-bar"></div>
+          <div class="wave-bar"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -82,11 +76,6 @@ export default {
       default: false
     }
   },
-  data() {
-    return {
-      isExpanded: false
-    }
-  },
   computed: {
     formattedDuration() {
       const minutes = Math.floor(this.callDuration / 60)
@@ -95,21 +84,15 @@ export default {
     }
   },
   methods: {
-    toggleExpanded() {
-      this.isExpanded = !this.isExpanded
+    handleBackgroundClick() {
+      // 点击空白区域时，发出事件通知父组件切回iPhone页面
+      this.$emit('click')
     },
     toggleMute() {
       this.$emit('mute-toggle', !this.isMuted)
     },
     handleHangup() {
       this.$emit('hangup')
-    }
-  },
-  watch: {
-    isVisible(newVal) {
-      if (!newVal) {
-        this.isExpanded = false
-      }
     }
   }
 }
@@ -137,100 +120,25 @@ export default {
 
 .dynamic-island {
   background: #000;
-  border-radius: 25px;
-  padding: 8px 16px;
+  border-radius: 20px;
+  padding: 12px 20px;
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   backdrop-filter: blur(20px);
   border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.dynamic-island.expanded {
-  border-radius: 20px;
-  padding: 12px 20px;
   min-width: 280px;
+  position: relative;
 }
 
 .dynamic-island:hover {
   transform: scale(1.02);
 }
 
-/* 紧凑状态样式 */
-.island-compact {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  color: white;
-}
-
-.call-indicator {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #10b981;
-  animation: pulse 2s infinite;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
-}
-
-.call-duration {
-  font-size: 13px;
-  font-weight: 600;
-  color: white;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
-
-.audio-wave {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  height: 16px;
-}
-
-.wave-bar {
-  width: 2px;
-  background: #10b981;
-  border-radius: 1px;
-  animation: wave-animation 1s ease-in-out infinite;
-}
-
-.wave-bar:nth-child(1) {
-  height: 8px;
-  animation-delay: 0s;
-}
-
-.wave-bar:nth-child(2) {
-  height: 12px;
-  animation-delay: 0.1s;
-}
-
-.wave-bar:nth-child(3) {
-  height: 6px;
-  animation-delay: 0.2s;
-}
-
-@keyframes wave-animation {
-  0%, 100% {
-    transform: scaleY(1);
-  }
-  50% {
-    transform: scaleY(1.5);
-  }
-}
-
 /* 展开状态样式 */
 .island-expanded {
   color: white;
+  position: relative;
 }
 
 .call-info {
@@ -244,6 +152,19 @@ export default {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #10b981;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
 }
 
 .status-text {
@@ -303,5 +224,48 @@ export default {
 
 .hangup-btn:hover {
   background: rgba(239, 68, 68, 0.9);
+}
+
+/* 音频波动效果 */
+.audio-wave {
+  position: absolute;
+  top: 50%;
+  right: 20px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 16px;
+}
+
+.wave-bar {
+  width: 2px;
+  background: #10b981;
+  border-radius: 1px;
+  animation: wave-animation 1s ease-in-out infinite;
+}
+
+.wave-bar:nth-child(1) {
+  height: 8px;
+  animation-delay: 0s;
+}
+
+.wave-bar:nth-child(2) {
+  height: 12px;
+  animation-delay: 0.1s;
+}
+
+.wave-bar:nth-child(3) {
+  height: 6px;
+  animation-delay: 0.2s;
+}
+
+@keyframes wave-animation {
+  0%, 100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(1.5);
+  }
 }
 </style>

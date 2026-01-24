@@ -226,7 +226,7 @@
           </button>
         </template>
 
-        <!-- 关闭按钮 -->
+        <!-- 关闭按钮 - 通话中时切回灵动岛，未通话时关闭模态框 -->
         <button 
           class="control-btn close-btn"
           @click="closeModal"
@@ -387,6 +387,7 @@ export default {
     },
     
     closeModal() {
+      // 通话中时关闭iPhone页面切回灵动岛，未通话时关闭模态框
       this.$emit('close-modal')
     },
     
@@ -475,6 +476,9 @@ export default {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  /* 确保iPhone边框没有白色蒙层 */
+  border: none;
+  outline: none;
 }
 
 /* 状态栏 */

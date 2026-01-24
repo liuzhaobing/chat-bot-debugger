@@ -36,15 +36,17 @@
       </div>
       
       <div class="toolbar-right">
-        <!-- 语音调试按钮 -->
+        <!-- 紧凑版灵动岛样式的语音调试按钮 -->
         <button 
           class="voice-debug-btn" 
           @click="togglePhoneModal"
           :class="{ connected: isConnected }"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56-.35-.12-.74-.03-1.01.24l-1.57 1.97c-2.83-1.35-5.48-3.9-6.89-6.83l1.95-1.66c.27-.28.35-.67.24-1.02-.37-1.11-.56-2.3-.56-3.53 0-.54-.45-.99-.99-.99H4.19C3.65 3 3 3.24 3 3.99 3 13.28 10.73 21 20.01 21c.71 0 .99-.63.99-1.18v-3.45c0-.54-.45-.99-.99-.99z"/>
-          </svg>
+          <div class="status-dot"></div>
+          <span v-if="!isConnected && !connecting">语音调试</span>
+          <span v-if="connecting">连线中...</span>
+          <span v-if="isConnected && !isCallActive">已连接</span>
+          <span v-if="isCallActive" class="call-duration">{{ formattedDuration }}</span>
         </button>
       </div>
     </div>
@@ -65,9 +67,9 @@
       />
     </div>
 
-    <!-- 悬浮iPhone模态框 -->
+    <!-- 悬浮iPhone模态框 - 只在未通话时显示 -->
     <IPhoneModal 
-      :visible="showPhoneModal" 
+      :visible="showPhoneModal && !isCallActive" 
       title="语音调试"
       :allowBackgroundClose="!isCallActive"
       @close="closePhoneModal"
@@ -91,14 +93,15 @@
       />
     </IPhoneModal>
 
-    <!-- 灵动岛 - 只在通话中且iPhone模态框关闭时显示 -->
+    <!-- 灵动岛 - 只在通话中显示，始终展开状态 -->
     <DynamicIsland
-      :isVisible="isCallActive && !showPhoneModal"
+      :isVisible="isCallActive"
       :callDuration="callDuration"
       :isMuted="isMuted"
       :isSpeaking="agentState === 'speaking'"
       @mute-toggle="handleMuteToggle"
       @hangup="handleHangup"
+      @click="handleDynamicIslandClick"
     />
   </div>
 </template>
@@ -168,6 +171,11 @@ export default {
     },
     config() {
       return dialAgentService.config
+    },
+    formattedDuration() {
+      const minutes = Math.floor(this.callDuration / 60)
+      const seconds = this.callDuration % 60
+      return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
     }
   },
   methods: {
@@ -226,6 +234,10 @@ export default {
     },
 
     async connectToServer() {
+      // 打电话前清空字幕和AI日志
+      this.transcripts = []
+      this.consoleLogs = []
+      
       await dialAgentService.connect()
     },
     
@@ -330,12 +342,29 @@ export default {
 
     // iPhone模态框控制
     togglePhoneModal() {
-      this.showPhoneModal = !this.showPhoneModal
+      if (this.isCallActive) {
+        // 通话中时，切换显示状态
+        this.showPhoneModal = !this.showPhoneModal
+      } else {
+        // 未通话时，正常切换
+        this.showPhoneModal = !this.showPhoneModal
+      }
     },
 
     closePhoneModal() {
-      // 如果正在通话中，允许关闭模态框但保持通话连接
-      this.showPhoneModal = false
+      if (this.isCallActive) {
+        // 通话中关闭iPhone页面，不断开连接
+        this.showPhoneModal = false
+      } else {
+        // 未通话时正常关闭
+        this.showPhoneModal = false
+      }
+    },
+
+    // 灵动岛点击处理
+    handleDynamicIslandClick() {
+      // 点击灵动岛空白区域时，切回iPhone手机页面
+      this.showPhoneModal = true
     },
 
     // 右侧面板控制（保留兼容性）
@@ -717,38 +746,77 @@ export default {
   border: 1px solid var(--border-color);
 }
 
+/* 紧凑版灵动岛样式的打电话按钮 */
 .voice-debug-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  border: 1px solid var(--border-color);
-  background: var(--bg-secondary);
-  color: #6b7280;
+  background: #000;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: white;
   cursor: pointer;
   display: flex;
   align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(20px);
+  font-size: 12px;
+  font-weight: 500;
+  min-width: 80px;
   justify-content: center;
-  transition: all 0.2s ease;
 }
 
 .voice-debug-btn:hover {
-  background: var(--bg-hover);
-  border-color: #6b7280;
+  transform: scale(1.05);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
 }
 
 .voice-debug-btn.connected {
-  background: #ecfdf5;
-  color: #10b981;
-  border-color: #10b981;
+  background: #000;
+  border-color: rgba(16, 185, 129, 0.3);
+  animation: connected-glow 2s infinite;
 }
 
-.voice-debug-btn.connected:hover {
-  background: #d1fae5;
+.voice-debug-btn.connected .status-dot {
+  background: #10b981;
+  animation: pulse 2s infinite;
+}
+
+.voice-debug-btn.connected .call-duration {
+  color: #10b981;
+}
+
+@keyframes connected-glow {
+  0%, 100% {
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3), 0 0 0 0 rgba(16, 185, 129, 0.4);
+  }
+  50% {
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4), 0 0 0 4px rgba(16, 185, 129, 0.2);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.voice-debug-btn .status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #6b7280;
+  transition: all 0.3s ease;
+}
+
+.voice-debug-btn .call-duration {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: white;
+  font-weight: 600;
 }
 
 .voice-debug-btn svg {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
 }
 
 .connection-status {
