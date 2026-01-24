@@ -5,58 +5,83 @@
     </div>
 
     <!-- 通话字幕区域 -->
-    <div class="transcript-section" ref="transcriptContent" :style="showAILogs ? { height: transcriptHeight + 'px' } : {}">
-      <div v-if="transcripts.length === 0" class="empty-state">
-        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-        </svg>
-        <p>暂无通话记录</p>
-        <span>开始通话后，对话内容将显示在这里</span>
+    <div class="transcript-container" :style="showAILogs && !actualLogCollapsed ? { height: transcriptHeight + 'px' } : {}">
+      <div class="transcript-section" ref="transcriptContent">
+        <div v-if="transcripts.length === 0" class="empty-state">
+          <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+          </svg>
+          <p>暂无通话记录</p>
+          <span>开始通话后，对话内容将显示在这里</span>
+        </div>
+
+        <div v-else class="transcript-list">
+          <div 
+            v-for="item in sortedTranscripts" 
+            :key="`${item.segment_id}_${item.participant_id}`"
+            class="transcript-item"
+            :class="getParticipantClass(item.participant_id)"
+          >
+            <div class="message-wrapper">
+              <div class="speaker-avatar">
+                <svg v-if="item.participant_id === 'system'" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="3"></circle>
+                  <path d="M12 1v6m0 6v6M5.64 5.64l4.24 4.24m4.24 4.24l4.24 4.24M1 12h6m6 0h6M5.64 18.36l4.24-4.24m4.24-4.24l4.24-4.24"></path>
+                </svg>
+                <svg v-else-if="item.participant_id === 'ai_user'" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M9 12l2 2 4-4"></path>
+                  <path d="M21 12c.552 0 1-.448 1-1s-.448-1-1-1-1 .448-1 1 .448 1 1 1z"></path>
+                  <path d="M3 12c.552 0 1-.448 1-1s-.448-1-1-1-1 .448-1 1 .448 1 1 1z"></path>
+                  <path d="M12 21c.552 0 1-.448 1-1s-.448-1-1-1-1 .448-1 1 .448 1 1 1z"></path>
+                  <path d="M12 3c.552 0 1-.448 1-1s-.448-1-1-1-1 .448-1 1 .448 1 1 1z"></path>
+                </svg>
+                <svg v-else-if="isSipPhone(item.participant_id)" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                </svg>
+                <svg v-else xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="12" cy="7" r="4"></circle>
+                </svg>
+              </div>
+              <div class="message-content">
+                <div class="message-header">
+                  <span class="speaker-name">{{ getParticipantName(item.participant_id) }}</span>
+                  <span class="message-time">{{ formatTime(item.timestamp) }}</span>
+                </div>
+                <div class="message-text" :class="{ interim: !item.is_final }">
+                  {{ item.text }}
+                  <span v-if="!item.is_final" class="typing-dots">
+                    <span class="dot"></span>
+                    <span class="dot"></span>
+                    <span class="dot"></span>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div v-else class="transcript-list">
-        <div 
-          v-for="item in sortedTranscripts" 
-          :key="`${item.segment_id}_${item.participant_id}`"
-          class="transcript-item"
-          :class="getParticipantClass(item.participant_id)"
-        >
-          <div class="message-wrapper">
-            <div class="speaker-avatar">
-              <svg v-if="item.participant_id === 'system'" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="3"></circle>
-                <path d="M12 1v6m0 6v6M5.64 5.64l4.24 4.24m4.24 4.24l4.24 4.24M1 12h6m6 0h6M5.64 18.36l4.24-4.24m4.24-4.24l4.24-4.24"></path>
-              </svg>
-              <svg v-else-if="item.participant_id === 'ai_user'" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M9 12l2 2 4-4"></path>
-                <path d="M21 12c.552 0 1-.448 1-1s-.448-1-1-1-1 .448-1 1 .448 1 1 1z"></path>
-                <path d="M3 12c.552 0 1-.448 1-1s-.448-1-1-1-1 .448-1 1 .448 1 1 1z"></path>
-                <path d="M12 21c.552 0 1-.448 1-1s-.448-1-1-1-1 .448-1 1 .448 1 1 1z"></path>
-                <path d="M12 3c.552 0 1-.448 1-1s-.448-1-1-1-1 .448-1 1 .448 1 1 1z"></path>
-              </svg>
-              <svg v-else-if="isSipPhone(item.participant_id)" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-              </svg>
-              <svg v-else xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                <circle cx="12" cy="7" r="4"></circle>
-              </svg>
-            </div>
-            <div class="message-content">
-              <div class="message-header">
-                <span class="speaker-name">{{ getParticipantName(item.participant_id) }}</span>
-                <span class="message-time">{{ formatTime(item.timestamp) }}</span>
-              </div>
-              <div class="message-text" :class="{ interim: !item.is_final }">
-                {{ item.text }}
-                <span v-if="!item.is_final" class="typing-dots">
-                  <span class="dot"></span>
-                  <span class="dot"></span>
-                  <span class="dot"></span>
-                </span>
-              </div>
-            </div>
+      <!-- AI日志状态栏 - 类似VSCode底部状态栏 -->
+      <div v-if="showAILogs" class="ai-log-statusbar" @click="toggleLogCollapse">
+        <div class="statusbar-left">
+          <div class="ai-indicator-small">
+            <div class="ai-pulse-small"></div>
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+              <path d="M2 17l10 5 10-5"/>
+              <path d="M2 12l10 5 10-5"/>
+            </svg>
+          </div>
+          <span class="statusbar-text">AI 执行日志</span>
+          <div class="log-count-badge">{{ consoleLogs.length }}</div>
+        </div>
+        <div class="statusbar-right">
+          <div class="expand-icon" :class="{ collapsed: actualLogCollapsed }">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
           </div>
         </div>
       </div>
@@ -81,34 +106,13 @@
       </div>
     </div>
 
-    <!-- AI日志区域 - 只在场景测试时显示 -->
+    <!-- AI日志区域 - 只在展开时显示 -->
     <div 
-      v-if="showAILogs" 
+      v-if="showAILogs && !actualLogCollapsed" 
       class="ai-log-section" 
-      :class="{ collapsed: actualLogCollapsed }" 
-      :style="actualLogCollapsed ? {} : { height: logHeight + 'px' }"
+      :style="{ height: logHeight + 'px' }"
     >
-      <div class="log-header" @click="toggleLogCollapse">
-        <div class="log-title">
-          <div class="ai-indicator">
-            <div class="ai-pulse"></div>
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-              <path d="M2 17l10 5 10-5"/>
-              <path d="M2 12l10 5 10-5"/>
-            </svg>
-          </div>
-          <span>AI 执行日志</span>
-          <div class="log-stats">{{ consoleLogs.length }} 条</div>
-        </div>
-        <button class="collapse-btn" :class="{ collapsed: actualLogCollapsed }">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="6 9 12 15 18 9"/>
-          </svg>
-        </button>
-      </div>
-
-      <div v-if="!actualLogCollapsed" class="log-content" ref="logContent">
+      <div class="log-content" ref="logContent">
         <div v-if="consoleLogs.length === 0" class="log-empty">
           <div class="empty-animation">
             <div class="pulse-ring"></div>
@@ -179,20 +183,6 @@
             </div>
           </div>
         </div>
-      </div>
-    </div>
-
-    <!-- 折叠后的左下角按钮 -->
-    <div v-if="showAILogs && actualLogCollapsed" class="collapsed-log-button" @click="toggleLogCollapse">
-      <div class="collapsed-button-content">
-        <div class="ai-indicator small">
-          <div class="ai-pulse"></div>
-          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-          </svg>
-        </div>
-        <span>AI日志</span>
-        <div class="log-count">{{ consoleLogs.length }}</div>
       </div>
     </div>
   </div>
@@ -506,13 +496,128 @@ export default {
   color: var(--text-primary);
 }
 
+/* 通话字幕容器 */
+.transcript-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-secondary);
+  min-height: 0;
+}
+
 /* 通话字幕区域 */
 .transcript-section {
   flex: 1;
   overflow-y: auto;
   padding: 16px;
-  background: var(--bg-secondary);
   min-height: 0;
+}
+
+/* AI日志状态栏 - 类似VSCode底部状态栏 */
+.ai-log-statusbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 28px;
+  padding: 0 12px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
+  box-shadow: 0 1px 3px rgba(102, 126, 234, 0.2);
+}
+
+.ai-log-statusbar:hover {
+  background: linear-gradient(135deg, #5a67d8 0%, #6b46c1 100%);
+  box-shadow: 0 2px 6px rgba(102, 126, 234, 0.3);
+}
+
+.statusbar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.statusbar-right {
+  display: flex;
+  align-items: center;
+}
+
+.ai-indicator-small {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  color: white;
+}
+
+.ai-pulse-small {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 6px;
+  height: 6px;
+  background: #10b981;
+  border-radius: 50%;
+  animation: aiPulseSmall 2s infinite;
+}
+
+@keyframes aiPulseSmall {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.2);
+  }
+}
+
+.statusbar-text {
+  color: white;
+  font-weight: 500;
+}
+
+.log-count-badge {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  min-width: 18px;
+  text-align: center;
+}
+
+.expand-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+  transition: all 0.2s ease;
+}
+
+.expand-icon:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.expand-icon.collapsed {
+  transform: rotate(180deg);
+}
+
+.expand-icon svg {
+  color: white;
 }
 
 /* 可拖拽的分隔条 */
@@ -566,101 +671,6 @@ export default {
   background: var(--bg-primary);
   border-top: 1px solid var(--border-color);
   overflow: hidden;
-  transition: all 0.3s ease;
-}
-
-.ai-log-section.collapsed {
-  height: auto !important;
-}
-
-.log-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  background: var(--bg-primary);
-  border-bottom: 1px solid var(--border-color);
-  cursor: pointer;
-  transition: background-color 0.2s ease;
-}
-
-.log-header:hover {
-  background: var(--bg-hover);
-}
-
-.log-title {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.ai-indicator {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-radius: 6px;
-  color: white;
-}
-
-.ai-pulse {
-  position: absolute;
-  top: -2px;
-  right: -2px;
-  width: 8px;
-  height: 8px;
-  background: #10b981;
-  border-radius: 50%;
-  animation: aiPulse 2s infinite;
-}
-
-@keyframes aiPulse {
-  0%, 100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.7;
-    transform: scale(1.2);
-  }
-}
-
-.log-stats {
-  padding: 4px 8px;
-  background: var(--bg-secondary);
-  border-radius: 12px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-secondary);
-}
-
-.collapse-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  background: transparent;
-  border: none;
-  border-radius: 6px;
-  color: var(--text-tertiary);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.collapse-btn:hover {
-  background: var(--bg-secondary);
-  color: var(--text-secondary);
-}
-
-.collapse-btn.collapsed {
-  transform: rotate(180deg);
 }
 
 .log-content {
@@ -928,68 +938,7 @@ export default {
   border-color: #6b7280;
 }
 
-/* 折叠后的左下角按钮 */
-.collapsed-log-button {
-  position: absolute;
-  bottom: 16px;
-  left: 16px;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 8px 12px;
-  cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  transition: all 0.2s ease;
-  z-index: 10;
-}
-
-.collapsed-log-button:hover {
-  background: var(--bg-hover);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-}
-
-.collapsed-button-content {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.ai-indicator.small {
-  width: 16px;
-  height: 16px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-radius: 4px;
-}
-
-.ai-indicator.small .ai-pulse {
-  width: 4px;
-  height: 4px;
-  top: -1px;
-  right: -1px;
-}
-
-.collapsed-button-content span {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-primary);
-}
-
-.log-count {
-  background: #667eea;
-  color: white;
-  font-size: 10px;
-  font-weight: 600;
-  padding: 2px 6px;
-  border-radius: 10px;
-  min-width: 16px;
-  text-align: center;
-}
-
 /* AI日志区域折叠状态 */
-.ai-log-section.collapsed {
-  display: none;
-}
-
 .transcript-section::-webkit-scrollbar,
 .log-content::-webkit-scrollbar {
   width: 6px;
