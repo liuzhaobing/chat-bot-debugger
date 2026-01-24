@@ -392,6 +392,7 @@ export default {
       this.currentScenario = scenario
       this.scenarioTesting = true
       this.showAILogs = true // 开始显示AI日志
+      this.switchPanel('transcript')
       
       // 清空之前的字幕和日志
       this.transcripts = []
@@ -484,9 +485,9 @@ export default {
 
         case 'tts_audio':
           // TTS生成的音频，播放音频
-          if (data.audio_data) {
-            this.playTTSAudio(data.audio_data, data.sample_rate || 24000)
-          }
+          // if (data.audio_data) {
+          //   this.playTTSAudio(data.audio_data, data.sample_rate || 24000)
+          // }
           break
 
         case 'dial_response':
