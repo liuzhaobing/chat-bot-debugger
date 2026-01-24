@@ -66,7 +66,7 @@
     <div 
       class="resizer" 
       @mousedown="startResize"
-      v-if="showAILogs && !logCollapsed"
+      v-if="showAILogs && !actualLogCollapsed"
     >
       <div class="resizer-line"></div>
       <div class="resizer-handle">
@@ -85,8 +85,8 @@
     <div 
       v-if="showAILogs" 
       class="ai-log-section" 
-      :class="{ collapsed: logCollapsed }" 
-      :style="logCollapsed ? {} : { height: logHeight + 'px' }"
+      :class="{ collapsed: actualLogCollapsed }" 
+      :style="actualLogCollapsed ? {} : { height: logHeight + 'px' }"
     >
       <div class="log-header" @click="toggleLogCollapse">
         <div class="log-title">
@@ -101,14 +101,14 @@
           <span>AI 执行日志</span>
           <div class="log-stats">{{ consoleLogs.length }} 条</div>
         </div>
-        <button class="collapse-btn" :class="{ collapsed: logCollapsed }">
+        <button class="collapse-btn" :class="{ collapsed: actualLogCollapsed }">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="6 9 12 15 18 9"/>
           </svg>
         </button>
       </div>
 
-      <div v-if="!logCollapsed" class="log-content" ref="logContent">
+      <div v-if="!actualLogCollapsed" class="log-content" ref="logContent">
         <div v-if="consoleLogs.length === 0" class="log-empty">
           <div class="empty-animation">
             <div class="pulse-ring"></div>
@@ -183,7 +183,7 @@
     </div>
 
     <!-- 折叠后的左下角按钮 -->
-    <div v-if="showAILogs && logCollapsed" class="collapsed-log-button" @click="toggleLogCollapse">
+    <div v-if="showAILogs && actualLogCollapsed" class="collapsed-log-button" @click="toggleLogCollapse">
       <div class="collapsed-button-content">
         <div class="ai-indicator small">
           <div class="ai-pulse"></div>
@@ -206,6 +206,11 @@ export default {
       type: Array,
       default: () => []
     },
+    // AI 执行日志折叠状态
+    logCollapsed: {
+      type: Boolean,
+      default: false
+    },
     consoleLogs: {
       type: Array,
       default: () => []
@@ -223,15 +228,19 @@ export default {
       startTranscriptHeight: 0,
       startLogHeight: 0,
       
-      // 折叠状态
-      logCollapsed: false,
-      
+      // 内部折叠状态
+      internalLogCollapsed: false,
+
       // 默认高度分配
       transcriptHeight: 300,
       logHeight: 200
     }
   },
   computed: {
+    // 计算实际的折叠状态
+    actualLogCollapsed() {
+      return this.logCollapsed !== undefined ? this.logCollapsed : this.internalLogCollapsed
+    },
     sortedTranscripts() {
       // 按照 createTime 排序，确保字幕按照实际对话顺序显示
       return [...this.transcripts].sort((a, b) => {
@@ -246,6 +255,11 @@ export default {
     }
   },
   mounted() {
+    // 初始化折叠状态
+    if (this.logCollapsed !== undefined) {
+      this.internalLogCollapsed = this.logCollapsed
+    }
+    
     // 初始化高度分配
     this.initializeHeights()
     
@@ -323,9 +337,16 @@ export default {
 
     // 折叠/展开日志区域
     toggleLogCollapse() {
-      this.logCollapsed = !this.logCollapsed
+      if (this.logCollapsed !== undefined) {
+        // 如果有prop传入，通过事件通知父组件
+        this.$emit('update:logCollapsed', !this.logCollapsed)
+      } else {
+        // 否则使用内部状态
+        this.internalLogCollapsed = !this.internalLogCollapsed
+      }
       
-      if (this.logCollapsed) {
+      const collapsed = this.actualLogCollapsed
+      if (collapsed) {
         // 折叠时，将所有高度给字幕区域
         const totalHeight = this.transcriptHeight + this.logHeight
         this.transcriptHeight = totalHeight
@@ -430,6 +451,14 @@ export default {
     }
   },
   watch: {
+    logCollapsed: {
+      handler(newVal) {
+        if (newVal !== undefined) {
+          this.internalLogCollapsed = newVal
+        }
+      },
+      immediate: true
+    },
     sortedTranscripts: {
       handler() {
         this.scrollToBottom()

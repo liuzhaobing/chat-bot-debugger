@@ -60,10 +60,12 @@
         @error="handleError"
       />
       <TranscriptPanel 
-        v-if="activePanel === 'transcript'" 
+        v-if="activePanel === 'transcript'"
+        :log-collapsed="logCollapsed"
         :transcripts="transcripts"
         :consoleLogs="consoleLogs"
         :showAILogs="showAILogs"
+        @update:logCollapsed="handleLogCollapsedUpdate"
       />
     </div>
 
@@ -153,7 +155,10 @@ export default {
       scenarioEventSource: null,
       
       // AI日志显示控制（独立于场景测试状态）
-      showAILogs: false
+      showAILogs: false,
+      
+      // AI日志折叠状态控制
+      logCollapsed: false
     }
   },
   computed: {
@@ -197,6 +202,10 @@ export default {
       
       dialAgentService.on('callStateChanged', (isActive) => {
         this.isCallActive = isActive
+        // 打电话时自动折叠AI日志
+        if (isActive) {
+          this.logCollapsed = true
+        }
       })
       
       dialAgentService.on('callDurationChanged', (duration) => {
@@ -392,6 +401,7 @@ export default {
       this.currentScenario = scenario
       this.scenarioTesting = true
       this.showAILogs = true // 开始显示AI日志
+      this.logCollapsed = false // 场景测试时自动展开AI日志
       this.switchPanel('transcript')
       
       // 清空之前的字幕和日志
@@ -621,6 +631,11 @@ export default {
         timestamp: Date.now(),
         message: data.message || ''
       })
+    },
+
+    // 处理AI日志折叠状态更新
+    handleLogCollapsedUpdate(collapsed) {
+      this.logCollapsed = collapsed
     }
   },
   
