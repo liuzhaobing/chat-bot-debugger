@@ -329,7 +329,10 @@ export default {
       return this.agentState === 'thinking'
     },
     isUserSpeaking() {
-      return this.userState === 'speaking'
+      return this.userState === 'speaking' || this.audioLevel > 0.02
+    },
+    currentAudioLevel() {
+      return this.audioLevel
     },
     formattedDuration() {
       const minutes = Math.floor(this.callDuration / 60)
@@ -397,15 +400,20 @@ export default {
       this.goToCallPage()
     },
     animateUserAudio() {
-      // 根据音频级别生成波动效果
+      // 根据实际音频级别生成波动效果
       const baseHeight = 8
       const maxHeight = 40
-      const audioFactor = this.audioLevel || Math.random()
+      const audioFactor = this.currentAudioLevel || 0
+      
+      // 使用实际音频级别，添加一些随机变化使动画更自然
+      const variation1 = 0.8 + Math.random() * 0.4 // 0.8-1.2
+      const variation2 = 0.9 + Math.random() * 0.2 // 0.9-1.1
+      const variation3 = 0.7 + Math.random() * 0.6 // 0.7-1.3
       
       this.userAudioLevels = [
-        baseHeight + Math.random() * maxHeight * audioFactor,
-        baseHeight + Math.random() * maxHeight * audioFactor * 1.2,
-        baseHeight + Math.random() * maxHeight * audioFactor * 0.9
+        Math.max(baseHeight, baseHeight + maxHeight * audioFactor * variation1),
+        Math.max(baseHeight, baseHeight + maxHeight * audioFactor * variation2),
+        Math.max(baseHeight, baseHeight + maxHeight * audioFactor * variation3)
       ]
     },
     startAudioAnimation() {

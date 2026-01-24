@@ -19,7 +19,7 @@ from .client import DialClient, generate_trace_id, text_to_speech
 from chat.models import App, AppScenario
 from chat.views import AppViewSet
 
-from ..utils import extract_output_json
+from utils import extract_output_json
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 

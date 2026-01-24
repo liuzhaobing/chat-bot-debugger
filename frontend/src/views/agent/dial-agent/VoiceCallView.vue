@@ -36,11 +36,6 @@
       </div>
       
       <div class="toolbar-right">
-        <div class="connection-status" :class="statusClass">
-          <div class="status-dot"></div>
-          <span>{{ connectionStatusText }}</span>
-        </div>
-        
         <!-- 语音调试按钮 -->
         <button 
           class="voice-debug-btn" 
@@ -71,38 +66,40 @@
     </div>
 
     <!-- 悬浮iPhone模态框 -->
-    <div v-if="showPhoneModal" class="phone-modal-overlay" @click="closePhoneModal">
-      <div class="phone-modal" @click.stop>
-        <div class="modal-header">
-          <h3>语音调试</h3>
-          <button class="close-btn" @click="closePhoneModal">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </button>
-        </div>
-        <div class="modal-content">
-          <PhoneInterface
-            :isConnected="isConnected"
-            :isCallActive="isCallActive"
-            :callDuration="callDuration"
-            :agentState="agentState"
-            :userState="userState"
-            :audioLevel="currentAudioLevel"
-            :connecting="connecting"
-            :config="config"
-            @mute-toggle="handleMuteToggle"
-            @transcript-toggle="handleTranscriptToggle"
-            @hangup="handleHangup"
-            @connect="connectToServer"
-            @config-update="handleConfigUpdate"
-            @config-save="handleConfigSave"
-            @close-modal="closePhoneModal"
-          />
-        </div>
-      </div>
-    </div>
+    <IPhoneModal 
+      :visible="showPhoneModal" 
+      title="语音调试"
+      :allowBackgroundClose="!isCallActive"
+      @close="closePhoneModal"
+    >
+      <PhoneInterface
+        :isConnected="isConnected"
+        :isCallActive="isCallActive"
+        :callDuration="callDuration"
+        :agentState="agentState"
+        :userState="userState"
+        :audioLevel="currentAudioLevel"
+        :connecting="connecting"
+        :config="config"
+        @mute-toggle="handleMuteToggle"
+        @transcript-toggle="handleTranscriptToggle"
+        @hangup="handleHangup"
+        @connect="connectToServer"
+        @config-update="handleConfigUpdate"
+        @config-save="handleConfigSave"
+        @close-modal="closePhoneModal"
+      />
+    </IPhoneModal>
+
+    <!-- 灵动岛 - 只在通话中且iPhone模态框关闭时显示 -->
+    <DynamicIsland
+      :isVisible="isCallActive && !showPhoneModal"
+      :callDuration="callDuration"
+      :isMuted="isMuted"
+      :isSpeaking="agentState === 'speaking'"
+      @mute-toggle="handleMuteToggle"
+      @hangup="handleHangup"
+    />
   </div>
 </template>
 
@@ -110,54 +107,36 @@
 import PhoneInterface from '../../../components/dial-agent/PhoneInterface.vue'
 import ScenarioPanel from '../../../components/dial-agent/ScenarioPanel.vue'
 import TranscriptPanel from '../../../components/dial-agent/TranscriptPanel.vue'
+import DynamicIsland from '../../../components/dial-agent/DynamicIsland.vue'
+import IPhoneModal from '../../../components/common/IPhoneModal.vue'
+import dialAgentService from '../../../services/dialAgentService.js'
 
 export default {
   name: 'VoiceCallView',
   components: {
     PhoneInterface,
     ScenarioPanel,
-    TranscriptPanel
+    TranscriptPanel,
+    DynamicIsland,
+    IPhoneModal
   },
   data() {
     return {
-      // WebSocket 连接
-      websocket: null,
+      // 从服务获取的状态
       isConnected: false,
       connecting: false,
       isCallActive: false,
-      
-      // 音频相关
-      audioContext: null,
-      mediaStream: null,
-      audioWorkletNode: null,
-      isMuted: false,
-      showTranscript: true,
-      currentAudioLevel: 0,
-      
-      // 流式音频播放系统
-      audioStreamQueue: [], // 音频数据流队列
-      isPlayingAudio: false,
-      audioStreamSource: null, // 当前音频流源
-      nextStartTime: 0, // 下一个音频块的开始时间
-      
-      // 通话状态
       callDuration: 0,
-      durationInterval: null,
-      sessionId: null,
-      
-      // 状态管理
       agentState: '',
       userState: '',
+      isMuted: false,
+      currentAudioLevel: 0,
       
       // 字幕数据
       transcripts: [],
       
       // 控制台日志
       consoleLogs: [],
-      
-      // 心跳机制
-      heartbeatInterval: null,
-      heartbeatIntervalTime: 25000, // 25秒
       
       // 面板控制
       activePanel: 'transcript', // 'scenario' | 'transcript'
@@ -171,50 +150,7 @@ export default {
       scenarioEventSource: null,
       
       // AI日志显示控制（独立于场景测试状态）
-      showAILogs: false,
-      
-      // 配置
-      config: {
-        serverUrl: 'ws://118.31.127.156:8000/ws/sessions/start',
-        userId: '17744270115',
-        agentType: 'robam_workflow',
-        configTemplate: 'ai_telephone',
-        welcomeMessage: '你好，欢迎致电名气，有什么可以帮您？',
-        allowInterruptions: true,
-        // 音频配置
-        inputSampleRate: 16000,
-        inputChannels: 1,
-        outputSampleRate: 24000,
-        outputChannels: 1,
-        // 背景音乐配置
-        backgroundMusic: {
-          enabled: true,
-          urls: ['https://roki-ai-ckb-prod.oss-accelerate.aliyuncs.com/static/test/office_background.wav'],
-          volume: 0.05,
-          loop: true,
-          random: false
-        },
-        // 静默提醒配置
-        idleReminderConfig: {
-          enabled: true,
-          reminderContentType: 'llm',
-          message: '请问您还在吗？',
-          intervalSeconds: 20,
-          maxRemindCount: 2
-        },
-        // 插件配置
-        pluginConfigs: {
-          sileroVad: {
-            minSpeechDuration: 0.05,
-            minSilenceDuration: 0.25,
-            prefixPaddingDuration: 0.5,
-            maxBufferedSpeech: 60.0,
-            activationThreshold: 0.4,
-            sampleRate: 16000,
-            intermediateResultInterval: 320
-          }
-        }
-      }
+      showAILogs: false
     }
   },
   computed: {
@@ -229,248 +165,96 @@ export default {
       if (!this.isConnected) return 'disconnected'
       if (this.isCallActive) return 'active'
       return 'connected'
+    },
+    config() {
+      return dialAgentService.config
     }
   },
   methods: {
-    async checkMediaPermissions() {
-      try {
-        // 检查是否支持 getUserMedia
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-          return { 
-            success: false, 
-            error: '您的浏览器不支持音频功能，请使用Chrome、Firefox或Edge浏览器，并确保使用HTTPS或localhost访问' 
-          }
-        }
-        
-        // 检查麦克风和扬声器权限
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-          audio: {
-            sampleRate: 16000,
-            channelCount: 1,
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true
-          } 
-        })
-        
-        // 权限获取成功，停止测试流
-        stream.getTracks().forEach(track => track.stop())
-        
-        return { success: true }
-      } catch (error) {
-        console.error('Media permission error:', error)
-        
-        let message = '无法访问麦克风'
-        if (error.name === 'NotAllowedError') {
-          message = '麦克风权限被拒绝，请在浏览器设置中允许访问麦克风'
-        } else if (error.name === 'NotFoundError') {
-          message = '未检测到麦克风设备'
-        } else if (error.name === 'NotReadableError') {
-          message = '麦克风正在被其他应用使用'
-        } else if (error.name === 'NotSupportedError') {
-          message = '浏览器不支持音频功能，请使用HTTPS或localhost访问'
-        }
-        
-        return { success: false, error: message }
-      }
+    // 初始化服务监听器
+    initServiceListeners() {
+      dialAgentService.on('connecting', (connecting) => {
+        this.connecting = connecting
+      })
+      
+      dialAgentService.on('connected', () => {
+        this.isConnected = true
+        this.activePanel = 'transcript'
+      })
+      
+      dialAgentService.on('disconnected', () => {
+        this.isConnected = false
+        this.isCallActive = false
+      })
+      
+      dialAgentService.on('callStateChanged', (isActive) => {
+        this.isCallActive = isActive
+      })
+      
+      dialAgentService.on('callDurationChanged', (duration) => {
+        this.callDuration = duration
+      })
+      
+      dialAgentService.on('agentStateChanged', (state) => {
+        this.agentState = state
+      })
+      
+      dialAgentService.on('userStateChanged', (state) => {
+        this.userState = state
+      })
+      
+      dialAgentService.on('muteChanged', (isMuted) => {
+        this.isMuted = isMuted
+      })
+      
+      dialAgentService.on('audioLevelChanged', (level) => {
+        this.currentAudioLevel = level
+      })
+      
+      dialAgentService.on('transcription', (data) => {
+        this.handleTranscription(data)
+      })
+      
+      dialAgentService.on('textOutput', (data) => {
+        this.handleTextOutput(data)
+      })
+      
+      dialAgentService.on('error', (error) => {
+        alert(error)
+        console.error(error)
+      })
     },
-    
+
     async connectToServer() {
-      if (this.connecting || this.isConnected) return
-      
-      this.connecting = true
-      
-      try {
-        // 步骤1: 首先检查并请求麦克风权限
-        console.log('步骤1: 检查麦克风权限...')
-        const permissionCheck = await this.checkMediaPermissions()
-        if (!permissionCheck.success) {
-          alert(permissionCheck.error)
-          console.error(permissionCheck.error)
-          this.connecting = false
-          return
+      await dialAgentService.connect()
+    },
+    
+    disconnectFromServer() {
+      dialAgentService.disconnect()
+    },
+    
+    handleMuteToggle(muted) {
+      if (muted !== undefined) {
+        // 从外部组件传入的值
+        if (muted !== this.isMuted) {
+          dialAgentService.toggleMute()
         }
-        
-        // 步骤2: 启动音频采集
-        console.log('步骤2: 启动音频采集...')
-        await this.startAudioCapture()
-        console.log('音频采集已就绪')
-        
-        // 步骤3: 连接 WebSocket
-        console.log('步骤3: 连接 WebSocket...')
-        this.websocket = new WebSocket(this.config.serverUrl)
-        
-        // 重新连接时清空字幕
-        this.transcripts = []
-        
-        this.websocket.onopen = () => {
-          console.log('WebSocket 已连接，发送初始化消息...')
-          this.sendInitMessage()
-          this.activePanel = 'transcript'
-        }
-        
-        this.websocket.onmessage = (event) => {
-          this.handleWebSocketMessage(JSON.parse(event.data))
-        }
-        
-        this.websocket.onerror = (error) => {
-          console.error('WebSocket error:', error)
-          alert('连接失败，请检查服务器地址')
-          this.connecting = false
-          this.stopAudioCapture()
-        }
-        
-        this.websocket.onclose = () => {
-          console.log('WebSocket 连接已关闭')
-          this.isConnected = false
-          this.isCallActive = false
-          this.connecting = false
-          this.stopCallDuration()
-          this.stopAudioCapture()
-          this.stopHeartbeat()
-          
-          // 只清空音频队列，保留字幕
-          this.audioStreamQueue = []
-          this.nextStartTime = 0
-          this.isPlayingAudio = false
-        }
-        
-      } catch (error) {
-        console.error('Connection error:', error)
-        alert('连接失败: ' + error.message)
-        this.connecting = false
-        this.stopAudioCapture()
+      } else {
+        // 内部切换
+        dialAgentService.toggleMute()
       }
     },
     
-    sendInitMessage() {
-      // 生成会话ID和房间ID
-      const sessionId = `DIAL${Date.now()}_myroki_test_com`
-      const roomId = `room_${Date.now()}`
-      const agentUserId = `sip_${this.config.userId}`
-      
-      const initMessage = {
-        type: 'init',
-        config: {
-          room_id: roomId,
-          session_id: sessionId,
-          user_id: this.config.userId,
-          agent_user_id: agentUserId,
-          agent_type: this.config.agentType,
-          config_template: this.config.configTemplate,
-          
-          // 音频配置
-          input_sample_rate: this.config.inputSampleRate,
-          input_channels: this.config.inputChannels,
-          output_sample_rate: this.config.outputSampleRate,
-          output_channels: this.config.outputChannels,
-          
-          // 消息配置
-          welcome_message: this.config.welcomeMessage,
-          allow_interruptions: this.config.allowInterruptions,
-          
-          // 背景音乐配置
-          background_music: {
-            enabled: this.config.backgroundMusic.enabled,
-            urls: this.config.backgroundMusic.urls,
-            volume: this.config.backgroundMusic.volume,
-            loop: this.config.backgroundMusic.loop,
-            random: this.config.backgroundMusic.random
-          },
-          
-          // 静默提醒配置
-          idle_reminder_config: {
-            enabled: this.config.idleReminderConfig.enabled,
-            reminder_content_type: this.config.idleReminderConfig.reminderContentType,
-            message: this.config.idleReminderConfig.message,
-            interval_seconds: this.config.idleReminderConfig.intervalSeconds,
-            max_remind_count: this.config.idleReminderConfig.maxRemindCount
-          },
-          
-          // 插件配置
-          plugin_configs: {
-            silero_vad: {
-              min_speech_duration: this.config.pluginConfigs.sileroVad.minSpeechDuration,
-              min_silence_duration: this.config.pluginConfigs.sileroVad.minSilenceDuration,
-              prefix_padding_duration: this.config.pluginConfigs.sileroVad.prefixPaddingDuration,
-              max_buffered_speech: this.config.pluginConfigs.sileroVad.maxBufferedSpeech,
-              activation_threshold: this.config.pluginConfigs.sileroVad.activationThreshold,
-              sample_rate: this.config.pluginConfigs.sileroVad.sampleRate,
-              intermediate_result_interval: this.config.pluginConfigs.sileroVad.intermediateResultInterval
-            }
-          }
-        }
-      }
-      console.log('init', initMessage)
-      this.websocket.send(JSON.stringify(initMessage))
+    handleTranscriptToggle() {
+      // 保留兼容性
     },
     
-    handleWebSocketMessage(message) {
-      const { type, data, status } = message
-      
-      switch (type) {
-        case 'init_ack':
-          if (status === 'success') {
-            console.log('初始化确认成功，等待会话启动...')
-          } else {
-            alert('初始化失败: ' + (message.message || '未知错误'))
-            console.error('Init failed:', message)
-            this.connecting = false
-            this.stopAudioCapture()
-          }
-          break
-          
-        case 'session_started':
-          if (status === 'success') {
-            console.log('会话启动成功')
-            this.sessionId = message.session_id
-            this.isConnected = true
-            this.connecting = false
-            this.isCallActive = true
-            this.startCallDuration()
-            // 音频采集已经在 connectToServer 中启动了，这里不需要再启动
-            // 启动心跳
-            this.startHeartbeat()
-          } else {
-            alert('会话启动失败: ' + (message.message || '未知错误'))
-            console.error('Session start failed:', message)
-            this.connecting = false
-            this.stopAudioCapture()
-          }
-          break
-          
-        case 'user_state_changed':
-          this.userState = data.new_state || ''
-          break
-          
-        case 'agent_state_changed':
-          this.agentState = data.new_state || ''
-          break
-          
-        case 'transcription':
-          this.handleTranscription(data)
-          break
-          
-        case 'text_output':
-          this.handleTextOutput(data)
-          break
-          
-        case 'audio_output':
-          this.handleAudioOutput(data)
-          break
-          
-        case 'error':
-          console.error('Server error:', data)
-          alert('服务器错误: ' + (data.message || '未知错误'))
-          break
-          
-        case 'heartbeat':
-          // 心跳响应，静默处理
-          break
-          
-        default:
-          console.warn('Unknown message type:', type)
+    handleHangup() {
+      // 如果正在进行场景测试，先停止测试
+      if (this.scenarioTesting) {
+        this.stopScenarioTest()
       }
+      this.disconnectFromServer()
     },
     
     handleTranscription(data) {
@@ -538,307 +322,6 @@ export default {
       }
     },
     
-    handleAudioOutput(data) {
-      const { audio_data, sample_rate } = data
-      
-      // 立即解码并调度播放
-      this.scheduleAudioChunk(audio_data, sample_rate || 24000)
-    },
-    
-    async scheduleAudioChunk(base64Audio, sampleRate) {
-      try {
-        // 创建音频上下文（只创建一次）
-        if (!this.audioContext) {
-          this.audioContext = new (window.AudioContext || window.webkitAudioContext)()
-          this.nextStartTime = this.audioContext.currentTime
-        }
-        
-        // 确保音频上下文已恢复
-        if (this.audioContext.state === 'suspended') {
-          await this.audioContext.resume()
-        }
-        
-        // 快速解码
-        const binaryString = atob(base64Audio)
-        const len = binaryString.length
-        const bytes = new Uint8Array(len)
-        
-        for (let i = 0; i < len; i++) {
-          bytes[i] = binaryString.charCodeAt(i)
-        }
-        
-        // 转换为 Float32Array
-        const int16Array = new Int16Array(bytes.buffer)
-        const float32Array = new Float32Array(int16Array.length)
-        const scale = 1.0 / 32768.0
-        
-        for (let i = 0; i < int16Array.length; i++) {
-          float32Array[i] = int16Array[i] * scale
-        }
-        
-        // 创建 AudioBuffer
-        const audioBuffer = this.audioContext.createBuffer(1, float32Array.length, sampleRate)
-        audioBuffer.getChannelData(0).set(float32Array)
-        
-        // 创建音频源并调度播放
-        const source = this.audioContext.createBufferSource()
-        source.buffer = audioBuffer
-        
-        // 添加增益节点
-        const gainNode = this.audioContext.createGain()
-        gainNode.gain.value = 1.0
-        
-        source.connect(gainNode)
-        gainNode.connect(this.audioContext.destination)
-        
-        // 计算播放时间 - 关键：使用精确的时间调度
-        const currentTime = this.audioContext.currentTime
-        const bufferDuration = audioBuffer.duration
-        
-        // 如果 nextStartTime 已经过去，重置为当前时间
-        if (this.nextStartTime < currentTime) {
-          this.nextStartTime = currentTime
-        }
-        
-        // 调度播放
-        source.start(this.nextStartTime)
-        
-        // 更新下一个音频块的开始时间
-        this.nextStartTime += bufferDuration
-        
-        // 保存引用以便清理
-        this.audioStreamQueue.push(source)
-        
-        // 清理已播放的源
-        source.onended = () => {
-          const index = this.audioStreamQueue.indexOf(source)
-          if (index > -1) {
-            this.audioStreamQueue.splice(index, 1)
-          }
-        }
-        
-      } catch (error) {
-        console.error('Error scheduling audio:', error)
-      }
-    },
-    
-    async startAudioCapture() {
-      try {
-        // 请求麦克风权限
-        this.mediaStream = await navigator.mediaDevices.getUserMedia({ 
-          audio: {
-            sampleRate: 16000,
-            channelCount: 1,
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true
-          } 
-        })
-        
-        // 创建音频上下文
-        if (!this.audioContext) {
-          this.audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 })
-        }
-        
-        // 确保音频上下文已恢复
-        if (this.audioContext.state === 'suspended') {
-          await this.audioContext.resume()
-        }
-        
-        // 创建音频源
-        const source = this.audioContext.createMediaStreamSource(this.mediaStream)
-        
-        // 创建 ScriptProcessor 用于捕获音频数据
-        // 使用较小的 bufferSize 以降低延迟，但仍需要是 256 的倍数
-        // 256 samples = 16ms @ 16kHz，接近 Python 的 10ms
-        const bufferSize = 256
-        const processor = this.audioContext.createScriptProcessor(bufferSize, 1, 1)
-        
-        processor.onaudioprocess = (e) => {
-          if (this.isMuted || !this.isConnected) return
-          
-          const inputData = e.inputBuffer.getChannelData(0)
-          
-          // 优化的音量检测
-          let sum = 0
-          const len = inputData.length
-          for (let i = 0; i < len; i++) {
-            sum += Math.abs(inputData[i])
-          }
-          const average = sum / len
-          
-          // 更新音频级别用于可视化
-          this.currentAudioLevel = Math.min(1, average * 10)
-          
-          // 只有当音量超过阈值时才发送（与 Python 的 VAD 逻辑一致）
-          if (average > 0.01) {
-            // 优化的 PCM 转换
-            const pcmData = new Int16Array(len)
-            for (let i = 0; i < len; i++) {
-              const s = Math.max(-1, Math.min(1, inputData[i]))
-              pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF
-            }
-            
-            // 发送音频数据
-            this.sendAudioData(pcmData)
-          }
-        }
-        
-        source.connect(processor)
-        processor.connect(this.audioContext.destination)
-        
-        this.audioWorkletNode = processor
-        
-      } catch (error) {
-        console.error('Error starting audio capture:', error)
-        alert('无法访问麦克风: ' + error.message)
-        throw error
-      }
-    },
-    
-    stopAudioCapture() {
-      if (this.mediaStream) {
-        this.mediaStream.getTracks().forEach(track => track.stop())
-        this.mediaStream = null
-      }
-      
-      if (this.audioWorkletNode) {
-        this.audioWorkletNode.disconnect()
-        this.audioWorkletNode = null
-      }
-      
-      // 停止所有已调度的音频
-      this.audioStreamQueue.forEach(source => {
-        try {
-          source.stop()
-        } catch (e) {
-          // 忽略错误
-        }
-      })
-      
-      // 清空队列
-      this.audioStreamQueue = []
-      this.nextStartTime = 0
-      this.isPlayingAudio = false
-    },
-    
-    sendAudioData(pcmData) {
-      if (!this.websocket || this.websocket.readyState !== WebSocket.OPEN) return
-      
-      // 转换为 base64
-      const bytes = new Uint8Array(pcmData.buffer)
-      let binary = ''
-      for (let i = 0; i < bytes.length; i++) {
-        binary += String.fromCharCode(bytes[i])
-      }
-      const base64 = btoa(binary)
-      
-      const message = {
-        type: 'audio_input',
-        timestamp: Date.now(),
-        data: {
-          audio_data: base64,
-          sample_rate: 16000,
-          channels: 1,
-          format: 'pcm',
-          size: bytes.length
-        }
-      }
-      
-      this.websocket.send(JSON.stringify(message))
-    },
-    
-    disconnectFromServer() {
-      if (this.websocket) {
-        this.websocket.close()
-        this.websocket = null
-      }
-      
-      this.isConnected = false
-      this.isCallActive = false
-      this.stopCallDuration()
-      this.stopAudioCapture()
-      this.stopHeartbeat()
-      
-      // 只清空音频队列，保留字幕
-      this.audioStreamQueue = []
-      this.nextStartTime = 0
-      this.isPlayingAudio = false
-    },
-    
-    handleMuteToggle(muted) {
-      this.isMuted = muted
-    },
-    
-    handleTranscriptToggle(show) {
-      this.showTranscript = show
-    },
-    
-    handleHangup() {
-      // 如果正在进行场景测试，先停止测试
-      if (this.scenarioTesting) {
-        this.stopScenarioTest()
-      }
-      this.disconnectFromServer()
-    },
-    
-    startCallDuration() {
-      this.callDuration = 0
-      this.durationInterval = setInterval(() => {
-        this.callDuration++
-      }, 1000)
-    },
-    
-    stopCallDuration() {
-      if (this.durationInterval) {
-        clearInterval(this.durationInterval)
-        this.durationInterval = null
-      }
-      this.callDuration = 0
-    },
-    
-    // 心跳机制
-    startHeartbeat() {
-      // 清除已有的心跳
-      this.stopHeartbeat()
-      
-      // 启动新的心跳定时器
-      this.heartbeatInterval = setInterval(() => {
-        this.sendHeartbeat()
-      }, this.heartbeatIntervalTime)
-      
-      console.log('Heartbeat started')
-    },
-    
-    stopHeartbeat() {
-      if (this.heartbeatInterval) {
-        clearInterval(this.heartbeatInterval)
-        this.heartbeatInterval = null
-        console.log('Heartbeat stopped')
-      }
-    },
-    
-    sendHeartbeat() {
-      if (!this.websocket || this.websocket.readyState !== WebSocket.OPEN) {
-        return
-      }
-      
-      const heartbeatMessage = {
-        type: 'heartbeat',
-        timestamp: Date.now(),
-        data: {
-          client_time: Date.now(),
-          session_id: this.sessionId
-        }
-      }
-      
-      try {
-        this.websocket.send(JSON.stringify(heartbeatMessage))
-        console.log('Heartbeat sent')
-      } catch (error) {
-        console.error('Failed to send heartbeat:', error)
-      }
-    },
     
     // 面板控制
     switchPanel(panel) {
@@ -851,6 +334,7 @@ export default {
     },
 
     closePhoneModal() {
+      // 如果正在通话中，允许关闭模态框但保持通话连接
       this.showPhoneModal = false
     },
 
@@ -861,12 +345,12 @@ export default {
     
     handleConfigUpdate(newConfig) {
       // 实时更新配置（不保存）
-      this.config = { ...newConfig }
+      dialAgentService.updateConfig(newConfig)
     },
     
     handleConfigSave(newConfig) {
-      this.config = { ...newConfig }
-      console.log('Config saved:', this.config)
+      dialAgentService.updateConfig(newConfig)
+      console.log('Config saved:', newConfig)
     },
 
     // 场景测试相关方法
@@ -1110,10 +594,38 @@ export default {
     }
   },
   
+  mounted() {
+    // 初始化服务监听器
+    this.initServiceListeners()
+    
+    // 同步当前状态
+    const state = dialAgentService.getState()
+    this.isConnected = state.isConnected
+    this.connecting = state.connecting
+    this.isCallActive = state.isCallActive
+    this.callDuration = state.callDuration
+    this.agentState = state.agentState
+    this.userState = state.userState
+    this.isMuted = state.isMuted
+    this.currentAudioLevel = state.currentAudioLevel
+  },
+  
   beforeDestroy() {
-    this.stopHeartbeat()
+    // 清理服务监听器
+    dialAgentService.off('connecting')
+    dialAgentService.off('connected')
+    dialAgentService.off('disconnected')
+    dialAgentService.off('callStateChanged')
+    dialAgentService.off('callDurationChanged')
+    dialAgentService.off('agentStateChanged')
+    dialAgentService.off('userStateChanged')
+    dialAgentService.off('muteChanged')
+    dialAgentService.off('audioLevelChanged')
+    dialAgentService.off('transcription')
+    dialAgentService.off('textOutput')
+    dialAgentService.off('error')
+    
     this.stopScenarioTest()
-    this.disconnectFromServer()
   }
 }
 </script>
@@ -1291,60 +803,6 @@ export default {
   flex: 1;
   padding: 12px 20px;
   overflow: hidden;
-}
-
-/* iPhone模态框 - 完全透明背景，纯阴影效果 */
-.phone-modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: transparent;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding-right: 100px;
-  z-index: 1000;
-  animation: fadeIn 0.3s ease;
-  pointer-events: none;
-}
-
-.phone-modal {
-  background: transparent;
-  border-radius: 0;
-  box-shadow: 
-    0 25px 50px rgba(0, 0, 0, 0.25),
-    0 12px 24px rgba(0, 0, 0, 0.15),
-    0 6px 12px rgba(0, 0, 0, 0.1);
-  overflow: visible;
-  animation: slideInRight 0.3s ease;
-  display: flex;
-  flex-direction: column;
-  pointer-events: auto;
-}
-
-@keyframes slideInRight {
-  from {
-    opacity: 0;
-    transform: translateX(50px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-.modal-header {
-  display: none;
-}
-
-.modal-content {
-  display: flex;
-  gap: 0;
-  padding: 0;
-  overflow: visible;
-  background: transparent;
 }
 
 @media (max-width: 1200px) {
