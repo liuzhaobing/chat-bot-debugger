@@ -3,7 +3,8 @@
     <div class="dynamic-island expanded" @click="handleBackgroundClick">
       <!-- 展开状态 - 始终显示 -->
       <div class="island-expanded">
-        <div class="call-info">
+        <!-- 左侧：通话状态和时长 -->
+        <div class="left-info">
           <div class="call-status">
             <div class="status-dot active"></div>
             <span class="status-text">通话中</span>
@@ -11,6 +12,7 @@
           <div class="call-duration-large">{{ formattedDuration }}</div>
         </div>
         
+        <!-- 右侧：控制按钮 -->
         <div class="call-controls">
           <button 
             class="control-btn" 
@@ -101,8 +103,8 @@ export default {
 <style scoped>
 .dynamic-island-container {
   position: fixed;
-  top: 20px;
-  right: 20px;
+  top: 10px;
+  right: 10px;
   z-index: 9999;
   animation: slideInFromTop 0.3s ease-out;
 }
@@ -120,14 +122,15 @@ export default {
 
 .dynamic-island {
   background: #000;
-  border-radius: 20px;
+  border-radius: 25px;
   padding: 12px 20px;
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   backdrop-filter: blur(20px);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  min-width: 280px;
+  min-width: 320px;
+  height: 60px;
   position: relative;
 }
 
@@ -139,13 +142,18 @@ export default {
 .island-expanded {
   color: white;
   position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 100%;
 }
 
-.call-info {
+/* 左侧信息区域 */
+.left-info {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
 }
 
 .call-status {
@@ -168,26 +176,28 @@ export default {
 }
 
 .status-text {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   color: #10b981;
 }
 
 .call-duration-large {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: white;
 }
 
+/* 右侧控制按钮区域 */
 .call-controls {
   display: flex;
-  justify-content: center;
-  gap: 20px;
+  align-items: center;
+  gap: 12px;
 }
 
 .control-btn {
-  width: 44px;
-  height: 44px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   border: none;
   background: rgba(255, 255, 255, 0.15);
@@ -206,8 +216,8 @@ export default {
 }
 
 .control-btn svg {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
 }
 
 .control-btn.active {
@@ -230,7 +240,7 @@ export default {
 .audio-wave {
   position: absolute;
   top: 50%;
-  right: 20px;
+  right: 100px;
   transform: translateY(-50%);
   display: flex;
   align-items: center;

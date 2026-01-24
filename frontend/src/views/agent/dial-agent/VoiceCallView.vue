@@ -43,10 +43,10 @@
           :class="{ connected: isConnected }"
         >
           <div class="status-dot"></div>
-          <span v-if="!isConnected && !connecting">语音调试</span>
-          <span v-if="connecting">连线中...</span>
-          <span v-if="isConnected && !isCallActive">已连接</span>
-          <span v-if="isCallActive" class="call-duration">{{ formattedDuration }}</span>
+          <strong v-if="!isConnected && !connecting">VoiceAgent</strong>
+          <strong v-if="connecting">连线中...</strong>
+          <strong v-if="isConnected && !isCallActive">已连接</strong>
+          <strong v-if="isCallActive" class="call-duration">{{ formattedDuration }}</strong>
         </button>
       </div>
     </div>
@@ -70,7 +70,7 @@
     <!-- 悬浮iPhone模态框 - 只在未通话时显示 -->
     <IPhoneModal 
       :visible="showPhoneModal && !isCallActive" 
-      title="语音调试"
+      title="VoiceAgent"
       :allowBackgroundClose="!isCallActive"
       @close="closePhoneModal"
     >
@@ -701,30 +701,90 @@ export default {
 
 .panel-tabs {
   display: flex;
-  background: var(--bg-secondary);
-  border-radius: 6px;
-  padding: 2px;
-  gap: 1px;
+  background: var(--bg-primary);
+  border-radius: 12px;
+  padding: 4px;
+  gap: 2px;
+  border: 1px solid var(--border-color);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
 .tab-btn {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 6px 12px;
+  gap: 6px;
+  padding: 10px 16px;
   border: none;
   background: transparent;
-  border-radius: 4px;
-  color: var(--text-secondary);
-  font-size: 12px;
+  border-radius: 8px;
+  color: var(--text-tertiary);
+  font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.tab-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.1), transparent);
+  transition: left 0.5s ease;
+}
+
+.tab-btn:hover::before {
+  left: 100%;
+}
+
+.tab-btn:hover {
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+  transform: translateY(-1px);
+}
+
+.tab-btn.active {
+  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  color: white;
+  font-weight: 600;
+  box-shadow: 
+    0 4px 12px rgba(59, 130, 246, 0.3),
+    0 2px 4px rgba(59, 130, 246, 0.2);
+  transform: translateY(-1px);
+}
+
+.tab-btn.active::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, transparent 50%);
+  border-radius: 8px;
+  pointer-events: none;
+}
+
+.tab-btn.active:hover {
+  background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+  box-shadow: 
+    0 6px 16px rgba(59, 130, 246, 0.4),
+    0 2px 6px rgba(59, 130, 246, 0.3);
+  transform: translateY(-2px);
 }
 
 .tab-btn svg {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
+  transition: all 0.3s ease;
+}
+
+.tab-btn.active svg {
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
 }
 
 .toolbar-right {

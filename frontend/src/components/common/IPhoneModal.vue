@@ -27,7 +27,7 @@ export default {
     },
     title: {
       type: String,
-      default: '语音调试'
+      default: 'VoiceAgent'
     },
     allowBackgroundClose: {
       type: Boolean,
