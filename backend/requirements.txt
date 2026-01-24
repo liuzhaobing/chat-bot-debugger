@@ -4,3 +4,4 @@ django-cors-headers
 requests
 python-dotenv
 Jinja2
+PyYAML

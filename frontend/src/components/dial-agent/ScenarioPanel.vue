@@ -111,13 +111,24 @@
           <div class="form-group">
             <label>场景参数</label>
             <textarea 
+              ref="parametersTextarea"
               v-model="parametersText" 
-              placeholder="请输入JSON格式的场景参数"
-              class="form-textarea"
+              placeholder="请输入YAML格式的场景参数"
+              class="form-textarea auto-resize"
+              :class="{ 'error': yamlError }"
               rows="6"
+              @input="handleParametersInput"
             ></textarea>
-            <div class="form-hint">
-              请输入有效的JSON格式，例如：{"role": "客户", "goal": "咨询产品信息"}
+            <div v-if="yamlError" class="form-error">
+              {{ yamlError }}
+            </div>
+            <div v-else class="form-hint">
+              请输入有效的YAML格式，例如：<br>
+              target: 需要达成的目标<br>
+              first_input: 首轮query<br>
+              role_features: 用户个性特征<br>
+              conditions: 用户家的情况<br>
+              end_rule: 结束规则
             </div>
           </div>
         </div>
@@ -152,7 +163,7 @@
           </div>
           <div class="detail-group">
             <label>场景参数</label>
-            <pre class="detail-json">{{ formatJSON(viewingScenario?.parameters) }}</pre>
+            <pre class="detail-yaml">{{ formatYAML(viewingScenario?.parameters) }}</pre>
           </div>
           <div class="detail-group">
             <label>创建时间</label>
@@ -173,6 +184,7 @@
 
 <script>
 import axios from 'axios'
+import yaml from 'js-yaml'
 
 export default {
   name: 'ScenarioPanel',
@@ -208,7 +220,10 @@ export default {
       
       // 查看详情
       viewingScenario: null,
-      editingScenario: null
+      editingScenario: null,
+      
+      // YAML 校验
+      yamlError: null
     }
   },
   mounted() {
@@ -242,8 +257,15 @@ export default {
         description: scenario.description || '',
         parameters: scenario.parameters || {}
       }
-      this.parametersText = JSON.stringify(scenario.parameters || {}, null, 2)
+      this.parametersText = this.formatYAML(scenario.parameters || {})
+      this.yamlError = null
       this.showEditModal = true
+      // 延迟执行自动缩放，确保DOM已更新
+      this.$nextTick(() => {
+        setTimeout(() => {
+          this.autoResizeTextarea()
+        }, 100)
+      })
     },
 
     testScenario(scenario) {
@@ -257,13 +279,20 @@ export default {
         return
       }
 
-      // 验证参数JSON格式
+      // 验证YAML格式
+      if (this.yamlError) {
+        alert('请修正YAML格式错误后再保存')
+        return
+      }
+
+      // 验证参数YAML格式
       let parameters = {}
       if (this.parametersText.trim()) {
         try {
-          parameters = JSON.parse(this.parametersText)
+          parameters = yaml.load(this.parametersText) || {}
         } catch (error) {
-          alert('场景参数格式错误，请输入有效的JSON')
+          this.yamlError = `YAML格式错误: ${error.message}`
+          alert('场景参数格式错误，请输入有效的YAML格式')
           return
         }
       }
@@ -303,11 +332,71 @@ export default {
       this.parametersText = ''
       this.viewingScenario = null
       this.editingScenario = null
+      this.yamlError = null
+    },
+
+    validateYaml() {
+      if (!this.parametersText.trim()) {
+        this.yamlError = null
+        return
+      }
+
+      try {
+        const parsed = yaml.load(this.parametersText)
+        // 检查解析结果是否为对象
+        if (parsed !== null && typeof parsed !== 'object') {
+          this.yamlError = 'YAML内容必须是一个对象'
+          return
+        }
+        this.yamlError = null
+      } catch (error) {
+        this.yamlError = `YAML格式错误: ${error.message}`
+      }
+    },
+
+    handleParametersInput() {
+      this.validateYaml()
+      this.autoResizeTextarea()
+    },
+
+    autoResizeTextarea() {
+      this.$nextTick(() => {
+        const textarea = this.$refs.parametersTextarea
+        if (textarea) {
+          // 重置高度以获取正确的scrollHeight
+          textarea.style.height = 'auto'
+          // 设置最小高度（6行）和最大高度（20行）
+          const minHeight = 6 * 24 // 6行 * 行高24px
+          const maxHeight = 20 * 24 // 20行 * 行高24px
+          const scrollHeight = textarea.scrollHeight
+          
+          if (scrollHeight > minHeight) {
+            textarea.style.height = Math.min(scrollHeight, maxHeight) + 'px'
+          } else {
+            textarea.style.height = minHeight + 'px'
+          }
+        }
+      })
     },
 
     formatTime(timeStr) {
       if (!timeStr) return ''
       return new Date(timeStr).toLocaleString('zh-CN')
+    },
+
+    formatYAML(obj) {
+      if (!obj || Object.keys(obj).length === 0) return ''
+      try {
+        return yaml.dump(obj, {
+          indent: 2,
+          lineWidth: -1,
+          noRefs: true,
+          sortKeys: false
+        })
+      } catch (error) {
+        console.error('YAML格式化失败:', error)
+        return JSON.stringify(obj, null, 2)
+      }
     },
 
     formatJSON(obj) {
@@ -642,15 +731,39 @@ export default {
   border-color: #3b82f6;
 }
 
+.form-input.error,
+.form-textarea.error {
+  border-color: #ef4444;
+  background-color: #fef2f2;
+}
+
 .form-textarea {
   resize: vertical;
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  color: #64748b; /* 调整字体颜色为更淡的颜色 */
+  line-height: 24px; /* 设置固定行高用于计算 */
+}
+
+.form-textarea.auto-resize {
+  resize: none; /* 禁用手动拖拽调整大小 */
+  overflow-y: auto; /* 当内容超过最大高度时显示滚动条 */
+  transition: height 0.2s ease; /* 添加高度变化的过渡动画 */
 }
 
 .form-hint {
   margin-top: 6px;
   font-size: 12px;
   color: var(--text-tertiary);
+}
+
+.form-error {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #ef4444;
+  background-color: #fef2f2;
+  padding: 8px 12px;
+  border-radius: 4px;
+  border: 1px solid #fecaca;
 }
 
 .detail-group {
@@ -674,7 +787,7 @@ export default {
   border: 1px solid var(--border-color);
 }
 
-.detail-json {
+.detail-yaml {
   padding: 12px;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);

@@ -58,11 +58,17 @@
                 </div>
               </div>
               <textarea 
+                ref="yamlEditor"
                 v-model="formData.yamlInput" 
-                class="yaml-editor" 
+                class="yaml-editor auto-resize" 
+                :class="{ 'error': yamlError }"
                 placeholder="请输入 YAML 格式的参数配置..."
                 rows="10"
+                @input="handleYamlInput"
               ></textarea>
+              <div v-if="yamlError" class="form-error">
+                {{ yamlError }}
+              </div>
             </div>
           </div>
           <div class="modal-footer">
@@ -96,7 +102,8 @@ export default {
         name: '',
         description: '',
         yamlInput: ''
-      }
+      },
+      yamlError: null
     }
   },
   mounted() {
@@ -129,11 +136,68 @@ export default {
         this.formData.description = ''
         this.formData.yamlInput = ''
       }
+      this.yamlError = null
       this.showModal = true
+      // 延迟执行自动缩放，确保DOM已更新
+      this.$nextTick(() => {
+        setTimeout(() => {
+          this.autoResizeTextarea()
+        }, 100)
+      })
+    },
+
+    validateYaml() {
+      if (!this.formData.yamlInput.trim()) {
+        this.yamlError = null
+        return
+      }
+
+      try {
+        const parsed = yaml.load(this.formData.yamlInput)
+        // 检查解析结果是否为对象
+        if (parsed !== null && typeof parsed !== 'object') {
+          this.yamlError = 'YAML内容必须是一个对象'
+          return
+        }
+        this.yamlError = null
+      } catch (error) {
+        this.yamlError = `YAML格式错误: ${error.message}`
+      }
+    },
+
+    handleYamlInput() {
+      this.validateYaml()
+      this.autoResizeTextarea()
+    },
+
+    autoResizeTextarea() {
+      this.$nextTick(() => {
+        const textarea = this.$refs.yamlEditor
+        if (textarea) {
+          // 重置高度以获取正确的scrollHeight
+          textarea.style.height = 'auto'
+          // 设置最小高度（10行）和最大高度（25行）
+          const minHeight = 10 * 21 // 10行 * 行高21px
+          const maxHeight = 25 * 21 // 25行 * 行高21px
+          const scrollHeight = textarea.scrollHeight
+          
+          if (scrollHeight > minHeight) {
+            textarea.style.height = Math.min(scrollHeight, maxHeight) + 'px'
+          } else {
+            textarea.style.height = minHeight + 'px'
+          }
+        }
+      })
     },
     async saveScenario() {
       if (!this.formData.name.trim()) {
         window.$message.error('场景名称不能为空')
+        return
+      }
+
+      // 验证YAML格式
+      if (this.yamlError) {
+        window.$message.error('请修正YAML格式错误后再保存')
         return
       }
 
@@ -145,6 +209,7 @@ export default {
               throw new Error('YAML must parse to an object')
           }
         } catch (e) {
+          this.yamlError = `YAML格式错误: ${e.message}`
           window.$message.error('YAML 格式错误: ' + e.message)
           return
         }
@@ -424,9 +489,30 @@ export default {
 .yaml-editor {
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
   font-size: 13px;
-  line-height: 1.5;
-  color: #2d3748;
+  line-height: 21px; /* 设置固定行高用于计算 */
+  color: #64748b; /* 调整字体颜色为更淡的颜色 */
   background-color: #f7fafc;
+}
+
+.yaml-editor.auto-resize {
+  resize: none; /* 禁用手动拖拽调整大小 */
+  overflow-y: auto; /* 当内容超过最大高度时显示滚动条 */
+  transition: height 0.2s ease; /* 添加高度变化的过渡动画 */
+}
+
+.yaml-editor.error {
+  border-color: #e53e3e;
+  background-color: #fed7d7;
+}
+
+.form-error {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #e53e3e;
+  background-color: #fed7d7;
+  padding: 8px 12px;
+  border-radius: 4px;
+  border: 1px solid #feb2b2;
 }
 
 .modal-footer {
