@@ -390,6 +390,178 @@ class AppViewSet(viewsets.ModelViewSet):
                 "latency_ms": int((time.time() - start_time) * 1000)
             }
     
+    def _execute_agent_asr(self, app, user_message=None, context=None, parameters=None):
+        """
+        执行 Agent ASR 类型的应用
+        专门处理语音识别任务
+        
+        Args:
+            app: App 模型实例
+            user_message: 用户输入的消息（可能包含音频数据）
+            context: 可选的历史消息上下文
+            parameters: 可选的参数（包含音频数据等）
+            
+        Returns:
+            dict: 包含 content, usage, error 的结果字典
+        """
+        start_time = time.time()
+        
+        try:
+            # 1. 获取 Provider
+            if not app.provider_id:
+                return {
+                    "status": "error",
+                    "content": "",
+                    "error": "应用未配置 Provider",
+                    "usage": None,
+                    "latency_ms": int((time.time() - start_time) * 1000)
+                }
+            
+            try:
+                provider = Provider.objects.get(id=app.provider_id)
+            except Provider.DoesNotExist:
+                return {
+                    "status": "error",
+                    "content": "",
+                    "error": f"Provider {app.provider_id} 不存在",
+                    "usage": None,
+                    "latency_ms": int((time.time() - start_time) * 1000)
+                }
+            
+            # 2. 验证模型配置
+            if not app.model_name:
+                return {
+                    "status": "error",
+                    "content": "",
+                    "error": "应用未配置模型",
+                    "usage": None,
+                    "latency_ms": int((time.time() - start_time) * 1000)
+                }
+            
+            # 3. 从参数中获取音频数据
+            audio_data = None
+            audio_format = "wav"
+            language = "zh-CN"
+            asr_context = None
+            
+            if parameters:
+                audio_data = parameters.get('audio_data')
+                audio_format = parameters.get('audio_format', 'wav')
+                language = parameters.get('language', 'zh-CN')
+                asr_context = parameters.get('context')
+            
+            # 如果没有音频数据，返回错误
+            if not audio_data:
+                return {
+                    "status": "error",
+                    "content": "",
+                    "error": "缺少音频数据参数 audio_data",
+                    "usage": None,
+                    "latency_ms": int((time.time() - start_time) * 1000)
+                }
+            
+            # 4. 构建消息列表
+            messages_payload = []
+            
+            # 添加系统提示词（如果有）
+            if app.system_prompt:
+                messages_payload.append({
+                    "role": "system",
+                    "content": app.system_prompt
+                })
+            
+            # 构建用户消息
+            user_content = []
+            
+            # 添加文本前缀
+            if asr_context:
+                text_prefix = f"Previous assistant reply: {asr_context}\n\nUser input: "
+            else:
+                text_prefix = "User input: "
+            
+            user_content.append({
+                "type": "text",
+                "text": text_prefix
+            })
+            
+            # 添加音频数据
+            user_content.append({
+                "type": "input_audio",
+                "input_audio": {
+                    "format": audio_format,
+                    "data": audio_data
+                }
+            })
+            
+            messages_payload.append({
+                "role": "user",
+                "content": user_content
+            })
+            
+            # 5. 构建请求 payload
+            headers = {
+                "Authorization": f"Bearer {provider.api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            payload = {
+                "model": app.model_name,
+                "messages": messages_payload,
+                "stream": False
+            }
+            
+            # 添加配置参数（temperature, max_tokens 等）
+            configuration = app.configuration or {}
+            if 'temperature' in configuration:
+                payload['temperature'] = float(configuration['temperature'])
+            if 'max_tokens' in configuration:
+                payload['max_tokens'] = int(configuration['max_tokens'])
+            
+            # 6. 调用大模型 API
+            response = requests.post(
+                f"{provider.base_url}/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=60
+            )
+            response.raise_for_status()
+            
+            result = response.json()
+            
+            # 7. 解析响应
+            recognized_text = ""
+            if 'choices' in result and len(result['choices']) > 0:
+                recognized_text = result['choices'][0].get('message', {}).get('content', '')
+            
+            usage = result.get('usage', None)
+            latency_ms = int((time.time() - start_time) * 1000)
+
+            return {
+                "status": "success",
+                "content": recognized_text,
+                "error": None,
+                "usage": usage,
+                "latency_ms": latency_ms,
+                "execution_mode": "asr"
+            }
+            
+        except requests.RequestException as e:
+            return {
+                "status": "error",
+                "content": "",
+                "error": f"调用大模型失败: {str(e)}",
+                "usage": None,
+                "latency_ms": int((time.time() - start_time) * 1000)
+            }
+        except Exception as e:
+            return {
+                "status": "error",
+                "content": "",
+                "error": f"ASR执行失败: {str(e)}",
+                "usage": None,
+                "latency_ms": int((time.time() - start_time) * 1000)
+            }
+    
     def _execute_app(self, app, user_message=None, context=None, parameters=None):
         """
         App 执行调度器
@@ -408,6 +580,8 @@ class AppViewSet(viewsets.ModelViewSet):
         
         if app_type_code == 'agent_1_0':
             return self._execute_agent_1_0(app, user_message, context, parameters)
+        elif app_type_code == 'agent_asr':
+            return self._execute_agent_asr(app, user_message, context, parameters)
         else:
             # 其他类型暂未实现
             return {

@@ -20,11 +20,13 @@
 <script>
 import axios from 'axios'
 import Agent1ConfigComponent from '../../../components/app-configs/Agent1ConfigComponent.vue'
+import AgentAsrConfigComponent from '../../../components/app-configs/AgentAsrConfigComponent.vue'
 
 export default {
   name: 'AppDetailView',
   components: {
-    Agent1ConfigComponent
+    Agent1ConfigComponent,
+    AgentAsrConfigComponent
   },
   data() {
     return {
@@ -38,6 +40,7 @@ export default {
       // 根据应用类型代码返回对应的配置组件
       const componentMap = {
         'agent_1_0': 'Agent1ConfigComponent',
+        'agent_asr': 'AgentAsrConfigComponent',
         'agent_2_0': null,  // 待实现
         'workflow': null    // 待实现
       }
