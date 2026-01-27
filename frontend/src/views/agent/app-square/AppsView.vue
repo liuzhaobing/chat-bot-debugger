@@ -106,7 +106,17 @@
               <span class="tag-pill-fancy">{{ app.category_name || '未分类' }}</span>
               <div class="tag-group-right">
                 <button class="delete-app-btn" @click.stop="deleteApp(app.id)" title="删除应用">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                </button>
+                <button 
+                  class="featured-star-btn" 
+                  :class="{ active: app.is_featured }"
+                  @click.stop="toggleFeatured(app)" 
+                  :title="app.is_featured ? '取消精选' : '设为精选'"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" :fill="app.is_featured ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"></polygon>
+                  </svg>
                 </button>
               </div>
             </div>
@@ -296,7 +306,14 @@ export default {
       
       // 按分类筛选
       if (this.currentCategoryId) {
-        filtered = filtered.filter(app => app.category === this.currentCategoryId)
+        const currentCategory = this.categories.find(cat => cat.id === this.currentCategoryId)
+        if (currentCategory && currentCategory.name === '精选') {
+          // 如果选择的是"精选"分类，显示所有精选应用
+          filtered = filtered.filter(app => app.is_featured)
+        } else {
+          // 其他分类按正常逻辑筛选
+          filtered = filtered.filter(app => app.category === this.currentCategoryId)
+        }
       }
 
       // 按应用类型筛选（新增）
@@ -469,6 +486,18 @@ export default {
         } catch (e) {
             window.$message.error('删除失败')
         }
+    },
+    async toggleFeatured(app) {
+      try {
+        const response = await axios.post(`/api/apps/${app.id}/toggle-featured/`)
+        if (response.data.status === 'success') {
+          // 更新本地数据
+          app.is_featured = response.data.is_featured
+          window.$message.success(response.data.message)
+        }
+      } catch (e) {
+        window.$message.error('操作失败')
+      }
     },
     startChat(app) {
         this.$router.push(`/apps/${app.id}`)
@@ -918,6 +947,33 @@ export default {
     display: flex;
     align-items: center;
     gap: 10px;
+}
+
+.featured-star-btn {
+    opacity: 0;
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 8px;
+    display: flex;
+    transition: all 0.2s;
+}
+
+.featured-star-btn.active {
+    opacity: 1;
+    color: #f59e0b;
+}
+
+.app-card:hover .featured-star-btn {
+    opacity: 1;
+}
+
+.featured-star-btn:hover {
+    background: #fef3c7;
+    color: #f59e0b;
+    transform: scale(1.1);
 }
 
 .delete-app-btn {

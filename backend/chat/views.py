@@ -897,6 +897,21 @@ class AppViewSet(viewsets.ModelViewSet):
         
         status_code = status.HTTP_200_OK if result['status'] == 'success' else status.HTTP_500_INTERNAL_SERVER_ERROR
         return Response(response_data, status=status_code)
+    
+    @action(detail=True, methods=['post'], url_path='toggle-featured')
+    def toggle_featured(self, request, pk=None):
+        """
+        切换应用的精选状态
+        """
+        app = self.get_object()
+        app.is_featured = not app.is_featured
+        app.save(update_fields=['is_featured', 'updated_at'])
+        
+        return Response({
+            "status": "success",
+            "message": f"应用已{'设为精选' if app.is_featured else '取消精选'}",
+            "is_featured": app.is_featured
+        })
 
 class ConversationPagination(PageNumberPagination):
     page_size = 15
