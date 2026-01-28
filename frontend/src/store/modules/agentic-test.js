@@ -21,6 +21,11 @@ const state = {
     }
   },
   
+  // 语音识别和转录
+  transcriptMessages: [],
+  isListening: false,
+  currentTranscript: '',
+  
   // 日志和设备状态
   logs: [],
   deviceStatus: [],
@@ -33,7 +38,14 @@ const state = {
   },
   
   // WebSocket连接
-  websocket: null
+  websocket: null,
+  connectionStatus: 'disconnected', // 'disconnected' | 'connecting' | 'connected' | 'active'
+  
+  // 会话状态
+  sessionActive: false,
+  sessionDuration: 0,
+  audioLevel: 0,
+  isMuted: false
 }
 
 const mutations = {
@@ -46,7 +58,24 @@ const mutations = {
   },
   
   SET_CONNECTION_STATUS(state, status) {
-    state.isConnected = status
+    state.isConnected = status === 'connected' || status === 'active'
+    state.connectionStatus = status
+  },
+  
+  SET_SESSION_ACTIVE(state, active) {
+    state.sessionActive = active
+  },
+  
+  SET_SESSION_DURATION(state, duration) {
+    state.sessionDuration = duration
+  },
+  
+  SET_AUDIO_LEVEL(state, level) {
+    state.audioLevel = level
+  },
+  
+  SET_MUTED(state, muted) {
+    state.isMuted = muted
   },
   
   SET_TEST_RUNNING(state, running) {
@@ -61,10 +90,36 @@ const mutations = {
     state.audioData = { ...state.audioData, ...audioData }
   },
   
+  SET_LISTENING(state, listening) {
+    state.isListening = listening
+  },
+  
+  SET_CURRENT_TRANSCRIPT(state, transcript) {
+    state.currentTranscript = transcript
+  },
+  
+  ADD_TRANSCRIPT_MESSAGE(state, message) {
+    state.transcriptMessages.push(message)
+    // 限制消息数量
+    if (state.transcriptMessages.length > 100) {
+      state.transcriptMessages = state.transcriptMessages.slice(-100)
+    }
+  },
+  
+  UPDATE_TRANSCRIPT_MESSAGE(state, { index, message }) {
+    if (index >= 0 && index < state.transcriptMessages.length) {
+      state.transcriptMessages.splice(index, 1, message)
+    }
+  },
+  
+  CLEAR_TRANSCRIPT_MESSAGES(state) {
+    state.transcriptMessages = []
+  },
+  
   ADD_LOG(state, log) {
     state.logs.unshift(log)
-    if (state.logs.length > 100) {
-      state.logs = state.logs.slice(0, 100)
+    if (state.logs.length > 200) {
+      state.logs = state.logs.slice(0, 200)
     }
   },
   
@@ -125,6 +180,38 @@ const actions = {
     }
   },
   
+  // 启动会话
+  startSession({ commit }) {
+    commit('SET_SESSION_ACTIVE', true)
+    commit('SET_CONNECTION_STATUS', 'active')
+  },
+  
+  // 停止会话
+  stopSession({ commit }) {
+    commit('SET_SESSION_ACTIVE', false)
+    commit('SET_CONNECTION_STATUS', 'disconnected')
+    commit('SET_SESSION_DURATION', 0)
+    commit('SET_AUDIO_LEVEL', 0)
+    commit('SET_LISTENING', false)
+  },
+  
+  // 更新会话时长
+  updateSessionDuration({ commit }, duration) {
+    commit('SET_SESSION_DURATION', duration)
+  },
+  
+  // 更新音频级别
+  updateAudioLevel({ commit }, level) {
+    commit('SET_AUDIO_LEVEL', level)
+  },
+  
+  // 切换静音状态
+  toggleMute({ commit, state }) {
+    const newMutedState = !state.isMuted
+    commit('SET_MUTED', newMutedState)
+    return newMutedState
+  },
+  
   // WebSocket连接
   connectWebSocket({ commit, state }, sessionId) {
     if (state.websocket) {
@@ -134,10 +221,12 @@ const actions = {
     const ws = agenticTestService.createWebSocketConnection(sessionId)
     
     ws.onopen = () => {
-      commit('SET_CONNECTION_STATUS', true)
+      commit('SET_CONNECTION_STATUS', 'connected')
       commit('ADD_LOG', {
-        type: 'system',
-        content: 'WebSocket连接已建立',
+        id: Date.now(),
+        category: 'websocket',
+        level: 'success',
+        message: 'WebSocket连接已建立',
         timestamp: Date.now()
       })
     }
@@ -149,11 +238,65 @@ const actions = {
         case 'status':
           commit('SET_CURRENT_STATUS', data.content)
           break
+        case 'transcript_partial':
+          commit('SET_CURRENT_TRANSCRIPT', data.content)
+          commit('SET_LISTENING', true)
+          break
+        case 'transcript_final':
+          commit('ADD_TRANSCRIPT_MESSAGE', {
+            id: Date.now(),
+            type: 'user',
+            content: data.content,
+            confidence: data.confidence,
+            timestamp: Date.now(),
+            isPartial: false,
+            isFinal: true
+          })
+          commit('SET_CURRENT_TRANSCRIPT', '')
+          commit('SET_LISTENING', false)
+          break
+        case 'ai_response':
+          commit('ADD_TRANSCRIPT_MESSAGE', {
+            id: Date.now(),
+            type: 'agent',
+            content: data.content,
+            timestamp: Date.now(),
+            isPartial: false,
+            isFinal: true
+          })
+          break
+        case 'ai_response_partial': {
+          // 更新最后一条AI消息或创建新的
+          const lastMessage = state.transcriptMessages[state.transcriptMessages.length - 1]
+          if (lastMessage && lastMessage.type === 'agent' && lastMessage.isPartial) {
+            commit('UPDATE_TRANSCRIPT_MESSAGE', {
+              index: state.transcriptMessages.length - 1,
+              message: {
+                ...lastMessage,
+                content: data.content,
+                timestamp: Date.now()
+              }
+            })
+          } else {
+            commit('ADD_TRANSCRIPT_MESSAGE', {
+              id: Date.now(),
+              type: 'agent',
+              content: data.content,
+              timestamp: Date.now(),
+              isPartial: true,
+              isFinal: false
+            })
+          }
+          break
+        }
         case 'log':
           commit('ADD_LOG', {
-            type: 'log',
-            content: data.content,
-            timestamp: data.timestamp
+            id: Date.now(),
+            category: data.category || 'system',
+            level: data.level || 'info',
+            message: data.content,
+            details: data.details,
+            timestamp: data.timestamp || Date.now()
           })
           break
         case 'audio_play':
@@ -164,24 +307,36 @@ const actions = {
           break
         case 'error':
           commit('ADD_LOG', {
-            type: 'error',
-            content: data.content,
-            timestamp: data.timestamp
+            id: Date.now(),
+            category: 'error',
+            level: 'error',
+            message: data.content,
+            details: data.details,
+            timestamp: data.timestamp || Date.now()
           })
           break
       }
     }
     
     ws.onclose = () => {
-      commit('SET_CONNECTION_STATUS', false)
-      commit('SET_TEST_RUNNING', false)
+      commit('SET_CONNECTION_STATUS', 'disconnected')
+      commit('SET_SESSION_ACTIVE', false)
+      commit('ADD_LOG', {
+        id: Date.now(),
+        category: 'websocket',
+        level: 'warning',
+        message: 'WebSocket连接已断开',
+        timestamp: Date.now()
+      })
     }
     
     ws.onerror = (error) => {
       console.error('WebSocket error:', error)
       commit('ADD_LOG', {
-        type: 'error',
-        content: 'WebSocket连接错误',
+        id: Date.now(),
+        category: 'websocket',
+        level: 'error',
+        message: 'WebSocket连接错误',
         timestamp: Date.now()
       })
     }
@@ -194,7 +349,7 @@ const actions = {
     if (state.websocket) {
       state.websocket.close()
       commit('SET_WEBSOCKET', null)
-      commit('SET_CONNECTION_STATUS', false)
+      commit('SET_CONNECTION_STATUS', 'disconnected')
     }
   },
   
@@ -219,12 +374,14 @@ const actions = {
   },
   
   // 发送音频数据
-  sendAudioData({ state }, { audioData, format = 'webm' }) {
+  sendAudioData({ state }, { audioData, format = 'webm', isComplete = false }) {
     if (state.websocket && state.websocket.readyState === WebSocket.OPEN) {
       state.websocket.send(JSON.stringify({
         type: 'audio_data',
         audio: audioData,
-        format: format
+        format: format,
+        is_complete: isComplete,
+        timestamp: Date.now()
       }))
     }
   },
@@ -237,6 +394,32 @@ const actions = {
         message
       }))
     }
+  },
+  
+  // 添加转录消息
+  addTranscriptMessage({ commit }, message) {
+    commit('ADD_TRANSCRIPT_MESSAGE', {
+      id: Date.now() + Math.random(),
+      timestamp: Date.now(),
+      ...message
+    })
+  },
+  
+  // 清空转录消息
+  clearTranscriptMessages({ commit }) {
+    commit('CLEAR_TRANSCRIPT_MESSAGES')
+  },
+  
+  // 添加日志
+  addLog({ commit }, { category, level, message, details = null }) {
+    commit('ADD_LOG', {
+      id: Date.now() + Math.random(),
+      category,
+      level,
+      message,
+      details,
+      timestamp: Date.now()
+    })
   },
   
   // 更新音频特征
@@ -302,7 +485,15 @@ const actions = {
 const getters = {
   activeSessions: state => state.sessions.filter(s => s.is_active),
   recentLogs: state => state.logs.slice(0, 20),
-  isConnectedAndReady: state => state.isConnected && state.currentSession
+  isConnectedAndReady: state => state.isConnected && state.currentSession,
+  isSessionActive: state => state.sessionActive,
+  connectionStatus: state => state.connectionStatus,
+  currentAudioLevel: state => state.audioLevel,
+  isMuted: state => state.isMuted,
+  transcriptMessages: state => state.transcriptMessages,
+  isListening: state => state.isListening,
+  currentTranscript: state => state.currentTranscript,
+  sessionDuration: state => state.sessionDuration
 }
 
 export default {

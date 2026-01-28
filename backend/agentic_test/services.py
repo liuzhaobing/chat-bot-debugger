@@ -354,40 +354,73 @@ class VADService:
 class IOTService:
     """物联网设备服务 - 简化版本，直接调用API"""
     
-    def __init__(self, env: str = "test"):
+    def __init__(self, token: str = "", family_id: str = "", env: str = "test"):
         """初始化IOT服务"""
+        self.token = token
+        self.family_id = family_id
+        self.env = env
+        
         if env == "prod":
             self.base_url = "http://api.myroki.com/rest"
         else:
             self.base_url = "http://api-test.myroki.com/rest"
+        
+        # 设备状态缓存
+        self.device_cache = {}
+        self.last_update_time = {}
+        
+        logger.info(f"IOTService initialized: env={env}, base_url={self.base_url}, has_token={bool(token)}, has_family_id={bool(family_id)}")
     
-    async def get_family_devices(self, family_id: str, iot_token: str) -> Dict[str, Any]:
+    def update_config(self, token: str = None, family_id: str = None, env: str = None):
+        """更新IOT配置"""
+        if token is not None:
+            self.token = token
+        if family_id is not None:
+            self.family_id = family_id
+        if env is not None:
+            self.env = env
+            if env == "prod":
+                self.base_url = "http://api.myroki.com/rest"
+            else:
+                self.base_url = "http://api-test.myroki.com/rest"
+        
+        logger.info(f"IOTService config updated: env={self.env}, base_url={self.base_url}, has_token={bool(self.token)}, has_family_id={bool(self.family_id)}")
+    
+    async def get_family_devices(self, family_id: str = None, iot_token: str = None) -> Dict[str, Any]:
         """
         查询指定家庭圈的设备清单
         
         Args:
-            family_id: 家庭ID
-            iot_token: IOT认证token
+            family_id: 家庭ID，如果不提供则使用初始化时的family_id
+            iot_token: IOT认证token，如果不提供则使用初始化时的token
             
         Returns:
             设备清单数据
         """
+        # 使用提供的参数或默认配置
+        _family_id = family_id or self.family_id
+        _iot_token = iot_token or self.token
+        
+        if not _family_id or not _iot_token:
+            logger.warning("Missing family_id or iot_token for get_family_devices")
+            return await self._get_mock_family_devices()
+        
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.get(
                     f"{self.base_url}/dms/api/family/device/query-by-family-id",
                     headers={
-                        "Authorization": f"Bearer {iot_token}"
+                        "Authorization": f"Bearer {_iot_token}"
                     },
                     params={
-                        "familyId": family_id
+                        "familyId": _family_id
                     }
                 )
                 
                 response.raise_for_status()
                 result = response.json()
                 
-                logger.info(f"Family devices retrieved: {family_id}")
+                logger.info(f"Family devices retrieved: {_family_id}, count: {len(result.get('data', []))}")
                 return result
                 
         except Exception as e:
@@ -395,23 +428,30 @@ class IOTService:
             # 返回模拟数据
             return await self._get_mock_family_devices()
     
-    async def get_device_status(self, device_guid: str, iot_token: str) -> Dict[str, Any]:
+    async def get_device_status(self, device_guid: str, iot_token: str = None) -> Dict[str, Any]:
         """
         查询指定设备GUID的状态详情
         
         Args:
             device_guid: 设备GUID
-            iot_token: IOT认证token
+            iot_token: IOT认证token，如果不提供则使用初始化时的token
             
         Returns:
             设备状态详情
         """
+        # 使用提供的参数或默认配置
+        _iot_token = iot_token or self.token
+        
+        if not _iot_token:
+            logger.warning("Missing iot_token for get_device_status")
+            return await self._get_mock_device_status(device_guid)
+        
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.get(
                     f"{self.base_url}/iot/api/device/property/shadow",
                     headers={
-                        "Authorization": f"Bearer {iot_token}"
+                        "Authorization": f"Bearer {_iot_token}"
                     },
                     params={
                         "deviceIds": device_guid
@@ -421,6 +461,10 @@ class IOTService:
                 response.raise_for_status()
                 result = response.json()
                 
+                # 更新缓存
+                self.device_cache[device_guid] = result
+                self.last_update_time[device_guid] = asyncio.get_event_loop().time()
+                
                 logger.info(f"Device status retrieved: {device_guid}")
                 return result
                 
@@ -428,6 +472,62 @@ class IOTService:
             logger.error(f"Failed to get device status: {e}")
             # 返回模拟数据
             return await self._get_mock_device_status(device_guid)
+    
+    async def get_multiple_device_status(self, device_guids: list, iot_token: str = None) -> Dict[str, Any]:
+        """
+        批量查询多个设备的状态
+        
+        Args:
+            device_guids: 设备GUID列表
+            iot_token: IOT认证token，如果不提供则使用初始化时的token
+            
+        Returns:
+            多个设备的状态数据
+        """
+        # 使用提供的参数或默认配置
+        _iot_token = iot_token or self.token
+        
+        results = {}
+        
+        # 并发查询多个设备状态
+        tasks = []
+        for device_guid in device_guids:
+            task = self.get_device_status(device_guid, _iot_token)
+            tasks.append((device_guid, task))
+        
+        # 等待所有任务完成
+        for device_guid, task in tasks:
+            try:
+                result = await task
+                results[device_guid] = result
+            except Exception as e:
+                logger.error(f"Failed to get status for device {device_guid}: {e}")
+                results[device_guid] = await self._get_mock_device_status(device_guid)
+        
+        return results
+    
+    def get_cached_device_status(self, device_guid: str, max_age: float = 60.0) -> Optional[Dict[str, Any]]:
+        """
+        获取缓存的设备状态
+        
+        Args:
+            device_guid: 设备GUID
+            max_age: 最大缓存时间（秒）
+            
+        Returns:
+            缓存的设备状态，如果过期或不存在则返回None
+        """
+        if device_guid not in self.device_cache:
+            return None
+        
+        last_update = self.last_update_time.get(device_guid, 0)
+        current_time = asyncio.get_event_loop().time()
+        
+        if current_time - last_update > max_age:
+            # 缓存过期
+            return None
+        
+        return self.device_cache[device_guid]
     
     async def _get_mock_family_devices(self) -> Dict[str, Any]:
         """返回模拟的家庭设备清单"""
@@ -439,18 +539,18 @@ class IOTService:
             "success": True,
             "data": [
                 {
-                    "familyId": None,
-                    "familyName": None,
+                    "familyId": "test_family_001",
+                    "familyName": "测试家庭",
                     "deviceId": 10182044,
                     "deviceGuid": "CQ928c0f535efd97f",
-                    "name": "CQ928",
+                    "name": "CQ928蒸烤一体机",
                     "dc": "RZKY",
                     "categoryName": "一体机",
                     "dt": "CQ928",
                     "displayType": "CQ928",
                     "deviceTypeName": "蒸烤一体机-CQ928",
                     "deviceTypeIconUrl": None,
-                    "netState": None,
+                    "netState": 1,
                     "createDatetime": 1758867548000,
                     "updateDatetime": None,
                     "status": 1,
@@ -459,22 +559,42 @@ class IOTService:
                     "subDevices": None
                 },
                 {
-                    "familyId": None,
-                    "familyName": None,
+                    "familyId": "test_family_001",
+                    "familyName": "测试家庭",
                     "deviceId": 10182045,
                     "deviceGuid": "W760i1c0f535efd98f",
-                    "name": "W760-i1",
+                    "name": "W760-i1洗碗机",
                     "dc": "RZKY",
                     "categoryName": "洗碗机",
                     "dt": "W760-i1",
                     "displayType": "W760-i1",
                     "deviceTypeName": "洗碗机-W760-i1",
                     "deviceTypeIconUrl": None,
-                    "netState": None,
+                    "netState": 1,
                     "createDatetime": 1758867548000,
                     "updateDatetime": None,
                     "status": 1,
                     "platformCode": "XWJ01",
+                    "parentId": None,
+                    "subDevices": None
+                },
+                {
+                    "familyId": "test_family_001",
+                    "familyName": "测试家庭",
+                    "deviceId": 10182046,
+                    "deviceGuid": "YYJ001c0f535efd99f",
+                    "name": "智能油烟机",
+                    "dc": "RZKY",
+                    "categoryName": "油烟机",
+                    "dt": "YYJ001",
+                    "displayType": "YYJ001",
+                    "deviceTypeName": "油烟机-YYJ001",
+                    "deviceTypeIconUrl": None,
+                    "netState": 1,
+                    "createDatetime": 1758867548000,
+                    "updateDatetime": None,
+                    "status": 1,
+                    "platformCode": "YYJ01",
                     "parentId": None,
                     "subDevices": None
                 }
@@ -485,61 +605,107 @@ class IOTService:
         """返回模拟的设备状态"""
         await asyncio.sleep(0.3)  # 模拟API调用时间
         
-        return {
-            "rc": 0,
-            "msg": "操作成功",
-            "success": True,
-            "data": [
-                {
-                    "deviceId": device_guid,
-                    "status": 1,
-                    "properties": {
-                        "stageTotalNum": 1,
-                        "doorState": 0,
-                        "descaleTotalSection": 2,
-                        "stageOneSetTopTemp": 200,
-                        "stageThreeLeftTime": 0,
-                        "waterBoxState": 0,
-                        "totalRemainSeonds": 1200,
-                        "stageOneSetSteam": 0,
-                        "recipeId": 0,
-                        "stageOneSetButtomTemp": 0,
-                        "stageThreeSetTime": 0,
-                        "powerState": 0,
-                        "curTopTemp": 22,
-                        "curButtomTemp": 22,
-                        "stageThreeSetTopTemp": 0,
-                        "pictureId": 0,
-                        "workState": 0,
-                        "rotateSwitch": 0,
-                        "wasteWaterTankWaterLevelState": 1,
-                        "recipeSetSecs": 0,
-                        "stageThreeSetButtomTemp": 0,
-                        "paramsNum": 42,
-                        "waterBoxPanelState": 0,
-                        "stageTwoLeftTime": 0,
-                        "stageTwoSetSteam": 0,
-                        "stageOneSetMode": 7,
-                        "orderLeftSecs": 0,
-                        "descaleFlag": 0,
-                        "stageOneLeftTime": 1200,
-                        "waterLevelState": 0,
-                        "curDescaleNum": 0,
-                        "faultCode": 0,
-                        "stageTwoSetButtomTemp": 0,
-                        "stageThreeSetSteam": 0,
-                        "curStageNum": 1,
-                        "steamState": 2,
-                        "lightSwitch": 0,
-                        "dirtyWaterBoxState": 0,
-                        "stageOneSetTime": 1200,
-                        "stageTwoSetTopTemp": 0,
-                        "stageTwoSetTime": 0,
-                        "stageThreeSetMode": 0
+        # 根据设备GUID生成不同的模拟数据
+        if "CQ928" in device_guid:
+            # 蒸烤一体机状态
+            return {
+                "rc": 0,
+                "msg": "操作成功",
+                "success": True,
+                "data": [
+                    {
+                        "deviceId": device_guid,
+                        "status": 1,
+                        "properties": {
+                            "stageTotalNum": 1,
+                            "doorState": 0,  # 门状态：0-关闭，1-打开
+                            "powerState": random.choice([0, 1]),  # 电源状态：0-关闭，1-打开
+                            "workState": random.choice([0, 1, 2]),  # 工作状态：0-待机，1-工作，2-暂停
+                            "curTopTemp": random.randint(20, 200),  # 当前上管温度
+                            "curButtomTemp": random.randint(20, 200),  # 当前下管温度
+                            "stageOneSetTopTemp": 200,  # 设定上管温度
+                            "stageOneSetButtomTemp": 180,  # 设定下管温度
+                            "totalRemainSeonds": random.randint(0, 3600),  # 剩余时间（秒）
+                            "stageOneSetTime": 1200,  # 设定时间
+                            "stageOneSetMode": random.choice([1, 2, 3, 4, 5, 6, 7]),  # 工作模式
+                            "lightSwitch": random.choice([0, 1]),  # 照明开关
+                            "rotateSwitch": random.choice([0, 1]),  # 旋转开关
+                            "steamState": random.choice([0, 1, 2]),  # 蒸汽状态
+                            "waterLevelState": random.choice([0, 1, 2]),  # 水位状态
+                            "faultCode": 0,  # 故障代码
+                            "timestamp": int(asyncio.get_event_loop().time())
+                        }
                     }
-                }
-            ]
-        }
+                ]
+            }
+        elif "W760" in device_guid:
+            # 洗碗机状态
+            return {
+                "rc": 0,
+                "msg": "操作成功",
+                "success": True,
+                "data": [
+                    {
+                        "deviceId": device_guid,
+                        "status": 1,
+                        "properties": {
+                            "powerState": random.choice([0, 1]),  # 电源状态
+                            "workState": random.choice([0, 1, 2, 3]),  # 工作状态：0-待机，1-洗涤，2-漂洗，3-烘干
+                            "doorState": random.choice([0, 1]),  # 门状态
+                            "waterTemp": random.randint(30, 70),  # 水温
+                            "remainTime": random.randint(0, 7200),  # 剩余时间
+                            "washMode": random.choice([1, 2, 3, 4]),  # 洗涤模式
+                            "detergentLevel": random.choice([0, 1, 2, 3]),  # 洗涤剂液位
+                            "saltLevel": random.choice([0, 1, 2, 3]),  # 盐液位
+                            "faultCode": 0,
+                            "timestamp": int(asyncio.get_event_loop().time())
+                        }
+                    }
+                ]
+            }
+        elif "YYJ" in device_guid:
+            # 油烟机状态
+            return {
+                "rc": 0,
+                "msg": "操作成功",
+                "success": True,
+                "data": [
+                    {
+                        "deviceId": device_guid,
+                        "status": 1,
+                        "properties": {
+                            "powerState": random.choice([0, 1]),  # 电源状态
+                            "fanSpeed": random.choice([0, 1, 2, 3, 4]),  # 风速档位：0-关闭，1-4档
+                            "lightState": random.choice([0, 1]),  # 照明状态
+                            "oilBoxState": random.choice([0, 1, 2]),  # 油盒状态：0-正常，1-将满，2-已满
+                            "filterState": random.choice([0, 1, 2]),  # 滤网状态：0-正常，1-需清洗，2-需更换
+                            "workTime": random.randint(0, 86400),  # 累计工作时间
+                            "airQuality": random.randint(50, 300),  # 空气质量指数
+                            "faultCode": 0,
+                            "timestamp": int(asyncio.get_event_loop().time())
+                        }
+                    }
+                ]
+            }
+        else:
+            # 通用设备状态
+            return {
+                "rc": 0,
+                "msg": "操作成功",
+                "success": True,
+                "data": [
+                    {
+                        "deviceId": device_guid,
+                        "status": 1,
+                        "properties": {
+                            "powerState": random.choice([0, 1]),
+                            "workState": random.choice([0, 1, 2]),
+                            "faultCode": 0,
+                            "timestamp": int(asyncio.get_event_loop().time())
+                        }
+                    }
+                ]
+            }
 
 
 class AudioProcessingService:
@@ -559,3 +725,96 @@ class AudioProcessingService:
         
         logger.debug(f"Audio features extracted: {features}")
         return features
+
+
+async def process_audio_for_asr(audio_bytes: bytes, app_id: str) -> Optional[Dict[str, Any]]:
+    """
+    处理音频数据进行ASR识别
+    
+    Args:
+        audio_bytes: 原始音频字节数据
+        app_id: 应用ID
+        
+    Returns:
+        ASR识别结果字典，包含text、confidence、is_partial等字段
+    """
+    try:
+        # 将音频数据转换为base64
+        audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
+        
+        # 初始化ASR服务
+        asr_service = ASRService()
+        
+        # 进行语音识别
+        recognized_text = await asr_service.recognize_speech(audio_b64, audio_format="webm")
+        
+        if recognized_text and recognized_text.strip():
+            # 模拟置信度计算（实际应用中应该从ASR服务获取）
+            confidence = random.uniform(0.7, 0.95)
+            
+            # 模拟部分结果和最终结果
+            is_partial = len(recognized_text) < 10 or random.random() < 0.3
+            
+            result = {
+                'text': recognized_text,
+                'confidence': confidence,
+                'is_partial': is_partial,
+                'app_id': app_id,
+                'timestamp': asyncio.get_event_loop().time()
+            }
+            
+            logger.info(f"ASR result for app {app_id}: {result}")
+            return result
+        else:
+            logger.debug(f"No speech recognized for app {app_id}")
+            return None
+            
+    except Exception as e:
+        logger.error(f"Error processing audio for ASR with app {app_id}: {e}")
+        return None
+
+
+async def process_audio_with_vad_asr(audio_bytes: bytes, app_id: str) -> Dict[str, Any]:
+    """
+    使用VAD+ASR处理音频数据
+    
+    Args:
+        audio_bytes: 原始音频字节数据
+        app_id: 应用ID
+        
+    Returns:
+        处理结果字典，包含VAD和ASR结果
+    """
+    try:
+        # 将音频数据转换为base64用于VAD
+        audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
+        
+        # 初始化服务
+        vad_service = VADService()
+        
+        # 进行VAD检测
+        vad_result = await vad_service.detect_speech(audio_b64)
+        
+        result = {
+            'vad': vad_result,
+            'asr': None,
+            'app_id': app_id,
+            'timestamp': asyncio.get_event_loop().time()
+        }
+        
+        # 如果检测到语音，进行ASR识别
+        if vad_result.get('has_speech', False):
+            asr_result = await process_audio_for_asr(audio_bytes, app_id)
+            result['asr'] = asr_result
+        
+        logger.info(f"VAD+ASR result for app {app_id}: VAD={vad_result.get('has_speech')}, ASR={bool(result['asr'])}")
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error processing audio with VAD+ASR for app {app_id}: {e}")
+        return {
+            'vad': {'has_speech': False, 'error': str(e)},
+            'asr': None,
+            'app_id': app_id,
+            'timestamp': asyncio.get_event_loop().time()
+        }

@@ -1,7 +1,7 @@
 <template>
   <div class="iot-device-panel">
     <!-- IOT配置区域 -->
-    <div class="config-section">
+    <div v-if="!hideConfig" class="config-section">
       <div class="section-header">
         <h3>IOT 配置</h3>
         <button 
@@ -342,6 +342,12 @@ import { mapState } from 'vuex'
 
 export default {
   name: 'IOTConfigPanel',
+  props: {
+    hideConfig: {
+      type: Boolean,
+      default: false
+    }
+  },
   data() {
     return {
       showConfig: false,
@@ -1832,6 +1838,16 @@ export default {
   overflow: hidden;
 }
 
+/* 当配置隐藏时，设备区域占满整个面板 */
+.iot-device-panel:not(:has(.config-section)) {
+  gap: 0;
+}
+
+.iot-device-panel:not(:has(.config-section)) .devices-section {
+  height: 100%;
+  min-height: calc(100vh - 120px);
+}
+
 .devices-content {
   flex: 1;
   overflow-y: auto;
@@ -2106,7 +2122,7 @@ export default {
   color: var(--text-tertiary);
   font-weight: 600;
   flex-shrink: 0;
-  max-width: 60%;
+  width: 45%;
   line-height: 1.3;
   letter-spacing: 0.2px;
 }
@@ -2123,10 +2139,9 @@ export default {
   text-align: right;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
   line-height: 1.3;
-  max-width: 40%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+  word-break: break-all;
   letter-spacing: 0.3px;
 }
 
