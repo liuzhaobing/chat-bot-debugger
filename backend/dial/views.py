@@ -11,6 +11,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.http import StreamingHttpResponse
+from django.utils import timezone
 
 from .models import CallSession, CallTranscript
 from .serializers import CallSessionSerializer, CallTranscriptSerializer
@@ -294,7 +295,6 @@ class CallSessionViewSet(viewsets.ModelViewSet):
     def end_session(self, request, pk=None):
         """结束通话会话"""
         session = self.get_object()
-        from django.utils import timezone
         session.status = "ended"
         session.ended_at = timezone.now()
         if session.started_at:

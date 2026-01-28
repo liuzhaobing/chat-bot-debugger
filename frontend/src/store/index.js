@@ -4,6 +4,7 @@ import appSquare from './modules/app-square'
 import chatCompletion from './modules/chat-completion'
 import dialAgent from './modules/dial-agent'
 import modelSquare from './modules/model-square'
+import agenticTest from './modules/agentic-test'
 
 Vue.use(Vuex)
 
@@ -30,6 +31,7 @@ export default new Vuex.Store({
     appSquare,
     chatCompletion,
     dialAgent,
-    modelSquare
+    modelSquare,
+    agenticTest
   }
 })

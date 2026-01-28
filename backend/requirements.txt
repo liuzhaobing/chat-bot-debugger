@@ -5,3 +5,6 @@ requests
 python-dotenv
 Jinja2
 PyYAML
+channels
+channels-redis
+httpx

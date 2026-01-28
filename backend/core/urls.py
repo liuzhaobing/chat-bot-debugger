@@ -20,4 +20,5 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('chat.urls')),
     path('api/dial/', include('dial.urls')),
+    path('', include('agentic_test.urls')),
 ]

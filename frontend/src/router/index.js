@@ -6,6 +6,7 @@ import AppsView from '../views/agent/app-square/AppsView.vue'
 import AppDetailView from '../views/agent/app-square/AppDetailView.vue'
 import ModelDebugView from '../views/agent/model-square/ModelDebugView.vue'
 import VoiceCallView from '../views/agent/dial-agent/VoiceCallView.vue'
+import AgenticTestView from '../views/agent/agentic-test/AgenticTestView.vue'
 
 Vue.use(VueRouter)
 
@@ -49,6 +50,11 @@ const routes = [
         path: '/voice-call',
         name: 'VoiceCall',
         component: VoiceCallView
+    },
+    {
+        path: '/agentic-test',
+        name: 'AgenticTest',
+        component: AgenticTestView
     }
 ]
 
