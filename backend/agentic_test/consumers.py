@@ -282,13 +282,45 @@ class VadAsrTestConsumer(AsyncWebsocketConsumer):
             data = json.loads(text_data)
             message_type = data.get('type')
             
-            logger.debug(f"VAD+ASR test received message type: {message_type}")
+            logger.info(f"VAD+ASR test received message type: {message_type}")
+            logger.info(f"Full message data: {json.dumps(data, indent=2)}")
             
             if message_type == 'audio_data':
+                # 支持两种消息格式：
+                # 1. 新格式（类似dial电话客服）：data.data.audio_data
+                # 2. 旧格式（兼容）：data.audio
+                audio_data = None
+                audio_format = 'webm'
+                is_complete = False
+                
+                if 'data' in data and isinstance(data['data'], dict):
+                    # 新格式 - 类似dial电话客服
+                    audio_data = data['data'].get('audio_data')
+                    audio_format = data['data'].get('format', 'pcm')
+                    is_complete = False  # PCM格式是流式的，不需要is_complete
+                    
+                    logger.info(f"New format audio data: format={audio_format}, size={data['data'].get('size', 0)}")
+                    logger.info(f"Audio data present: {bool(audio_data)}, length: {len(audio_data) if audio_data else 0}")
+                else:
+                    # 旧格式 - 兼容性
+                    audio_data = data.get('audio')
+                    audio_format = data.get('format', 'webm')
+                    is_complete = data.get('is_complete', False)
+                    
+                    logger.info(f"Old format audio data: format={audio_format}, is_complete={is_complete}")
+                    logger.info(f"Audio data present: {bool(audio_data)}, length: {len(audio_data) if audio_data else 0}")
+                
+                if not audio_data:
+                    logger.warning(f"Empty audio data received. Message keys: {list(data.keys())}")
+                    if 'data' in data:
+                        logger.warning(f"Data sub-keys: {list(data['data'].keys()) if isinstance(data['data'], dict) else 'not a dict'}")
+                    await self.send_message('error', '音频数据为空')
+                    return
+                
                 await self.handle_audio_data(
-                    data.get('audio'),
-                    data.get('format', 'webm'),
-                    data.get('is_complete', False),
+                    audio_data,
+                    audio_format,
+                    is_complete,
                     data.get('app_id', self.app_id)
                 )
             elif message_type == 'start_test':
@@ -340,34 +372,138 @@ class VadAsrTestConsumer(AsyncWebsocketConsumer):
         
         logger.info(f"Stopped VAD+ASR test with app_id: {self.app_id}")
     
-    async def handle_audio_data(self, audio_data, audio_format='webm', is_complete=False, app_id=None):
+    async def handle_audio_data(self, audio_data, audio_format='pcm', is_complete=False, app_id=None):
         """处理音频数据进行VAD+ASR测试"""
+        
+        logger.info(f"Handling audio data: format={audio_format}, is_complete={is_complete}, app_id={app_id}")
+        logger.debug(f"Audio data length: {len(audio_data) if audio_data else 0}")
 
         if not audio_data:
+            logger.warning("Empty audio data received")
             await self.send_message('error', '音频数据为空')
             return
         
         try:
             # 解码base64音频数据
             audio_bytes = base64.b64decode(audio_data)
+            logger.debug(f"Decoded audio bytes length: {len(audio_bytes)}")
             
             # 添加到音频缓冲区
             self.audio_buffer.append(audio_bytes)
             
             # 发送VAD状态
             await self.send_message('vad_status', 'processing', {
+                'status': 'processing',
                 'buffer_size': len(self.audio_buffer),
                 'audio_size': len(audio_bytes),
+                'format': audio_format,
                 'is_complete': is_complete
             })
             
-            # 如果是完整的音频片段或缓冲区足够大，进行ASR处理
-            if is_complete or len(self.audio_buffer) >= 5:  # 每5个音频块处理一次
-                await self.process_audio_buffer(app_id or self.app_id)
+            # 实时处理音频数据 - 模拟dial电话客服的处理方式
+            if audio_format == 'pcm':
+                # PCM格式的实时处理
+                await self.process_pcm_audio_chunk(audio_bytes, app_id or self.app_id)
+            else:
+                # 传统的批量处理方式（兼容旧版本）
+                if is_complete or len(self.audio_buffer) >= 5:
+                    await self.process_audio_buffer(app_id or self.app_id)
                 
         except Exception as e:
             logger.error(f"Error handling audio data in VAD+ASR test: {e}")
             await self.send_message('error', f'音频处理失败: {str(e)}')
+    
+    async def process_pcm_audio_chunk(self, audio_bytes, app_id):
+        """处理单个PCM音频块 - 实时处理，优化缓冲策略"""
+        try:
+            # 大幅增加缓冲区大小，减少处理频率
+            # 16kHz, 16bit, 1channel = 32000 bytes per second
+            # 3秒 = 96000 bytes (更大的音频块，减少碎片)
+            target_buffer_size = 96000   # 3秒的音频数据
+            max_buffer_size = 192000     # 6秒最大缓冲区
+            min_process_size = 64000     # 最小处理大小：2秒
+            
+            # 合并当前缓冲区的音频数据
+            combined_audio = b''.join(self.audio_buffer)
+            
+            logger.debug(f"Audio buffer: {len(combined_audio)} bytes ({len(combined_audio)/32000:.1f}s), chunks: {len(self.audio_buffer)}")
+            
+            # 只有当缓冲区达到目标大小时才处理
+            if len(combined_audio) >= target_buffer_size:
+                logger.info(f"Processing large audio chunk: {len(combined_audio)} bytes ({len(combined_audio)/32000:.1f}s)")
+                
+                # 使用VAD+ASR处理（VAD会决定是否保存音频文件）
+                from .services import process_audio_with_vad_asr
+                
+                result = await process_audio_with_vad_asr(combined_audio, app_id)
+                
+                # 发送VAD结果
+                vad_result = result.get('vad', {})
+                await self.send_message('vad_status', 'detected' if vad_result.get('has_speech') else 'no_speech', {
+                    'has_speech': vad_result.get('has_speech', False),
+                    'confidence': vad_result.get('confidence', 0.0),
+                    'speech_start': vad_result.get('speech_start', 0),
+                    'speech_end': vad_result.get('speech_end', 0),
+                    'audio_duration_s': len(combined_audio) / 32000,
+                    'speech_ratio': vad_result.get('speech_ratio', 0.0),
+                    'speech_segments': vad_result.get('speech_segments', 0)
+                })
+                
+                # 只有VAD检测到语音时才发送ASR结果
+                asr_result = result.get('asr')
+                if asr_result:
+                    await self.send_message('transcript_final', asr_result.get('text', ''), {
+                        'confidence': asr_result.get('confidence', 0.0),
+                        'app_id': app_id,
+                        'audio_duration_s': len(combined_audio) / 32000,
+                        'vad_confidence': vad_result.get('confidence', 0.0),
+                        'speech_ratio': vad_result.get('speech_ratio', 0.0)
+                    })
+                    logger.info(f"ASR result: '{asr_result.get('text', '')[:50]}...' (confidence: {asr_result.get('confidence', 0.0):.2f})")
+                else:
+                    logger.info(f"VAD detected no speech in {len(combined_audio)} bytes audio (speech_ratio: {vad_result.get('speech_ratio', 0.0):.2f})")
+                
+                # 清空缓冲区，避免重复处理
+                self.audio_buffer = []
+                
+            elif len(combined_audio) > max_buffer_size:
+                # 如果缓冲区过大，强制处理并保留部分数据
+                logger.warning(f"Buffer too large ({len(combined_audio)} bytes), force processing and keeping recent data")
+                
+                # 处理当前数据（如果足够大）
+                if len(combined_audio) >= min_process_size:
+                    from .services import process_audio_with_vad_asr
+                    result = await process_audio_with_vad_asr(combined_audio, app_id)
+                    
+                    vad_result = result.get('vad', {})
+                    logger.info(f"Force processed audio: has_speech={vad_result.get('has_speech')}, speech_ratio={vad_result.get('speech_ratio', 0.0):.2f}")
+                
+                # 保留最后1.5秒的音频数据作为下次的开始
+                keep_size = 48000  # 1.5秒
+                self.audio_buffer = [combined_audio[-keep_size:]]
+                
+                await self.send_message('vad_status', 'buffer_reset', {
+                    'status': 'buffer_reset',
+                    'message': '音频缓冲区过大已重置',
+                    'kept_size': keep_size,
+                    'discarded_size': len(combined_audio) - keep_size,
+                    'kept_duration_s': keep_size / 32000
+                })
+            
+            # 降低统计信息发送频率（每50个chunk发送一次）
+            if len(self.audio_buffer) % 50 == 0:
+                await self.send_message('audio_stats', 'realtime', {
+                    'buffer_size_bytes': len(combined_audio),
+                    'buffer_duration_s': len(combined_audio) / 32000,
+                    'chunks_received': len(self.audio_buffer),
+                    'app_id': app_id,
+                    'target_buffer_s': target_buffer_size / 32000,
+                    'processing_threshold': f"{target_buffer_size / 32000:.1f}s"
+                })
+                        
+        except Exception as e:
+            logger.error(f"Error processing PCM audio chunk: {e}")
+            await self.send_message('error', f'PCM音频处理失败: {str(e)}')
     
     async def process_audio_buffer(self, app_id):
         """处理音频缓冲区进行ASR"""
@@ -399,6 +535,7 @@ class VadAsrTestConsumer(AsyncWebsocketConsumer):
                     self.audio_buffer = []
             else:
                 await self.send_message('vad_status', 'no_speech', {
+                    'status': 'no_speech',
                     'message': '未检测到语音内容'
                 })
                 

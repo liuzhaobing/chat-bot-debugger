@@ -4,6 +4,9 @@ import logging
 import os
 import base64
 import random
+import wave
+import struct
+from datetime import datetime
 from typing import Dict, Any, Optional
 import httpx
 from .audio_utils import AudioConverter, AudioValidator
@@ -116,7 +119,14 @@ class TTSService:
 
 
 class ASRService:
-    """语音识别服务 - 直接调用指定应用"""
+    """
+    语音识别服务 - 直接调用指定应用
+    
+    重要说明：
+        ASR应用只支持WAV格式的BASE64编码音频！
+        不支持原始PCM、WebM或其他格式
+        必须发送完整的WAV文件格式（包含WAV头部信息）
+    """
     
     def __init__(self):
         """初始化ASR服务"""
@@ -127,41 +137,82 @@ class ASRService:
         识别语音为文本 - 直接调用指定应用
         
         Args:
-            audio_data: base64编码的音频数据
+            audio_data: BASE64编码的音频数据（必须是WAV格式！）
             context: 上下文信息（可选）
-            audio_format: 音频格式（默认为wav）
+            audio_format: 音频格式（必须是"wav"！）
             
         Returns:
             识别的文本结果
+            
+        重要提醒：
+            🔥 ASR应用只接受WAV格式的BASE64编码音频！
+            🔥 audio_format参数必须设置为"wav"
+            🔥 audio_data必须是完整WAV文件的BASE64编码，不能是原始PCM
         """
         try:
-            # 获取应用实例
-            app = App.objects.get(id=self.app_id)
+            logger.info(f"Starting ASR recognition with app_id: {self.app_id}")
+            logger.info(f"Audio data length: {len(audio_data) if audio_data else 0}")
+            logger.info(f"Audio format: {audio_format}")
+            
+            # 🔥 格式验证：确保使用WAV格式
+            if audio_format != "wav":
+                logger.warning(f"ASR app only supports WAV format, but received: {audio_format}")
+                logger.warning("This may cause ASR recognition to fail!")
+            
+            # 使用sync_to_async获取应用实例和相关数据
+            from channels.db import database_sync_to_async
+            
+            @database_sync_to_async
+            def get_app_with_type():
+                app = App.objects.select_related('app_type').get(id=self.app_id)
+                return {
+                    'app': app,
+                    'name': app.name,
+                    'app_type_name': app.app_type.name if app.app_type else 'Unknown'
+                }
+            
+            app_data = await get_app_with_type()
+            app = app_data['app']
+            
+            logger.info(f"Found app: {app_data['name']} (type: {app_data['app_type_name']})")
+            
             app_viewset = AppViewSet()
             
-            # 准备参数
+            # 🔥 重要：ASR应用的参数格式要求
             parameters = {
-                "audio_data": audio_data,
-                "audio_format": audio_format
+                "audio_data": audio_data,      # 必须是WAV格式的BASE64
+                "audio_format": audio_format   # 必须是"wav"
             }
             
             if context:
                 parameters["context"] = context
             
-            # 直接调用应用
-            result = app_viewset._execute_app(app=app, parameters=parameters)
+            logger.info(f"Calling ASR app with parameters keys: {list(parameters.keys())}")
+            logger.info(f"Audio format being sent to ASR: {audio_format}")
+            
+            # 使用sync_to_async调用应用
+            @database_sync_to_async
+            def execute_app():
+                return app_viewset._execute_app(app=app, parameters=parameters)
+            
+            result = await execute_app()
+            
+            logger.info(f"App execution result: {result}")
             
             if result["status"] == "success":
                 recognized_text = result["content"].strip()
-                logger.info(f"ASR recognized: {recognized_text}")
+                logger.info(f"ASR recognized successfully: {recognized_text}")
                 return recognized_text
             else:
                 logger.error(f'ASR recognition failed: {result.get("error")}')
+                logger.warning("Falling back to mock ASR")
                 return await self._recognize_speech_mock(audio_data)
                 
         except Exception as e:
-            logger.error(f"ASR recognition failed: {e}")
+            logger.error(f"ASR recognition failed with exception: {e}")
+            logger.exception("Full exception traceback:")
             # 降级到模拟模式
+            logger.warning("Falling back to mock ASR")
             return await self._recognize_speech_mock(audio_data)
     
     async def _recognize_speech_mock(self, audio_data: str) -> str:
@@ -170,14 +221,7 @@ class ASRService:
         
         # 返回模拟的识别结果
         mock_results = [
-            "油烟机已经打开，风力调至三档",
-            "空调温度已调整到26度",
-            "客厅灯光已关闭",
-            "厨房设备运行正常",
-            "收到指令，正在执行操作",
-            "请帮我测试一下厨电控制",
-            "CQ928设置加湿风焙烤模式",
-            "打开一体机澎湃蒸功能"
+            "mock 数据"
         ]
         
         result = random.choice(mock_results)
@@ -195,14 +239,15 @@ class VADService:
                 self.ap = AP(enable_vad=True, enable_ns=True)
                 self.ap.set_stream_format(16000, 1)  # 16kHz采样率，单声道
                 self.ap.set_ns_level(1)              # 噪声抑制级别 0-3
-                self.ap.set_vad_level(1)             # VAD级别 0-3
+                self.ap.set_vad_level(2)             # VAD级别 0-3，提高到2增强检测
                 self._use_webrtc = True
                 logger.info("WebRTC VAD initialized successfully")
             except Exception as e:
-                logger.error(f"Failed to initialize WebRTC VAD: {e}, using mock mode")
+                logger.error(f"Failed to initialize WebRTC VAD: {e}")
                 self._use_webrtc = False
+                logger.warning("Falling back to simple energy-based VAD")
         else:
-            logger.warning("WebRTC VAD not available, using mock mode")
+            logger.warning("WebRTC VAD not available, using simple energy-based VAD")
             self._use_webrtc = False
     
     async def detect_speech(self, audio_data: str) -> Dict[str, Any]:
@@ -215,9 +260,6 @@ class VADService:
         Returns:
             VAD检测结果字典
         """
-        if not self._use_webrtc:
-            return await self._detect_speech_mock(audio_data)
-        
         try:
             # 标准化音频格式
             audio_bytes = AudioConverter.normalize_for_vad(audio_data)
@@ -225,19 +267,30 @@ class VADService:
             # 验证音频格式
             is_valid, error_msg = AudioValidator.validate_pcm_format(audio_bytes)
             if not is_valid:
-                logger.warning(f"Invalid audio format: {error_msg}, using mock mode")
-                return await self._detect_speech_mock(audio_data)
+                logger.error(f"Invalid audio format for VAD: {error_msg}")
+                return {
+                    'has_speech': False,
+                    'error': f'Invalid audio format: {error_msg}',
+                    'confidence': 0.0
+                }
             
-            # 处理音频数据并检测语音
-            result = await self._process_audio_with_webrtc(audio_bytes)
+            # 选择VAD实现
+            if self._use_webrtc:
+                result = await self._process_audio_with_webrtc(audio_bytes)
+            else:
+                result = await self._process_audio_with_energy_vad(audio_bytes)
             
-            logger.info(f"WebRTC VAD result: {result}")
+            logger.info(f"VAD result: has_speech={result.get('has_speech')}, confidence={result.get('confidence')}")
             return result
             
         except Exception as e:
-            logger.error(f"WebRTC VAD processing failed: {e}")
-            # 降级到模拟模式
-            return await self._detect_speech_mock(audio_data)
+            logger.error(f"VAD processing failed: {e}")
+            # 返回错误而不是mock数据
+            return {
+                'has_speech': False,
+                'error': str(e),
+                'confidence': 0.0
+            }
     
     async def _process_audio_with_webrtc(self, audio_bytes: bytes) -> Dict[str, Any]:
         """
@@ -255,6 +308,10 @@ class VADService:
         total_chunks = 0
         speech_segments = []  # 记录语音段
         current_speech_start = None
+        
+        # 设置更严格的语音检测阈值
+        min_speech_chunks = 5  # 至少50ms连续语音才认为是有效语音
+        min_speech_ratio = 0.3  # 至少30%的音频块包含语音
         
         # 按10ms块处理音频
         for i in range(0, len(audio_bytes), chunk_size):
@@ -278,12 +335,15 @@ class VADService:
                     if current_speech_start is None:
                         current_speech_start = current_time
                 else:
-                    # 语音结束，记录语音段
+                    # 语音结束，记录语音段（如果足够长）
                     if current_speech_start is not None:
-                        speech_segments.append({
-                            'start': current_speech_start,
-                            'end': current_time
-                        })
+                        speech_duration = current_time - current_speech_start
+                        if speech_duration >= 0.05:  # 至少50ms的语音段
+                            speech_segments.append({
+                                'start': current_speech_start,
+                                'end': current_time,
+                                'duration': speech_duration
+                            })
                         current_speech_start = None
                 
             except Exception as e:
@@ -292,28 +352,200 @@ class VADService:
         
         # 处理最后一个语音段
         if current_speech_start is not None:
-            speech_segments.append({
-                'start': current_speech_start,
-                'end': total_chunks * 0.01
-            })
+            speech_duration = total_chunks * 0.01 - current_speech_start
+            if speech_duration >= 0.05:  # 至少50ms的语音段
+                speech_segments.append({
+                    'start': current_speech_start,
+                    'end': total_chunks * 0.01,
+                    'duration': speech_duration
+                })
         
         # 计算结果
-        has_speech = voice_chunks > 0
-        confidence = voice_chunks / total_chunks if total_chunks > 0 else 0
+        speech_ratio = voice_chunks / total_chunks if total_chunks > 0 else 0
+        
+        # 更严格的语音检测条件
+        has_speech = (
+            voice_chunks >= min_speech_chunks and 
+            speech_ratio >= min_speech_ratio and 
+            len(speech_segments) > 0
+        )
+        
+        # 计算总语音时长
+        total_speech_duration = sum(seg['duration'] for seg in speech_segments)
         
         # 获取第一个和最后一个语音段的时间
         speech_start = speech_segments[0]['start'] if speech_segments else 0
         speech_end = speech_segments[-1]['end'] if speech_segments else 0
         
-        return {
+        result = {
             'has_speech': has_speech,
             'speech_start': round(speech_start, 2),
             'speech_end': round(speech_end, 2),
-            'confidence': round(confidence, 2),
+            'confidence': round(speech_ratio, 2),
             'voice_chunks': voice_chunks,
             'total_chunks': total_chunks,
-            'speech_segments': speech_segments[:5]  # 最多返回前5个语音段
+            'speech_segments': len(speech_segments),
+            'total_speech_duration': round(total_speech_duration, 2),
+            'speech_ratio': round(speech_ratio, 2)
         }
+        
+        logger.debug(f"VAD analysis: {voice_chunks}/{total_chunks} voice chunks, "
+                    f"{len(speech_segments)} segments, "
+                    f"{total_speech_duration:.2f}s speech, "
+                    f"has_speech={has_speech}")
+        
+        return result
+    
+    async def _process_audio_with_energy_vad(self, audio_bytes: bytes) -> Dict[str, Any]:
+        """
+        使用简单的能量检测进行VAD
+        
+        Args:
+            audio_bytes: 原始音频字节数据
+            
+        Returns:
+            VAD检测结果
+        """
+        try:
+            # 将字节数据转换为16位整数数组
+            import struct
+            samples = []
+            for i in range(0, len(audio_bytes) - 1, 2):
+                sample = struct.unpack('<h', audio_bytes[i:i+2])[0]
+                samples.append(sample)
+            
+            if not samples:
+                return {
+                    'has_speech': False,
+                    'speech_start': 0,
+                    'speech_end': 0,
+                    'confidence': 0.0,
+                    'voice_chunks': 0,
+                    'total_chunks': 0,
+                    'speech_segments': 0,
+                    'total_speech_duration': 0.0,
+                    'speech_ratio': 0.0
+                }
+            
+            # 计算音频能量
+            frame_size = 320  # 20ms at 16kHz
+            frames = []
+            
+            for i in range(0, len(samples), frame_size):
+                frame = samples[i:i + frame_size]
+                if len(frame) < frame_size:
+                    frame.extend([0] * (frame_size - len(frame)))
+                
+                # 计算RMS能量
+                energy = sum(s * s for s in frame) / len(frame)
+                rms = (energy ** 0.5)
+                frames.append(rms)
+            
+            if not frames:
+                return {
+                    'has_speech': False,
+                    'speech_start': 0,
+                    'speech_end': 0,
+                    'confidence': 0.0,
+                    'voice_chunks': 0,
+                    'total_chunks': 0,
+                    'speech_segments': 0,
+                    'total_speech_duration': 0.0,
+                    'speech_ratio': 0.0
+                }
+            
+            # 动态阈值计算
+            max_energy = max(frames)
+            avg_energy = sum(frames) / len(frames)
+            
+            # 更敏感的阈值设置
+            # 阈值设置为平均能量的1.5倍，但不超过最大能量的20%
+            threshold = min(avg_energy * 1.5, max_energy * 0.2)
+            
+            # 如果音频整体能量很低，使用固定的最小阈值
+            min_threshold = 100  # 最小阈值
+            threshold = max(threshold, min_threshold)
+            
+            # 检测语音段
+            voice_frames = 0
+            speech_segments = []
+            current_speech_start = None
+            
+            for i, energy in enumerate(frames):
+                frame_time = i * 0.02  # 20ms per frame
+                
+                if energy > threshold:
+                    voice_frames += 1
+                    if current_speech_start is None:
+                        current_speech_start = frame_time
+                else:
+                    if current_speech_start is not None:
+                        speech_duration = frame_time - current_speech_start
+                        if speech_duration >= 0.1:  # 至少100ms的语音段
+                            speech_segments.append({
+                                'start': current_speech_start,
+                                'end': frame_time,
+                                'duration': speech_duration
+                            })
+                        current_speech_start = None
+            
+            # 处理最后一个语音段
+            if current_speech_start is not None:
+                speech_duration = len(frames) * 0.02 - current_speech_start
+                if speech_duration >= 0.1:
+                    speech_segments.append({
+                        'start': current_speech_start,
+                        'end': len(frames) * 0.02,
+                        'duration': speech_duration
+                    })
+            
+            # 计算结果
+            speech_ratio = voice_frames / len(frames) if frames else 0
+            
+            # 更宽松的语音检测条件
+            has_speech = (
+                voice_frames >= 3 and  # 至少3帧（60ms）
+                speech_ratio >= 0.1 and  # 至少10%的帧包含语音
+                len(speech_segments) > 0 and
+                max_energy > avg_energy * 1.2  # 最大能量适度高于平均值
+            )
+            
+            # 计算总语音时长
+            total_speech_duration = sum(seg['duration'] for seg in speech_segments)
+            
+            # 获取第一个和最后一个语音段的时间
+            speech_start = speech_segments[0]['start'] if speech_segments else 0
+            speech_end = speech_segments[-1]['end'] if speech_segments else 0
+            
+            result = {
+                'has_speech': has_speech,
+                'speech_start': round(speech_start, 2),
+                'speech_end': round(speech_end, 2),
+                'confidence': round(speech_ratio, 2),
+                'voice_chunks': voice_frames,
+                'total_chunks': len(frames),
+                'speech_segments': len(speech_segments),
+                'total_speech_duration': round(total_speech_duration, 2),
+                'speech_ratio': round(speech_ratio, 2),
+                'method': 'energy_based'
+            }
+            
+            logger.debug(f"Energy VAD analysis: {voice_frames}/{len(frames)} voice frames, "
+                        f"{len(speech_segments)} segments, "
+                        f"{total_speech_duration:.2f}s speech, "
+                        f"threshold={threshold:.1f}, max_energy={max_energy:.1f}, "
+                        f"has_speech={has_speech}")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Energy VAD processing failed: {e}")
+            return {
+                'has_speech': False,
+                'error': str(e),
+                'confidence': 0.0,
+                'method': 'energy_based'
+            }
     
     def _estimate_duration(self, audio_bytes_length: int, sample_rate: int = 16000, 
                           channels: int = 1, sample_width: int = 2) -> float:
@@ -330,25 +562,6 @@ class VADService:
             音频时长（秒）
         """
         return audio_bytes_length / (sample_rate * channels * sample_width)
-    
-    async def _detect_speech_mock(self, audio_data: str) -> Dict[str, Any]:
-        """模拟VAD检测"""
-        await asyncio.sleep(0.2)  # 模拟处理时间
-        
-        # 模拟VAD结果
-        has_speech = random.random() > 0.1  # 90%概率检测到语音
-        
-        result = {
-            'has_speech': has_speech,
-            'speech_start': round(random.uniform(0.1, 1.0), 2) if has_speech else 0,
-            'speech_end': round(random.uniform(2.0, 5.0), 2) if has_speech else 0,
-            'confidence': round(random.uniform(0.8, 0.98), 2) if has_speech else 0,
-            'voice_chunks': random.randint(10, 50) if has_speech else 0,
-            'total_chunks': random.randint(50, 100)
-        }
-        
-        logger.info(f"Mock VAD result: {result}")
-        return result
 
 
 class IOTService:
@@ -727,26 +940,39 @@ class AudioProcessingService:
         return features
 
 
-async def process_audio_for_asr(audio_bytes: bytes, app_id: str) -> Optional[Dict[str, Any]]:
+async def process_audio_for_asr(audio_bytes: bytes, app_id: str, save_audio: bool = True) -> Optional[Dict[str, Any]]:
     """
     处理音频数据进行ASR识别
     
     Args:
-        audio_bytes: 原始音频字节数据
+        audio_bytes: 原始音频字节数据（PCM格式，16kHz, 16bit, 单声道）
         app_id: 应用ID
+        save_audio: 是否保存音频文件用于调试
         
     Returns:
         ASR识别结果字典，包含text、confidence、is_partial等字段
+        
+    注意：
+        ASR应用只支持WAV格式的BASE64编码音频！
+        必须将PCM数据转换为完整的WAV文件格式再进行BASE64编码
     """
     try:
-        # 将音频数据转换为base64
-        audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
+        wav_file_path = None
+        
+        # 根据参数决定是否保存音频文件
+        if save_audio:
+            wav_file_path = await save_audio_as_wav(audio_bytes, app_id)
+            logger.info(f"Audio saved to: {wav_file_path}")
+        
+        # 🔥 关键修复：将PCM数据转换为WAV格式的BASE64
+        # ASR应用只接受WAV格式，不能直接发送PCM数据！
+        wav_audio_b64 = convert_pcm_to_wav_base64(audio_bytes)
         
         # 初始化ASR服务
         asr_service = ASRService()
         
-        # 进行语音识别
-        recognized_text = await asr_service.recognize_speech(audio_b64, audio_format="webm")
+        # 🔥 重要：发送WAV格式音频，格式参数设置为"wav"
+        recognized_text = await asr_service.recognize_speech(wav_audio_b64, audio_format="wav")
         
         if recognized_text and recognized_text.strip():
             # 模拟置信度计算（实际应用中应该从ASR服务获取）
@@ -763,6 +989,10 @@ async def process_audio_for_asr(audio_bytes: bytes, app_id: str) -> Optional[Dic
                 'timestamp': asyncio.get_event_loop().time()
             }
             
+            # 只有保存了音频文件时才添加路径
+            if wav_file_path:
+                result['audio_file'] = wav_file_path
+            
             logger.info(f"ASR result for app {app_id}: {result}")
             return result
         else:
@@ -772,6 +1002,97 @@ async def process_audio_for_asr(audio_bytes: bytes, app_id: str) -> Optional[Dic
     except Exception as e:
         logger.error(f"Error processing audio for ASR with app {app_id}: {e}")
         return None
+
+
+def convert_pcm_to_wav_base64(pcm_data: bytes, sample_rate: int = 16000, channels: int = 1, sample_width: int = 2) -> str:
+    """
+    将PCM音频数据转换为WAV格式的BASE64编码
+    
+    Args:
+        pcm_data: 原始PCM音频字节数据
+        sample_rate: 采样率，默认16000Hz
+        channels: 声道数，默认1（单声道）
+        sample_width: 采样位宽，默认2字节（16位）
+        
+    Returns:
+        WAV格式的BASE64编码字符串
+        
+    注意：
+        这是为了兼容ASR应用的格式要求！
+        ASR应用只支持完整的WAV文件格式，不支持原始PCM数据
+    """
+    try:
+        import io
+        import wave
+        
+        # 创建内存中的WAV文件
+        wav_buffer = io.BytesIO()
+        
+        with wave.open(wav_buffer, 'wb') as wav_file:
+            wav_file.setnchannels(channels)
+            wav_file.setsampwidth(sample_width)
+            wav_file.setframerate(sample_rate)
+            wav_file.writeframes(pcm_data)
+        
+        # 获取WAV文件的字节数据
+        wav_bytes = wav_buffer.getvalue()
+        
+        # 转换为BASE64
+        wav_base64 = base64.b64encode(wav_bytes).decode('utf-8')
+        
+        logger.debug(f"Converted PCM to WAV: PCM={len(pcm_data)} bytes -> WAV={len(wav_bytes)} bytes -> BASE64={len(wav_base64)} chars")
+        
+        return wav_base64
+        
+    except Exception as e:
+        logger.error(f"Failed to convert PCM to WAV BASE64: {e}")
+        # 降级：直接返回PCM的BASE64（可能不工作，但至少不会崩溃）
+        return base64.b64encode(pcm_data).decode('utf-8')
+
+
+async def save_audio_as_wav(audio_bytes: bytes, app_id: str, sample_rate: int = 16000, channels: int = 1, sample_width: int = 2) -> str:
+    """
+    将音频字节数据保存为WAV文件
+    
+    Args:
+        audio_bytes: 原始音频字节数据
+        app_id: 应用ID
+        sample_rate: 采样率，默认16000Hz
+        channels: 声道数，默认1（单声道）
+        sample_width: 采样位宽，默认2字节（16位）
+        
+    Returns:
+        保存的WAV文件路径
+    """
+    try:
+        # 创建音频保存目录
+        audio_dir = os.path.join(os.path.dirname(__file__), '..', 'media', 'debug_audio')
+        os.makedirs(audio_dir, exist_ok=True)
+        
+        # 生成文件名：包含时间戳和app_id
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]  # 精确到毫秒
+        filename = f"asr_debug_{app_id}_{timestamp}.wav"
+        file_path = os.path.join(audio_dir, filename)
+        
+        # 写入WAV文件
+        with wave.open(file_path, 'wb') as wav_file:
+            wav_file.setnchannels(channels)
+            wav_file.setsampwidth(sample_width)
+            wav_file.setframerate(sample_rate)
+            wav_file.writeframes(audio_bytes)
+        
+        # 记录文件信息
+        file_size = len(audio_bytes)
+        duration_seconds = file_size / (sample_rate * channels * sample_width)
+        
+        logger.info(f"Audio saved as WAV: {file_path}")
+        logger.info(f"Audio info: size={file_size} bytes, duration={duration_seconds:.2f}s, rate={sample_rate}Hz, channels={channels}")
+        
+        return file_path
+        
+    except Exception as e:
+        logger.error(f"Failed to save audio as WAV: {e}")
+        return f"error_saving_audio_{app_id}_{timestamp}.wav"
 
 
 async def process_audio_with_vad_asr(audio_bytes: bytes, app_id: str) -> Dict[str, Any]:
@@ -802,10 +1123,19 @@ async def process_audio_with_vad_asr(audio_bytes: bytes, app_id: str) -> Dict[st
             'timestamp': asyncio.get_event_loop().time()
         }
         
-        # 如果检测到语音，进行ASR识别
+        # 只有检测到语音时才进行ASR识别和保存音频
         if vad_result.get('has_speech', False):
-            asr_result = await process_audio_for_asr(audio_bytes, app_id)
+            logger.info(f"VAD detected speech, proceeding with ASR for app {app_id}")
+            
+            # 保存音频文件（只保存有语音的音频）
+            wav_file_path = await save_audio_as_wav(audio_bytes, app_id)
+            result['audio_file'] = wav_file_path
+            
+            # 进行ASR识别
+            asr_result = await process_audio_for_asr(audio_bytes, app_id, save_audio=False)  # 不重复保存
             result['asr'] = asr_result
+        else:
+            logger.debug(f"VAD detected no speech for app {app_id}, skipping ASR")
         
         logger.info(f"VAD+ASR result for app {app_id}: VAD={vad_result.get('has_speech')}, ASR={bool(result['asr'])}")
         return result

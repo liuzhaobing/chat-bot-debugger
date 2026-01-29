@@ -187,8 +187,6 @@
 </template>
 
 <script>
-import AudioProcessor from '@/utils/audioProcessor.js'
-
 export default {
   name: 'VadAsrTestPanel',
   data() {
@@ -199,10 +197,17 @@ export default {
       isConnecting: false,
       
       // 音频处理
+      audioContext: null,
+      analyser: null,
+      mediaStream: null,
       audioProcessor: null,
+      dataArray: null,
       audioLevel: 0,
       isVoiceActive: false,
       vadSensitivity: 0.5,
+      vadBuffer: [],
+      voiceEndTimeout: null,
+      audioPacketsSent: 0,
       
       // WebSocket
       websocket: null,
@@ -271,17 +276,14 @@ export default {
       this.addDebugLog('system', 'info', '开始启动VAD+ASR测试...')
       
       try {
-        // 1. 初始化音频处理器
-        await this.initializeAudioProcessor()
-        
-        // 2. 建立WebSocket连接
+        // 1. 建立WebSocket连接
         await this.connectWebSocket()
         
-        // 3. 开始录制
-        const recordingStarted = this.audioProcessor.startRecording()
-        if (!recordingStarted) {
-          throw new Error('开始录制失败')
-        }
+        // 2. 初始化音频处理器
+        await this.initializeAudioProcessor()
+        
+        // 3. 开始音频分析
+        this.startAudioAnalysis()
         
         // 4. 更新状态
         this.isTestActive = true
@@ -306,10 +308,8 @@ export default {
       this.addDebugLog('system', 'info', '正在停止VAD+ASR测试...')
       
       try {
-        // 停止录制
-        if (this.audioProcessor) {
-          this.audioProcessor.stopRecording()
-        }
+        // 停止音频处理
+        this.stopAudioAnalysis()
         
         // 断开WebSocket
         this.disconnectWebSocket()
@@ -329,47 +329,81 @@ export default {
     },
 
     /**
-     * 初始化音频处理器
+     * 初始化音频处理器 - 使用类似dial电话客服的实时音频处理
      */
     async initializeAudioProcessor() {
       try {
-        this.audioProcessor = new AudioProcessor()
+        // 获取麦克风权限
+        this.mediaStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            sampleRate: 16000,
+            channelCount: 1,
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+        })
+
+        // 创建音频上下文
+        this.audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 })
         
-        // 设置回调函数
-        this.audioProcessor.onAudioLevel = (level) => {
-          this.audioLevel = level
+        if (this.audioContext.state === 'suspended') {
+          await this.audioContext.resume()
         }
+
+        // 创建分析器用于可视化
+        this.analyser = this.audioContext.createAnalyser()
+        this.analyser.fftSize = 2048
+        this.analyser.smoothingTimeConstant = 0.8
+        this.dataArray = new Uint8Array(this.analyser.frequencyBinCount)
+
+        const source = this.audioContext.createMediaStreamSource(this.mediaStream)
+        source.connect(this.analyser)
+
+        // 创建音频处理器 - 模拟dial电话客服的方式
+        const bufferSize = 256 // 16ms at 16kHz (256 samples = 16ms)
+        this.audioProcessor = this.audioContext.createScriptProcessor(bufferSize, 1, 1)
         
-        this.audioProcessor.onVoiceStart = () => {
-          this.isVoiceActive = true
-          this.addDebugLog('vad', 'info', '检测到语音开始')
-          this.addTranscriptMessage('', true, false)
-        }
-        
-        this.audioProcessor.onVoiceEnd = () => {
-          this.isVoiceActive = false
-          this.addDebugLog('vad', 'info', '语音结束')
-        }
-        
-        this.audioProcessor.onAudioData = (audioData, isComplete = false) => {
+        this.audioProcessor.onaudioprocess = (e) => {
+          if (!this.isTestActive) return
+          
+          const inputData = e.inputBuffer.getChannelData(0)
+          
+          // 计算音频级别用于可视化
+          let sum = 0
+          for (let i = 0; i < inputData.length; i++) {
+            sum += Math.abs(inputData[i])
+          }
+          const average = sum / inputData.length
+          this.audioLevel = Math.min(1, average * 10)
+          
+          // VAD检测
+          this.detectVoiceActivity(average)
+          
+          // 转换为16位PCM字节数据 - 完全模拟dial电话客服
+          const pcmData = new Int16Array(inputData.length)
+          for (let i = 0; i < inputData.length; i++) {
+            const s = Math.max(-1, Math.min(1, inputData[i]))
+            pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF
+          }
+          
+          // 转换为字节数组
+          const audioBytes = new Uint8Array(pcmData.buffer)
+          
+          // 实时发送音频数据
           if (this.isWebSocketReady()) {
-            this.sendAudioToServer(audioData, isComplete)
+            this.sendRealTimeAudioData(audioBytes)
           }
         }
         
-        this.audioProcessor.onError = (errorType, error) => {
-          this.addDebugLog('error', 'error', `音频处理错误: ${errorType}`, { error: error.message })
-        }
+        source.connect(this.audioProcessor)
+        this.audioProcessor.connect(this.audioContext.destination)
         
-        // 设置VAD敏感度
-        this.audioProcessor.setVADSensitivity(this.vadSensitivity)
-        
-        const initialized = await this.audioProcessor.initialize()
-        if (!initialized) {
-          throw new Error('音频处理器初始化失败')
-        }
-        
-        this.addDebugLog('audio', 'success', '音频处理器初始化成功')
+        this.addDebugLog('audio', 'success', '实时音频处理器初始化成功', {
+          sampleRate: 16000,
+          bufferSize: bufferSize,
+          latency: `${bufferSize / 16000 * 1000}ms`
+        })
         
       } catch (error) {
         this.addDebugLog('audio', 'error', '音频处理器初始化失败', { error: error.message })
@@ -486,36 +520,139 @@ export default {
     },
 
     /**
-     * 发送音频数据到服务器
+     * 发送实时音频数据到服务器 - 模拟dial电话客服的方式
      */
-    async sendAudioToServer(audioData, isComplete = false) {
+    sendRealTimeAudioData(audioBytes) {
       if (!this.isWebSocketReady()) {
         return
       }
       
       try {
-        // 将音频数据转换为Base64
-        const arrayBuffer = await audioData.arrayBuffer()
-        const base64Audio = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)))
+        // 转换为base64 - 与dial电话客服版本一致
+        let binary = ''
+        for (let i = 0; i < audioBytes.length; i++) {
+          binary += String.fromCharCode(audioBytes[i])
+        }
+        const base64 = btoa(binary)
         
+        // 消息格式与dial电话客服版本完全一致
         const message = {
           type: 'audio_data',
-          audio: base64Audio,
-          format: 'webm',
-          is_complete: isComplete,
-          app_id: this.APP_ID,
-          timestamp: Date.now()
+          timestamp: Math.floor(Date.now()),
+          data: {
+            audio_data: base64,
+            sample_rate: 16000,
+            channels: 1,
+            format: 'pcm',  // 原始PCM格式，不是webm
+            size: audioBytes.length
+          },
+          app_id: this.APP_ID
         }
         
         this.websocket.send(JSON.stringify(message))
         
-        if (isComplete) {
-          this.addDebugLog('audio', 'info', '音频数据发送完成')
+        // 统计信息
+        this.audioPacketsSent = (this.audioPacketsSent || 0) + 1
+        
+        // 每100个包记录一次日志，避免日志过多
+        if (this.audioPacketsSent % 100 === 0) {
+          this.addDebugLog('audio', 'info', `已发送${this.audioPacketsSent}个音频包`, {
+            packetSize: audioBytes.length,
+            format: 'pcm',
+            sampleRate: 16000
+          })
         }
         
       } catch (error) {
-        console.error('发送音频数据失败:', error)
-        this.addDebugLog('audio', 'error', '发送音频数据失败')
+        console.error('发送实时音频数据失败:', error)
+        this.addDebugLog('audio', 'error', '发送实时音频数据失败')
+      }
+    },
+
+    /**
+     * 检测语音活动 - 简化的VAD实现
+     */
+    detectVoiceActivity(audioLevel) {
+      // 添加到VAD缓冲区
+      this.vadBuffer = this.vadBuffer || []
+      this.vadBuffer.push(audioLevel)
+      if (this.vadBuffer.length > 10) {
+        this.vadBuffer.shift()
+      }
+
+      // 计算平均音频级别
+      const avgLevel = this.vadBuffer.reduce((sum, level) => sum + level, 0) / this.vadBuffer.length
+      const threshold = this.vadSensitivity * 0.05
+
+      // 判断语音活动
+      if (avgLevel > threshold) {
+        if (!this.isVoiceActive) {
+          this.isVoiceActive = true
+          this.addDebugLog('vad', 'info', '检测到语音开始', { level: avgLevel, threshold })
+          this.addTranscriptMessage('', true, false)
+        }
+      } else if (avgLevel < threshold * 0.5) {
+        if (this.isVoiceActive) {
+          // 延迟触发语音结束事件
+          if (this.voiceEndTimeout) {
+            clearTimeout(this.voiceEndTimeout)
+          }
+          
+          this.voiceEndTimeout = setTimeout(() => {
+            if (this.isVoiceActive) {
+              this.isVoiceActive = false
+              this.addDebugLog('vad', 'info', '语音结束')
+            }
+          }, 500)
+        }
+      }
+    },
+
+    /**
+     * 开始音频分析
+     */
+    startAudioAnalysis() {
+      if (!this.analyser) return
+
+      const analyze = () => {
+        if (!this.isTestActive) return
+
+        this.analyser.getByteFrequencyData(this.dataArray)
+        
+        requestAnimationFrame(analyze)
+      }
+
+      analyze()
+    },
+
+    /**
+     * 停止音频分析
+     */
+    stopAudioAnalysis() {
+      this.audioLevel = 0
+      this.isVoiceActive = false
+      
+      if (this.voiceEndTimeout) {
+        clearTimeout(this.voiceEndTimeout)
+        this.voiceEndTimeout = null
+      }
+      
+      // 停止媒体流
+      if (this.mediaStream) {
+        this.mediaStream.getTracks().forEach(track => track.stop())
+        this.mediaStream = null
+      }
+      
+      // 断开音频处理器
+      if (this.audioProcessor) {
+        this.audioProcessor.disconnect()
+        this.audioProcessor = null
+      }
+      
+      // 关闭音频上下文
+      if (this.audioContext && this.audioContext.state !== 'closed') {
+        this.audioContext.close()
+        this.audioContext = null
       }
     },
 
@@ -523,10 +660,7 @@ export default {
      * 更新VAD敏感度
      */
     updateVadSensitivity() {
-      if (this.audioProcessor) {
-        this.audioProcessor.setVADSensitivity(this.vadSensitivity)
-        this.addDebugLog('vad', 'info', `VAD敏感度已更新: ${this.vadSensitivity}`)
-      }
+      this.addDebugLog('vad', 'info', `VAD敏感度已更新: ${this.vadSensitivity}`)
     },
 
     /**
@@ -631,8 +765,8 @@ export default {
       // 清空画布
       ctx.clearRect(0, 0, width, height)
       
-      if (this.audioProcessor && this.isTestActive) {
-        const timeData = this.audioProcessor.getTimeDomainData()
+      if (this.analyser && this.isTestActive) {
+        const timeData = this.getTimeDomainData()
         
         if (timeData) {
           // 绘制波形
@@ -667,6 +801,17 @@ export default {
         ctx.lineTo(width, height / 2)
         ctx.stroke()
       }
+    },
+
+    /**
+     * 获取音频时域数据
+     */
+    getTimeDomainData() {
+      if (!this.analyser) return null
+      
+      const timeData = new Uint8Array(this.analyser.fftSize)
+      this.analyser.getByteTimeDomainData(timeData)
+      return Array.from(timeData)
     },
 
     /**
@@ -769,20 +914,18 @@ export default {
         this.animationFrame = null
       }
       
+      // 停止音频分析
+      this.stopAudioAnalysis()
+      
       // 断开WebSocket
       this.disconnectWebSocket()
-      
-      // 销毁音频处理器
-      if (this.audioProcessor) {
-        this.audioProcessor.destroy()
-        this.audioProcessor = null
-      }
       
       // 重置状态
       this.isTestActive = false
       this.connectionStatus = 'disconnected'
       this.audioLevel = 0
       this.isVoiceActive = false
+      this.audioPacketsSent = 0
     }
   }
 }
