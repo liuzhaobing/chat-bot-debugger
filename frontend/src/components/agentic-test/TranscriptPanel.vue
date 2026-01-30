@@ -73,17 +73,6 @@
           
           <div class="message-content">
             <p>{{ message.content }}</p>
-            <div v-if="message.confidence !== undefined" class="message-confidence">
-              <span class="confidence-label">置信度:</span>
-              <div class="confidence-bar">
-                <div 
-                  class="confidence-fill" 
-                  :style="{ width: (message.confidence * 100) + '%' }"
-                  :class="getConfidenceClass(message.confidence)"
-                ></div>
-              </div>
-              <span class="confidence-value">{{ Math.round(message.confidence * 100) }}%</span>
-            </div>
           </div>
         </div>
       </div>
@@ -203,12 +192,6 @@ export default {
         minute: '2-digit', 
         second: '2-digit' 
       })
-    },
-    
-    getConfidenceClass(confidence) {
-      if (confidence >= 0.8) return 'high'
-      if (confidence >= 0.6) return 'medium'
-      return 'low'
     },
     
     getCategoryLabel(category) {
@@ -512,52 +495,6 @@ export default {
   font-size: 14px;
   line-height: 1.5;
   color: var(--text-primary);
-}
-
-.message-confidence {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 8px;
-  font-size: 11px;
-}
-
-.confidence-label {
-  color: var(--text-secondary);
-  font-weight: 500;
-}
-
-.confidence-bar {
-  flex: 1;
-  height: 4px;
-  background: var(--bg-secondary);
-  border-radius: 2px;
-  overflow: hidden;
-}
-
-.confidence-fill {
-  height: 100%;
-  border-radius: 2px;
-  transition: width 0.3s ease;
-}
-
-.confidence-fill.high {
-  background: #10b981;
-}
-
-.confidence-fill.medium {
-  background: #f59e0b;
-}
-
-.confidence-fill.low {
-  background: #ef4444;
-}
-
-.confidence-value {
-  color: var(--text-secondary);
-  font-weight: 600;
-  min-width: 35px;
-  text-align: right;
 }
 
 /* 日志条目 */

@@ -233,6 +233,7 @@ class VadAsrTestConsumer(AsyncWebsocketConsumer):
         self.app_id = None
         self.is_testing = False
         self.audio_buffer = []
+        self.vad_service = None  # 添加VAD服务实例
         
     async def connect(self):
         # 从查询参数获取app_id
@@ -327,6 +328,8 @@ class VadAsrTestConsumer(AsyncWebsocketConsumer):
                 await self.start_test()
             elif message_type == 'stop_test':
                 await self.stop_test()
+            elif message_type == 'set_vad_level':
+                await self.set_vad_level(data.get('level', 2))
             elif message_type == 'ping':
                 await self.send_message('pong', 'pong')
             else:
@@ -349,9 +352,14 @@ class VadAsrTestConsumer(AsyncWebsocketConsumer):
         self.is_testing = True
         self.audio_buffer = []
         
+        # 初始化VAD服务
+        from .services import VADService
+        self.vad_service = VADService()
+        
         await self.send_message('system_status', 'VAD+ASR测试已启动', {
             'app_id': self.app_id,
-            'testing': True
+            'testing': True,
+            'vad_level': self.vad_service.vad_level if self.vad_service else 2
         })
         
         logger.info(f"Started VAD+ASR test with app_id: {self.app_id}")
@@ -364,6 +372,7 @@ class VadAsrTestConsumer(AsyncWebsocketConsumer):
             
         self.is_testing = False
         self.audio_buffer = []
+        self.vad_service = None  # 清理VAD服务
         
         await self.send_message('system_status', 'VAD+ASR测试已停止', {
             'app_id': self.app_id,
@@ -371,6 +380,39 @@ class VadAsrTestConsumer(AsyncWebsocketConsumer):
         })
         
         logger.info(f"Stopped VAD+ASR test with app_id: {self.app_id}")
+    
+    async def set_vad_level(self, level):
+        """设置VAD敏感度级别"""
+        try:
+            level = int(level)
+            if not (0 <= level <= 3):
+                await self.send_message('error', f'VAD级别必须在0-3之间，收到: {level}')
+                return
+            
+            if self.vad_service:
+                success = self.vad_service.set_vad_level(level)
+                if success:
+                    await self.send_message('vad_config', f'VAD敏感度已设置为 {level}', {
+                        'level': level,
+                        'description': self._get_vad_level_description(level)
+                    })
+                else:
+                    await self.send_message('error', f'设置VAD级别失败')
+            else:
+                await self.send_message('warning', 'VAD服务未初始化，请先启动测试')
+                
+        except ValueError:
+            await self.send_message('error', f'无效的VAD级别: {level}')
+    
+    def _get_vad_level_description(self, level):
+        """获取VAD级别描述"""
+        descriptions = {
+            0: "最不敏感 - 只检测非常明显的语音",
+            1: "较不敏感 - 检测清晰的语音",
+            2: "中等敏感 - 平衡检测（默认）",
+            3: "最敏感 - 检测轻微的语音活动"
+        }
+        return descriptions.get(level, "未知级别")
     
     async def handle_audio_data(self, audio_data, audio_format='pcm', is_complete=False, app_id=None):
         """处理音频数据进行VAD+ASR测试"""
@@ -453,13 +495,12 @@ class VadAsrTestConsumer(AsyncWebsocketConsumer):
                 asr_result = result.get('asr')
                 if asr_result:
                     await self.send_message('transcript_final', asr_result.get('text', ''), {
-                        'confidence': asr_result.get('confidence', 0.0),
                         'app_id': app_id,
                         'audio_duration_s': len(combined_audio) / 32000,
                         'vad_confidence': vad_result.get('confidence', 0.0),
                         'speech_ratio': vad_result.get('speech_ratio', 0.0)
                     })
-                    logger.info(f"ASR result: '{asr_result.get('text', '')[:50]}...' (confidence: {asr_result.get('confidence', 0.0):.2f})")
+                    logger.info(f"ASR result: '{asr_result.get('text', '')[:50]}...'")
                 else:
                     logger.info(f"VAD detected no speech in {len(combined_audio)} bytes audio (speech_ratio: {vad_result.get('speech_ratio', 0.0):.2f})")
                 
@@ -521,12 +562,10 @@ class VadAsrTestConsumer(AsyncWebsocketConsumer):
                 # 发送转录结果
                 if result.get('is_partial'):
                     await self.send_message('transcript_partial', result.get('text', ''), {
-                        'confidence': result.get('confidence', 0.0),
                         'app_id': app_id
                     })
                 else:
                     await self.send_message('transcript_final', result.get('text', ''), {
-                        'confidence': result.get('confidence', 0.0),
                         'app_id': app_id
                     })
                     

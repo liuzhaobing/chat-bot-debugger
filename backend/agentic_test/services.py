@@ -232,16 +232,41 @@ class ASRService:
 class VADService:
     """语音活动检测服务"""
     
-    def __init__(self):
-        """初始化VAD服务"""
+    def __init__(self, vad_level: int = 2):
+        """
+        初始化VAD服务
+        
+        Args:
+            vad_level: VAD敏感度级别 (0-3)，0最不敏感，3最敏感
+        """
+        self.vad_level = vad_level
+        
         if WEBRTC_AVAILABLE:
             try:
-                self.ap = AP(enable_vad=True, enable_ns=True)
+                self.ap = AP(
+                    enable_vad=True,
+                    enable_ns=True,
+                    # aec_type=1,
+                    # agc_type=2,
+                )
+                """
+                aec_type:
+                0 = 关闭 AEC
+                1 = 启用 AEC（标准模式）
+                2 = 启用 AEC（强抑制模式，可能对应 Extended Filter 或 AEC3）
+                agc_type:
+                0 = 关闭 AGC
+                1 = 模拟模式 (Adaptive Analog)
+                2 = 数字模式 (Adaptive Digital)
+                3 = 固定数字模式 (Fixed Digital)
+                """
                 self.ap.set_stream_format(16000, 1)  # 16kHz采样率，单声道
-                self.ap.set_ns_level(1)              # 噪声抑制级别 0-3
-                self.ap.set_vad_level(2)             # VAD级别 0-3，提高到2增强检测
+                self.ap.set_ns_level(2)              # 噪声抑制级别 0-3
+                self.ap.set_vad_level(self.vad_level) # VAD级别 0-3，可动态调整
+                # self.ap.set_aec_level(1)             # 回声消除等级 0-2
+                # self.ap.set_agc_level(70)            # 增益控制等级 0-100
                 self._use_webrtc = True
-                logger.info("WebRTC VAD initialized successfully")
+                logger.info(f"WebRTC VAD initialized successfully with level {self.vad_level}")
             except Exception as e:
                 logger.error(f"Failed to initialize WebRTC VAD: {e}")
                 self._use_webrtc = False
@@ -249,6 +274,31 @@ class VADService:
         else:
             logger.warning("WebRTC VAD not available, using simple energy-based VAD")
             self._use_webrtc = False
+    
+    def set_vad_level(self, level: int):
+        """
+        动态设置VAD敏感度级别
+        
+        Args:
+            level: VAD级别 (0-3)，0最不敏感，3最敏感
+        """
+        if not (0 <= level <= 3):
+            logger.warning(f"Invalid VAD level {level}, must be 0-3")
+            return False
+            
+        self.vad_level = level
+        
+        if self._use_webrtc and hasattr(self, 'ap'):
+            try:
+                self.ap.set_vad_level(level)
+                logger.info(f"VAD level updated to {level}")
+                return True
+            except Exception as e:
+                logger.error(f"Failed to update VAD level: {e}")
+                return False
+        else:
+            logger.info(f"VAD level updated to {level} (energy-based VAD)")
+            return True
     
     async def detect_speech(self, audio_data: str) -> Dict[str, Any]:
         """
@@ -326,7 +376,7 @@ class VADService:
                 # 处理音频块
                 processed_chunk = self.ap.process_stream(chunk)
                 has_voice = self.ap.has_voice()
-                
+
                 total_chunks += 1
                 current_time = total_chunks * 0.01  # 每块10ms
                 
@@ -376,7 +426,7 @@ class VADService:
         # 获取第一个和最后一个语音段的时间
         speech_start = speech_segments[0]['start'] if speech_segments else 0
         speech_end = speech_segments[-1]['end'] if speech_segments else 0
-        
+
         result = {
             'has_speech': has_speech,
             'speech_start': round(speech_start, 2),
@@ -975,15 +1025,12 @@ async def process_audio_for_asr(audio_bytes: bytes, app_id: str, save_audio: boo
         recognized_text = await asr_service.recognize_speech(wav_audio_b64, audio_format="wav")
         
         if recognized_text and recognized_text.strip():
-            # 模拟置信度计算（实际应用中应该从ASR服务获取）
-            confidence = random.uniform(0.7, 0.95)
-            
+            # ASR本身不返回置信度，移除模拟的置信度
             # 模拟部分结果和最终结果
             is_partial = len(recognized_text) < 10 or random.random() < 0.3
             
             result = {
                 'text': recognized_text,
-                'confidence': confidence,
                 'is_partial': is_partial,
                 'app_id': app_id,
                 'timestamp': asyncio.get_event_loop().time()
@@ -1126,7 +1173,7 @@ async def process_audio_with_vad_asr(audio_bytes: bytes, app_id: str) -> Dict[st
         # 只有检测到语音时才进行ASR识别和保存音频
         if vad_result.get('has_speech', False):
             logger.info(f"VAD detected speech, proceeding with ASR for app {app_id}")
-            
+
             # 保存音频文件（只保存有语音的音频）
             wav_file_path = await save_audio_as_wav(audio_bytes, app_id)
             result['audio_file'] = wav_file_path

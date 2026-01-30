@@ -26,7 +26,23 @@
           </div>
           
           <div class="control-group">
-            <label>VAD敏感度</label>
+            <label>VAD敏感度 (后端WebRTC)</label>
+            <div class="slider-container">
+              <input 
+                type="range" 
+                min="0" 
+                max="3" 
+                step="1" 
+                v-model="backendVadLevel"
+                @input="updateBackendVadLevel"
+                class="sensitivity-slider"
+              />
+              <span class="slider-value">{{ backendVadLevel }} - {{ getVadLevelDescription(backendVadLevel) }}</span>
+            </div>
+          </div>
+          
+          <div class="control-group">
+            <label>前端VAD敏感度 (仅本地)</label>
             <div class="slider-container">
               <input 
                 type="range" 
@@ -130,15 +146,11 @@
               class="transcript-message"
               :class="{ 
                 partial: message.isPartial,
-                final: message.isFinal,
-                'low-confidence': message.confidence && message.confidence < 0.7
+                final: message.isFinal
               }"
             >
               <div class="message-header">
                 <span class="message-time">{{ formatTime(message.timestamp) }}</span>
-                <span v-if="message.confidence" class="message-confidence">
-                  置信度: {{ Math.round(message.confidence * 100) }}%
-                </span>
                 <span class="message-type" :class="message.isPartial ? 'partial' : 'final'">
                   {{ message.isPartial ? '实时' : '最终' }}
                 </span>
@@ -205,6 +217,7 @@ export default {
       audioLevel: 0,
       isVoiceActive: false,
       vadSensitivity: 0.5,
+      backendVadLevel: 2,  // 后端WebRTC VAD级别 (0-3)
       vadBuffer: [],
       voiceEndTimeout: null,
       audioPacketsSent: 0,
@@ -228,8 +241,18 @@ export default {
   mounted() {
     this.initializeCanvas()
     this.addDebugLog('system', 'info', 'VAD+ASR测试面板已初始化')
+    
+    // 启动定时清理机制，每5分钟清理一次过多的数据
+    this.cleanupInterval = setInterval(() => {
+      this.performPeriodicCleanup()
+    }, 5 * 60 * 1000) // 5分钟
   },
   beforeDestroy() {
+    // 清理定时器
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval)
+    }
+    
     this.cleanup()
   },
   methods: {
@@ -487,23 +510,25 @@ export default {
         
         switch (data.type) {
           case 'transcript_partial':
-            this.updatePartialTranscript(data.content, data.confidence)
+            this.updatePartialTranscript(data.content)
             this.addDebugLog('asr', 'info', '收到部分转录结果', { 
-              content: data.content, 
-              confidence: data.confidence 
+              content: data.content
             })
             break
             
           case 'transcript_final':
-            this.addTranscriptMessage(data.content, false, true, data.confidence)
+            this.addTranscriptMessage(data.content, false, true)
             this.addDebugLog('asr', 'success', '收到最终转录结果', { 
-              content: data.content, 
-              confidence: data.confidence 
+              content: data.content
             })
             break
             
           case 'vad_status':
             this.addDebugLog('vad', 'info', `VAD状态: ${data.status}`, data.details)
+            break
+            
+          case 'vad_config':
+            this.addDebugLog('vad', 'success', `VAD配置: ${data.content}`, data)
             break
             
           case 'error':
@@ -657,22 +682,83 @@ export default {
     },
 
     /**
-     * 更新VAD敏感度
+     * 更新后端VAD敏感度级别
+     */
+    updateBackendVadLevel() {
+      if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
+        const message = {
+          type: 'set_vad_level',
+          level: parseInt(this.backendVadLevel)
+        }
+        
+        this.websocket.send(JSON.stringify(message))
+        this.addDebugLog('vad', 'info', `发送后端VAD级别设置: ${this.backendVadLevel}`)
+      } else {
+        this.addDebugLog('vad', 'warning', '无法设置后端VAD级别：WebSocket未连接')
+      }
+    },
+
+    /**
+     * 获取VAD级别描述
+     */
+    getVadLevelDescription(level) {
+      const descriptions = {
+        0: "最不敏感",
+        1: "较不敏感", 
+        2: "中等敏感",
+        3: "最敏感"
+      }
+      return descriptions[level] || "未知"
+    },
+
+    /**
+     * 定期清理数据，防止内存泄漏
+     */
+    performPeriodicCleanup() {
+      const now = Date.now()
+      const maxAge = 10 * 60 * 1000 // 10分钟
+      
+      // 清理过期的转录消息
+      this.transcriptMessages = this.transcriptMessages.filter(msg => 
+        now - msg.timestamp < maxAge
+      )
+      
+      // 清理过期的调试日志
+      this.debugLogs = this.debugLogs.filter(log => 
+        now - log.timestamp < maxAge
+      )
+      
+      // 强制限制数量（双重保险）
+      if (this.transcriptMessages.length > 15) {
+        this.transcriptMessages = this.transcriptMessages.slice(-15)
+      }
+      
+      if (this.debugLogs.length > 30) {
+        this.debugLogs = this.debugLogs.slice(-30)
+      }
+      
+      this.addDebugLog('system', 'info', '执行定期数据清理', {
+        transcriptCount: this.transcriptMessages.length,
+        debugLogCount: this.debugLogs.length
+      })
+    },
+
+    /**
+     * 更新VAD敏感度 - 注意：这只影响前端本地VAD，不影响后端WebRTC VAD
      */
     updateVadSensitivity() {
-      this.addDebugLog('vad', 'info', `VAD敏感度已更新: ${this.vadSensitivity}`)
+      this.addDebugLog('vad', 'warning', `前端VAD敏感度已更新: ${this.vadSensitivity} (注意：此设置不影响后端WebRTC VAD)`)
     },
 
     /**
      * 添加转录消息
      */
-    addTranscriptMessage(content, isPartial = false, isFinal = false, confidence = undefined) {
+    addTranscriptMessage(content, isPartial = false, isFinal = false) {
       const message = {
         id: Date.now() + Math.random(),
         content,
         isPartial,
         isFinal,
-        confidence,
         timestamp: Date.now()
       }
       
@@ -690,9 +776,9 @@ export default {
         this.transcriptMessages.push(message)
       }
       
-      // 限制消息数量
-      if (this.transcriptMessages.length > 50) {
-        this.transcriptMessages = this.transcriptMessages.slice(-50)
+      // 限制消息数量 - 减少到更合理的数量
+      if (this.transcriptMessages.length > 20) {
+        this.transcriptMessages = this.transcriptMessages.slice(-20)
       }
       
       // 自动滚动到底部
@@ -707,8 +793,8 @@ export default {
     /**
      * 更新部分转录
      */
-    updatePartialTranscript(content, confidence) {
-      this.addTranscriptMessage(content, true, false, confidence)
+    updatePartialTranscript(content) {
+      this.addTranscriptMessage(content, true, false)
     },
 
     /**
@@ -726,9 +812,9 @@ export default {
       
       this.debugLogs.push(log)
       
-      // 限制日志数量
-      if (this.debugLogs.length > 100) {
-        this.debugLogs = this.debugLogs.slice(-100)
+      // 限制日志数量 - 减少到更合理的数量
+      if (this.debugLogs.length > 50) {
+        this.debugLogs = this.debugLogs.slice(-50)
       }
       
       // 自动滚动到底部
@@ -1292,11 +1378,6 @@ export default {
   background: rgba(16, 185, 129, 0.05);
 }
 
-.transcript-message.low-confidence {
-  border-left-color: #ef4444;
-  background: rgba(239, 68, 68, 0.05);
-}
-
 .message-header {
   display: flex;
   align-items: center;
@@ -1308,10 +1389,6 @@ export default {
 .message-time {
   color: var(--text-tertiary);
   font-family: monospace;
-}
-
-.message-confidence {
-  color: var(--text-secondary);
 }
 
 .message-type {

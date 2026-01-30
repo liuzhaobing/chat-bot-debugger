@@ -199,8 +199,18 @@ export default {
   mounted() {
     this.initializeAudioProcessor()
     this.addSystemLog('system', 'info', '系统初始化完成')
+    
+    // 启动定时清理机制，每5分钟清理一次过多的数据
+    this.cleanupInterval = setInterval(() => {
+      this.performPeriodicCleanup()
+    }, 5 * 60 * 1000) // 5分钟
   },
   beforeDestroy() {
+    // 清理定时器
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval)
+    }
+    
     this.cleanup()
   },
   methods: {
@@ -563,11 +573,11 @@ export default {
         
         switch (data.type) {
           case 'transcript_partial':
-            this.updatePartialTranscript(data.content, data.confidence)
+            this.updatePartialTranscript(data.content)
             break
             
           case 'transcript_final':
-            this.addTranscriptMessage('user', data.content, false, true, data.confidence)
+            this.addTranscriptMessage('user', data.content, false, true)
             break
             
           case 'ai_response':
@@ -666,14 +676,13 @@ export default {
     /**
      * 添加字幕消息
      */
-    addTranscriptMessage(type, content, isPartial = false, isFinal = false, confidence = undefined) {
+    addTranscriptMessage(type, content, isPartial = false, isFinal = false) {
       const message = {
         id: Date.now() + Math.random(),
         type,
         content,
         isPartial,
         isFinal,
-        confidence,
         timestamp: Date.now()
       }
       
@@ -691,17 +700,49 @@ export default {
         this.transcriptMessages.push(message)
       }
       
-      // 限制消息数量
-      if (this.transcriptMessages.length > 100) {
-        this.transcriptMessages = this.transcriptMessages.slice(-100)
+      // 限制消息数量 - 减少到更合理的数量
+      if (this.transcriptMessages.length > 30) {
+        this.transcriptMessages = this.transcriptMessages.slice(-30)
       }
+    },
+
+    /**
+     * 定期清理数据，防止内存泄漏
+     */
+    performPeriodicCleanup() {
+      const now = Date.now()
+      const maxAge = 15 * 60 * 1000 // 15分钟
+      
+      // 清理过期的转录消息
+      this.transcriptMessages = this.transcriptMessages.filter(msg => 
+        now - msg.timestamp < maxAge
+      )
+      
+      // 清理过期的系统日志
+      this.systemLogs = this.systemLogs.filter(log => 
+        now - log.timestamp < maxAge
+      )
+      
+      // 强制限制数量（双重保险）
+      if (this.transcriptMessages.length > 20) {
+        this.transcriptMessages = this.transcriptMessages.slice(-20)
+      }
+      
+      if (this.systemLogs.length > 30) {
+        this.systemLogs = this.systemLogs.slice(-30)
+      }
+      
+      this.addSystemLog('system', 'info', '执行定期数据清理', {
+        transcriptCount: this.transcriptMessages.length,
+        systemLogCount: this.systemLogs.length
+      })
     },
 
     /**
      * 更新部分转录
      */
-    updatePartialTranscript(content, confidence) {
-      this.addTranscriptMessage('user', content, true, false, confidence)
+    updatePartialTranscript(content) {
+      this.addTranscriptMessage('user', content, true, false)
     },
 
     /**
@@ -726,9 +767,9 @@ export default {
       
       this.systemLogs.push(log)
       
-      // 限制日志数量
-      if (this.systemLogs.length > 200) {
-        this.systemLogs = this.systemLogs.slice(-200)
+      // 限制日志数量 - 减少到更合理的数量
+      if (this.systemLogs.length > 50) {
+        this.systemLogs = this.systemLogs.slice(-50)
       }
     },
 

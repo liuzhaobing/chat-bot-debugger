@@ -405,7 +405,7 @@ class AppViewSet(viewsets.ModelViewSet):
             dict: 包含 content, usage, error 的结果字典
         """
         start_time = time.time()
-        print(json.dumps(parameters, ensure_ascii=False))
+        # print(json.dumps(parameters, ensure_ascii=False))
         
         try:
             # 1. 获取 Provider
