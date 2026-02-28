@@ -193,6 +193,33 @@
                     </div>
                   </div>
                 </div>
+
+                <!-- 刷新按钮 -->
+                <button
+                  class="device-refresh-btn"
+                  @click.stop="refreshSingleDevice(device)"
+                  :disabled="device.isRefreshing || !isConfigValid"
+                  title="刷新设备状态"
+                >
+                  <svg
+                    v-if="device.isRefreshing"
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    class="spin"
+                  >
+                    <path d="M21 12a9 9 0 11-6.219-8.56"/>
+                  </svg>
+                  <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
+                    <path d="M21 3v5h-5"></path>
+                    <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path>
+                    <path d="M3 21v-5h5"></path>
+                  </svg>
+                </button>
               </div>
             </div>
 
@@ -2469,6 +2496,48 @@ export default {
   border-top: 1px solid var(--border-color);
   padding-top: 12px;
   margin-top: 12px;
+  position: relative;
+}
+
+/* 设备详情刷新按钮 */
+.device-refresh-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--text-secondary);
+  opacity: 0;
+  transition: all 0.2s ease;
+  z-index: 10;
+}
+
+.device-card:hover .device-refresh-btn {
+  opacity: 1;
+}
+
+.device-refresh-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+}
+
+.device-refresh-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.device-refresh-btn:disabled:hover {
+  background: var(--bg-primary);
+  border-color: var(--border-color);
+  color: var(--text-secondary);
 }
 
 /* 核心状态区 */
