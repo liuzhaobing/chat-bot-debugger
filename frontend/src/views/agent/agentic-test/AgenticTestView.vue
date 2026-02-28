@@ -130,6 +130,7 @@ import IOTConfigPanel from '@/components/agentic-test/IOTConfigPanel.vue'
 import TranscriptPanel from '@/components/agentic-test/TranscriptPanel.vue'
 import SessionManager from '@/components/agentic-test/SessionManager.vue'
 import VadAsrTestPanel from '@/components/agentic-test/VadAsrTestPanel.vue'
+import RealtimeAudioProcessor, { createAudioMessage } from '@/utils/realtimeAudioProcessor.js'
 
 export default {
   name: 'AgenticTestView',
@@ -171,12 +172,8 @@ export default {
       sessionDuration: 0,
       sessionTimer: null,
       
-      // 音频状态（使用实时PCM处理）
-      audioContext: null,
-      analyser: null,
-      mediaStream: null,
+      // 音频状态（使用统一的RealtimeAudioProcessor）
       audioProcessor: null,
-      dataArray: null,
       hasAudioActivity: false,
       currentAudioLevel: 0,
       isMuted: false,
@@ -200,8 +197,9 @@ export default {
     }
   },
   mounted() {
-    this.initializeAudioProcessor()
-    this.addSystemLog('system', 'info', '系统初始化完成')
+    // 不再在页面加载时初始化音频处理器
+    // 只在用户点击VoiceAgent按钮时才初始化和启动麦克风
+    this.addSystemLog('system', 'info', '系统初始化完成，点击VoiceAgent按钮开始会话')
     
     // 启动定时清理机制，每5分钟清理一次过多的数据
     this.cleanupInterval = setInterval(() => {
@@ -333,78 +331,56 @@ export default {
     },
 
     /**
-     * 初始化音频处理器 - 使用实时PCM音频处理（与VadAsrTestPanel相同）
+     * 初始化音频处理器 - 使用统一的RealtimeAudioProcessor
      */
     async initializeAudioProcessor() {
       try {
-        // 获取麦克风权限
-        this.mediaStream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            sampleRate: 16000,
-            channelCount: 1,
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true
-          }
+        // 创建音频处理器实例
+        this.audioProcessor = new RealtimeAudioProcessor({
+          sampleRate: 16000,
+          channelCount: 1,
+          bufferSize: 256
         })
-
-        // 创建音频上下文
-        this.audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 })
         
-        if (this.audioContext.state === 'suspended') {
-          await this.audioContext.resume()
+        // 设置回调函数
+        this.audioProcessor.onAudioLevel = (level) => {
+          this.currentAudioLevel = level
+          this.hasAudioActivity = level > 0.02
         }
-
-        // 创建分析器用于可视化
-        this.analyser = this.audioContext.createAnalyser()
-        this.analyser.fftSize = 2048
-        this.analyser.smoothingTimeConstant = 0.8
-        this.dataArray = new Uint8Array(this.analyser.frequencyBinCount)
-
-        const source = this.audioContext.createMediaStreamSource(this.mediaStream)
-        source.connect(this.analyser)
-
-        // 创建音频处理器 - 与VadAsrTestPanel完全相同
-        const bufferSize = 256 // 16ms at 16kHz
-        this.audioProcessor = this.audioContext.createScriptProcessor(bufferSize, 1, 1)
         
-        this.audioProcessor.onaudioprocess = (e) => {
-          if (!this.isSessionActive) return
-          
-          const inputData = e.inputBuffer.getChannelData(0)
-          
-          // 计算音频级别用于可视化
-          let sum = 0
-          for (let i = 0; i < inputData.length; i++) {
-            sum += Math.abs(inputData[i])
+        this.audioProcessor.onVoiceActivity = (isActive) => {
+          if (isActive) {
+            this.addTranscriptMessage('user', '', true, false)
+            this.addSystemLog('speech', 'info', '检测到语音输入开始')
+          } else {
+            this.addSystemLog('speech', 'info', '语音输入结束')
           }
-          const average = sum / inputData.length
-          this.currentAudioLevel = Math.min(1, average * 10)
-          this.hasAudioActivity = average > 0.02
-          
-          // 转换为16位PCM字节数据
-          const pcmData = new Int16Array(inputData.length)
-          for (let i = 0; i < inputData.length; i++) {
-            const s = Math.max(-1, Math.min(1, inputData[i]))
-            pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF
-          }
-          
-          // 转换为字节数组
-          const audioBytes = new Uint8Array(pcmData.buffer)
-          
-          // 实时发送音频数据
+        }
+        
+        this.audioProcessor.onAudioData = (audioBytes) => {
           if (this.isWebSocketReady()) {
             this.sendRealTimeAudioData(audioBytes)
           }
         }
         
-        source.connect(this.audioProcessor)
-        this.audioProcessor.connect(this.audioContext.destination)
+        this.audioProcessor.onError = (error) => {
+          this.addSystemLog('error', 'error', `音频处理错误: ${error.message}`)
+          this.handleAudioError('audio_error', error)
+        }
+        
+        // 初始化
+        const initialized = await this.audioProcessor.initialize()
+        if (!initialized) {
+          throw new Error('音频处理器初始化失败')
+        }
+        
+        // 启动音频处理
+        this.audioProcessor.start()
         
         this.addSystemLog('audio', 'success', '实时音频处理器初始化成功', {
           sampleRate: 16000,
-          bufferSize: bufferSize,
-          latency: `${bufferSize / 16000 * 1000}ms`
+          bufferSize: 256,
+          latency: '16ms'
         })
         
       } catch (error) {
@@ -428,7 +404,7 @@ export default {
         // 1. 建立WebSocket连接
         await this.connectToWebSocket()
         
-        // 2. 初始化音频处理器（使用新的实时PCM处理方式）
+        // 2. 初始化并启动音频处理器
         await this.initializeAudioProcessor()
         
         // 3. 启动会话计时器
@@ -440,7 +416,7 @@ export default {
         this.connectionStatus = 'active'
         this.activePanel = 'transcript' // 自动切换到字幕面板
         
-        this.addSystemLog('system', 'success', '会话启动成功')
+        this.addSystemLog('system', 'success', '会话启动成功，麦克风已激活')
         this.addTranscriptMessage('system', '会话已开始，请开始说话...', false, true)
         
       } catch (error) {
@@ -469,7 +445,7 @@ export default {
         // 2. 停止计时器
         this.stopSessionTimer()
         
-        // 3. 清理音频资源
+        // 3. 清理音频资源（包括释放麦克风）
         this.cleanup()
         
         // 4. 更新状态
@@ -478,7 +454,7 @@ export default {
         this.hasAudioActivity = false
         this.currentAudioLevel = 0
         
-        this.addSystemLog('system', 'success', '会话已停止')
+        this.addSystemLog('system', 'success', '会话已停止，麦克风已释放')
         this.addTranscriptMessage('system', '会话已结束', false, true)
         
       } catch (error) {
@@ -622,7 +598,7 @@ export default {
     },
 
     /**
-     * 发送实时音频数据到服务器 - 与VadAsrTestPanel相同的方式
+     * 发送实时音频数据到服务器 - 使用统一的消息格式
      */
     sendRealTimeAudioData(audioBytes) {
       if (!this.isWebSocketReady()) {
@@ -630,25 +606,13 @@ export default {
       }
       
       try {
-        // 转换为base64
-        let binary = ''
-        for (let i = 0; i < audioBytes.length; i++) {
-          binary += String.fromCharCode(audioBytes[i])
-        }
-        const base64 = btoa(binary)
-        
-        // 消息格式与VadAsrTestPanel完全一致
-        const message = {
-          type: 'audio_data',
-          timestamp: Math.floor(Date.now()),
-          data: {
-            audio_data: base64,
-            sample_rate: 16000,
-            channels: 1,
-            format: 'pcm',
-            size: audioBytes.length
-          }
-        }
+        // 使用统一的消息创建函数
+        const message = createAudioMessage(audioBytes, {
+          sampleRate: 16000,
+          channels: 1,
+          format: 'pcm',
+          sessionId: this.currentSession?.id || this.session_id
+        })
         
         this.websocket.send(JSON.stringify(message))
         
@@ -854,30 +818,12 @@ export default {
       // 断开WebSocket
       this.disconnectFromWebSocket()
       
-      // 清理音频处理器
+      // 销毁音频处理器
       if (this.audioProcessor) {
-        console.log('断开音频处理器...')
-        this.audioProcessor.disconnect()
+        console.log('销毁音频处理器...')
+        this.audioProcessor.destroy()
         this.audioProcessor = null
       }
-      
-      // 停止媒体流
-      if (this.mediaStream) {
-        console.log('停止媒体流轨道...')
-        this.mediaStream.getTracks().forEach(track => track.stop())
-        this.mediaStream = null
-      }
-      
-      // 关闭音频上下文
-      if (this.audioContext && this.audioContext.state !== 'closed') {
-        console.log('关闭音频上下文...')
-        this.audioContext.close()
-        this.audioContext = null
-      }
-      
-      // 清理变量
-      this.analyser = null
-      this.dataArray = null
       
       // 重置状态
       this.isSessionActive = false

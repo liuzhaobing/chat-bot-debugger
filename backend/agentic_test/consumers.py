@@ -573,9 +573,6 @@ class VadAsrTestConsumer(AsyncWebsocketConsumer):
             audio_bytes = base64.b64decode(audio_data)
             logger.debug(f"Decoded audio bytes length: {len(audio_bytes)}")
             
-            # 添加到音频缓冲区
-            self.audio_buffer.append(audio_bytes)
-            
             # 发送VAD状态
             await self.send_message('vad_status', 'processing', {
                 'status': 'processing',
@@ -585,12 +582,13 @@ class VadAsrTestConsumer(AsyncWebsocketConsumer):
                 'is_complete': is_complete
             })
             
-            # 实时处理音频数据 - 模拟dial电话客服的处理方式
+            # 实时处理音频数据
             if audio_format == 'pcm':
-                # PCM格式的实时处理
+                # PCM格式的实时处理 - 直接传递audio_bytes，不要在这里添加到缓冲区
                 await self.process_pcm_audio_chunk(audio_bytes, app_id or self.app_id)
             else:
                 # 传统的批量处理方式（兼容旧版本）
+                self.audio_buffer.append(audio_bytes)
                 if is_complete or len(self.audio_buffer) >= 5:
                     await self.process_audio_buffer(app_id or self.app_id)
                 
@@ -601,6 +599,9 @@ class VadAsrTestConsumer(AsyncWebsocketConsumer):
     async def process_pcm_audio_chunk(self, audio_bytes, app_id):
         """处理单个PCM音频块 - 实时处理，优化缓冲策略"""
         try:
+            # 添加到缓冲区 - 在这里添加，而不是在handle_audio_data中
+            self.audio_buffer.append(audio_bytes)
+            
             # 大幅增加缓冲区大小，减少处理频率
             # 16kHz, 16bit, 1channel = 32000 bytes per second
             # 3秒 = 96000 bytes (更大的音频块，减少碎片)
