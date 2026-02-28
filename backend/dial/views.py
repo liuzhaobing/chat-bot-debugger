@@ -5,6 +5,8 @@ import urllib3
 import logging
 import datetime
 import threading
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
@@ -12,6 +14,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.http import StreamingHttpResponse
 from django.utils import timezone
+from asgiref.sync import sync_to_async
 
 from .models import CallSession, CallTranscript
 from .serializers import CallSessionSerializer, CallTranscriptSerializer
@@ -93,7 +96,7 @@ class ScenarioTestRunner:
                 }
 
                 # Step 1: AI USER生成查询
-                user_query = self.generate_user_query()
+                user_query = self._run_async(self.generate_user_query())
                 if not user_query:
                     break
 
@@ -114,7 +117,7 @@ class ScenarioTestRunner:
                     }
 
                 # Step 3: 调用DIAL ASSISTANT
-                dial_response = self.call_dial_assistant(user_query, tts_audio)
+                dial_response = self._run_async(self.call_dial_assistant(user_query, tts_audio))
                 if not dial_response:
                     break
 
@@ -134,7 +137,7 @@ class ScenarioTestRunner:
                 })
 
                 # Step 4: AI JUDGER判断是否继续
-                is_continue, reason = self.judge_continue()
+                is_continue, reason = self._run_async(self.judge_continue())
 
                 yield {
                     "type": "judger_result",
@@ -176,7 +179,23 @@ class ScenarioTestRunner:
                 "data": {"message": str(e)}
             }
 
-    def generate_user_query(self) -> dict | None:
+    def _run_async(self, coro):
+        """在同步上下文中运行异步协程（使用线程池）"""
+        # 在新线程中创建新的事件循环来运行异步代码
+        def run_in_thread():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                return loop.run_until_complete(coro)
+            finally:
+                loop.close()
+        
+        # 使用线程池执行
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(run_in_thread)
+            return future.result()
+
+    async def generate_user_query(self) -> dict | None:
         """使用AI USER应用生成用户查询"""
         try:
             # 从场景参数中提取必要信息
@@ -190,9 +209,9 @@ class ScenarioTestRunner:
 
             # 调用AI USER应用
             app_viewset = AppViewSet()
-            app = App.objects.get(id=self.ai_user_app_id)
+            app = await sync_to_async(App.objects.get)(id=self.ai_user_app_id)
 
-            result = app_viewset._execute_app(app=app, parameters=scenario_params)
+            result = await sync_to_async(app_viewset._execute_app)(app=app, parameters=scenario_params)
 
             if result["status"] == "success":
                 content = result["content"].strip()
@@ -205,7 +224,7 @@ class ScenarioTestRunner:
             self.logger.error(f"生成用户query异常: {e}")
             return None
 
-    def call_dial_assistant(self, query, audio_data=None):
+    async def call_dial_assistant(self, query, audio_data=None):
         """调用DIAL ASSISTANT"""
         try:
             result, costs, exception = self.dial_client.completions_stream(
@@ -226,7 +245,7 @@ class ScenarioTestRunner:
             self.logger.error(f"调用DIAL ASSISTANT异常: {e}")
             return None
 
-    def judge_continue(self):
+    async def judge_continue(self):
         """使用AI JUDGER判断是否继续对话"""
         try:
             # 从场景参数中提取必要信息
@@ -236,9 +255,11 @@ class ScenarioTestRunner:
 
             # 调用AI JUDGER应用
             app_viewset = AppViewSet()
-            app = App.objects.get(id=self.ai_judger_app_id)
+            # 使用 sync_to_async 包装数据库查询
+            app = await sync_to_async(App.objects.get)(id=self.ai_judger_app_id)
 
-            result = app_viewset._execute_app(app=app, parameters=scenario_params)
+            # 使用 sync_to_async 包装 _execute_app 方法
+            result = await sync_to_async(app_viewset._execute_app)(app=app, parameters=scenario_params)
 
             if result["status"] == "success":
                 try:
@@ -362,7 +383,7 @@ class ScenarioTestView(APIView):
         # 创建停止事件
         scenario_test_stop_event = threading.Event()
 
-        # 创建SSE响应
+        # 创建同步SSE响应生成器
         def event_stream():
             global current_scenario_test
 
