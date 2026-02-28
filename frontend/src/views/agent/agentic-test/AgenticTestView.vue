@@ -3,7 +3,7 @@
     <!-- 顶部工具栏 -->
     <div class="top-toolbar">
       <div class="toolbar-left">
-        <h1 class="page-title">智能语音测试</h1>
+        <h1 class="page-title">厨电控制测试</h1>
         <span class="page-subtitle">Agentic Test 语音交互平台</span>
       </div>
       
@@ -39,14 +39,14 @@
         <button 
           class="test-btn"
           @click="showVadAsrTest = true"
-          title="VAD+ASR测试"
+          title="VAD+ASR调试"
         >
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
             <path d="M2 17l10 5 10-5"></path>
             <path d="M2 12l10 5 10-5"></path>
           </svg>
-          <span>VAD+ASR测试</span>
+          <span>VAD+ASR调试</span>
         </button>
         
         <!-- 语音会话按钮 -->
@@ -59,7 +59,7 @@
           }"
         >
           <div class="status-dot"></div>
-          <strong v-if="!isConnecting && !isSessionActive">VoiceAgent</strong>
+          <strong v-if="!isConnecting && !isSessionActive">对话调试</strong>
           <strong v-if="isConnecting">连线中...</strong>
           <strong v-if="isSessionActive" class="session-duration">{{ formattedSessionDuration }}</strong>
         </button>
@@ -198,8 +198,8 @@ export default {
   },
   mounted() {
     // 不再在页面加载时初始化音频处理器
-    // 只在用户点击VoiceAgent按钮时才初始化和启动麦克风
-    this.addSystemLog('system', 'info', '系统初始化完成，点击VoiceAgent按钮开始会话')
+    // 只在用户点击对话调试按钮时才初始化和启动麦克风
+    this.addSystemLog('system', 'info', '系统初始化完成，点击对话调试按钮开始会话')
     
     // 启动定时清理机制，每5分钟清理一次过多的数据
     this.cleanupInterval = setInterval(() => {
@@ -230,7 +230,7 @@ export default {
     },
 
     /**
-     * 处理VoiceAgent按钮点击
+     * 处理对话调调试按钮点击
      */
     handleVoiceAgentClick() {
       if (this.isConnecting) {

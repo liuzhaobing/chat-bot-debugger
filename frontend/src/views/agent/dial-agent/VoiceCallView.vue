@@ -3,8 +3,8 @@
     <!-- 顶部工具栏 -->
     <div class="top-toolbar">
       <div class="toolbar-left">
-        <h1 class="page-title">AI客服中心</h1>
-        <span class="page-subtitle">老板电器客服测试平台</span>
+        <h1 class="page-title">语音呼入机器人测试</h1>
+        <span class="page-subtitle">Agentic Test 语音交互平台</span>
       </div>
       
       <div class="toolbar-center">
@@ -43,7 +43,7 @@
           :class="{ connected: isConnected }"
         >
           <div class="status-dot"></div>
-          <strong v-if="!isConnected && !connecting">VoiceAgent</strong>
+          <strong v-if="!isConnected && !connecting">对话调试</strong>
           <strong v-if="connecting">连线中...</strong>
           <strong v-if="isConnected && !isCallActive">已连接</strong>
           <strong v-if="isCallActive" class="call-duration">{{ formattedDuration }}</strong>
@@ -72,7 +72,7 @@
     <!-- 悬浮iPhone模态框 - 只在未通话时显示 -->
     <IPhoneModal 
       :visible="showPhoneModal && !isCallActive" 
-      title="VoiceAgent"
+      title="对话调试"
       :allowBackgroundClose="!isCallActive"
       @close="closePhoneModal"
     >

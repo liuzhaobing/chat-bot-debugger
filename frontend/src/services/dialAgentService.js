@@ -40,7 +40,7 @@ class DialAgentService {
     
     // 默认配置
     this.config = {
-      serverUrl: 'ws://118.31.127.156:8000/ws/sessions/start',
+      serverUrl: 'ws://218.244.157.81:8000/ws/sessions/start',
       userId: '17744270115',
       agentType: 'robam_workflow',
       configTemplate: 'ai_telephone',
