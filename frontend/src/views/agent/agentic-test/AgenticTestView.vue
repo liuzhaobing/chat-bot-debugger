@@ -80,13 +80,6 @@
 
       <!-- 智能设备面板 -->
       <div v-if="activePanel === 'devices'" class="devices-container">
-        <div class="devices-header">
-          <h2>智能设备</h2>
-          <IOTConfigDropdown 
-            @config-change="handleIOTConfigChange" 
-            @load-devices="handleLoadDevices"
-          />
-        </div>
         <div class="devices-content">
           <IOTConfigPanel ref="iotPanel" :hide-config="true" />
         </div>
@@ -125,7 +118,6 @@
 
 <script>
 import { mapState, mapGetters, mapActions } from 'vuex'
-import IOTConfigDropdown from '@/components/agentic-test/IOTConfigDropdown.vue'
 import IOTConfigPanel from '@/components/agentic-test/IOTConfigPanel.vue'
 import TranscriptPanel from '@/components/agentic-test/TranscriptPanel.vue'
 import SessionManager from '@/components/agentic-test/SessionManager.vue'
@@ -135,7 +127,6 @@ import RealtimeAudioProcessor, { createAudioMessage } from '@/utils/realtimeAudi
 export default {
   name: 'AgenticTestView',
   components: {
-    IOTConfigDropdown,
     IOTConfigPanel,
     TranscriptPanel,
     SessionManager,

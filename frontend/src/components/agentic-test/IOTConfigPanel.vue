@@ -1,165 +1,74 @@
 <template>
   <div class="iot-device-panel">
-    <!-- IOT配置区域 -->
-    <div v-if="!hideConfig" class="config-section">
-      <div class="section-header">
-        <h3>IOT 配置</h3>
-        <button 
-          class="btn-icon"
-          @click="showConfig = !showConfig"
-          :title="showConfig ? '收起配置' : '展开配置'"
-        >
-          <svg 
-            width="16" 
-            height="16" 
-            viewBox="0 0 24 24" 
-            fill="none" 
-            stroke="currentColor" 
-            stroke-width="2"
-            :style="{ transform: showConfig ? 'rotate(180deg)' : 'rotate(0deg)' }"
-          >
-            <polyline points="6,9 12,15 18,9"></polyline>
-          </svg>
-        </button>
-      </div>
-
-      <div v-if="showConfig" class="config-content">
-        <div class="config-form">
-          <div class="form-row">
-            <div class="form-group">
-              <label>环境选择</label>
-              <select 
-                v-model="localEnv"
-                @change="saveConfig"
-              >
-                <option value="test">测试环境 (api-test.myroki.com)</option>
-                <option value="prod">生产环境 (api.myroki.com)</option>
-              </select>
-            </div>
-          </div>
-          
-          <div class="form-row">
-            <div class="form-group">
-              <label>IOT Token</label>
-              <input 
-                v-model="localIotToken"
-                type="password"
-                placeholder="请输入IOT认证Token..."
-                @blur="saveConfig"
-              />
-            </div>
-          </div>
-          
-          <div class="form-row">
-            <div class="form-group">
-              <label>Family ID</label>
-              <input 
-                v-model="localFamilyId"
-                type="text"
-                placeholder="请输入家庭ID..."
-                @blur="saveConfig"
-              />
-            </div>
-          </div>
-        </div>
-        
-        <div class="config-status">
-          <div class="status-item" :class="{ valid: isEnvValid }">
-            <div class="status-indicator"></div>
-            <span>环境: {{ envDisplayName }}</span>
-          </div>
-          <div class="status-item" :class="{ valid: isTokenValid }">
-            <div class="status-indicator"></div>
-            <span>Token: {{ isTokenValid ? '已配置' : '未配置' }}</span>
-          </div>
-          <div class="status-item" :class="{ valid: isFamilyIdValid }">
-            <div class="status-indicator"></div>
-            <span>Family ID: {{ isFamilyIdValid ? '已配置' : '未配置' }}</span>
-          </div>
-        </div>
-        
-        <div class="config-actions">
-          <button 
-            class="btn btn-outline btn-sm"
-            @click="testConnection"
-            :disabled="!isConfigValid || isTestingConnection"
-          >
-            <svg v-if="isTestingConnection" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 12a9 9 0 11-6.219-8.56"/>
-            </svg>
-            <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
-              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
-            </svg>
-            {{ isTestingConnection ? '测试中...' : '测试连接' }}
-          </button>
-          
-          <button 
-            class="btn btn-outline btn-sm"
-            @click="clearConfig"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="3,6 5,6 21,6"></polyline>
-              <path d="m19,6v14a2,2 0 0,1-2,2H7a2,2 0 0,1-2-2V6m3,0V4a2,2 0 0,1,2-2h4a2,2 0 0,1,2,2v2"></path>
-            </svg>
-            清空配置
-          </button>
-          
-          <button 
-            class="btn btn-primary btn-sm"
-            @click="loadDevices"
-            :disabled="!isConfigValid || isLoadingDevices"
-          >
-            <svg v-if="isLoadingDevices" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 12a9 9 0 11-6.219-8.56"/>
-            </svg>
-            <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
-              <path d="M21 3v5h-5"></path>
-              <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path>
-              <path d="M3 21v-5h5"></path>
-            </svg>
-            {{ isLoadingDevices ? '加载中...' : '加载设备' }}
-          </button>
-        </div>
-      </div>
-    </div>
-
     <!-- 设备状态区域 -->
     <div class="devices-section">
-      <div class="section-header">
-        <h3>智能设备 ({{ devices.length }})</h3>
-        <div class="header-actions">
-          <span v-if="isDataFromCache" class="cache-indicator" :title="getCacheInfo()">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 2v4"></path>
-              <path d="m16.2 7.8 2.9-2.9"></path>
-              <path d="M18 12h4"></path>
-              <path d="m16.2 16.2 2.9 2.9"></path>
-              <path d="M12 18v4"></path>
-              <path d="m4.9 19.1 2.9-2.9"></path>
-              <path d="M2 12h4"></path>
-              <path d="m4.9 4.9 2.9 2.9"></path>
-            </svg>
-            缓存
-          </span>
+      <!-- 统计和筛选栏 -->
+      <div class="stats-filter-bar">
+        <!-- 左侧统计标签 -->
+        <div class="stats-tags">
           <button 
-            v-if="hasRefreshingDevices"
-            class="btn btn-outline btn-sm"
-            @click="resetAllRefreshingStates"
-            title="重置所有设备刷新状态"
+            class="stat-tag" 
+            :class="{ active: filterStatus === 'all' }"
+            @click="filterStatus = 'all'"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M3 6h18"></path>
-              <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
-              <path d="M8 6V4c0-1 1-2 2-2h4c0-1 1-2 2-2v2"></path>
-            </svg>
-            重置
+            <span class="stat-label">总设备</span>
+            <span class="stat-value">{{ devices.length }}</span>
           </button>
           <button 
+            class="stat-tag stat-online" 
+            :class="{ active: filterStatus === 'online' }"
+            @click="filterStatus = 'online'"
+          >
+            <span class="stat-label">在线</span>
+            <span class="stat-value">{{ onlineDevicesCount }}</span>
+          </button>
+          <button 
+            class="stat-tag stat-offline" 
+            :class="{ active: filterStatus === 'offline' }"
+            @click="filterStatus = 'offline'"
+          >
+            <span class="stat-label">离线</span>
+            <span class="stat-value">{{ offlineDevicesCount }}</span>
+          </button>
+          <button 
+            class="stat-tag stat-error" 
+            :class="{ active: filterStatus === 'error' }"
+            @click="filterStatus = 'error'"
+          >
+            <span class="stat-label">异常</span>
+            <span class="stat-value">{{ errorDevicesCount }}</span>
+          </button>
+        </div>
+        
+        <!-- 右侧操作区 -->
+        <div class="filter-actions">
+          <!-- 设备类型筛选 -->
+          <select v-model="filterCategory" class="filter-select">
+            <option value="">全部类型</option>
+            <option v-for="category in deviceCategories" :key="category" :value="category">
+              {{ category }}
+            </option>
+          </select>
+          
+          <!-- IOT配置按钮 -->
+          <button 
             class="btn btn-outline btn-sm"
+            @click="showConfigModal = true"
+            title="IOT配置"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M12 1v6m0 6v6M5.64 5.64l4.24 4.24m4.24 4.24l4.24 4.24M1 12h6m6 0h6M5.64 18.36l4.24-4.24m4.24-4.24l4.24-4.24"></path>
+            </svg>
+            IOT配置
+          </button>
+          
+          <!-- 刷新按钮 -->
+          <button 
+            class="btn btn-primary btn-sm"
             @click="refreshDevices"
             :disabled="!isConfigValid || isRefreshing"
+            title="刷新设备列表"
           >
             <svg 
               v-if="isRefreshing" 
@@ -191,7 +100,7 @@
             <path d="M2 17l10 5 10-5"></path>
             <path d="M2 12l10 5 10-5"></path>
           </svg>
-          <p>{{ isConfigValid ? '点击"加载设备"获取设备列表' : '请先完成IOT配置' }}</p>
+          <p>{{ isConfigValid ? '点击"刷新"获取设备列表' : '请先完成IOT配置' }}</p>
         </div>
 
         <div v-else-if="isLoadingDevices" class="loading-devices">
@@ -200,16 +109,28 @@
           </svg>
           <p>正在加载设备...</p>
         </div>
+        
+        <div v-else-if="filteredDevices.length === 0" class="empty-devices">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="12" cy="12" r="10"></circle>
+            <path d="M12 8v4"></path>
+            <path d="M12 16h.01"></path>
+          </svg>
+          <p>没有找到符合条件的设备</p>
+        </div>
 
         <div v-else class="device-grid">
           <div 
-            v-for="device in devices" 
+            v-for="device in filteredDevices" 
             :key="device.deviceId"
             class="device-card"
             :class="{ 
-              online: device.netState === 1 || device.status === 1,
-              offline: device.netState === 0 && device.status !== 1
+              online: isDeviceOnline(device),
+              offline: !isDeviceOnline(device) && !hasDeviceError(device),
+              error: hasDeviceError(device),
+              expanded: isDeviceExpanded(device)
             }"
+            @click="handleDeviceClick(device)"
           >
             <!-- 设备头部 -->
             <div class="device-header">
@@ -266,52 +187,54 @@
                   </h3>
                   <div class="device-meta">
                     <span class="device-category">{{ device.categoryName }}</span>
+                    <div class="device-status-badge">
+                      <div class="status-dot" :class="getDeviceStatusClass(device)"></div>
+                      <span class="status-text">{{ getDeviceStatusText(device) }}</span>
+                    </div>
                   </div>
                 </div>
               </div>
-              
-              <div class="device-status-actions">
-                <div class="device-status-dot" :class="{ online: device.netState === 1 || device.status === 1 }"></div>
-                <button 
-                  class="device-refresh-btn"
-                  :class="{ refreshing: device.isRefreshing }"
-                  @click="refreshSingleDevice(device)"
-                  :disabled="!isConfigValid || device.isRefreshing"
-                  :title="device.isRefreshing ? '刷新中...' : '刷新设备状态'"
-                >
-                  <svg 
-                    v-if="device.isRefreshing" 
-                    width="14" 
-                    height="14" 
-                    viewBox="0 0 24 24" 
-                    fill="none" 
-                    stroke="currentColor" 
-                    stroke-width="2"
-                    class="spin"
-                  >
-                    <path d="M21 12a9 9 0 11-6.219-8.56"/>
-                  </svg>
-                  <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
-                    <path d="M21 3v5h-5"></path>
-                    <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path>
-                    <path d="M3 21v-5h5"></path>
-                  </svg>
-                </button>
-              </div>
             </div>
 
-            <!-- 设备属性 -->
-            <div v-if="device.properties && Object.keys(device.properties).length > 0" class="device-properties">
-              <div class="properties-header">
-                <span>设备状态</span>
-              </div>
-              <div class="properties-grid">
+            <!-- 在线设备详情（展开时显示） -->
+            <div v-if="isDeviceOnline(device) && isDeviceExpanded(device) && device.properties && Object.keys(device.properties).length > 0" class="device-details">
+              <!-- 核心状态区 -->
+              <div class="core-status">
                 <div 
-                  v-for="(value, key) in getDisplayProperties(device)" 
+                  v-for="(value, key) in getCoreProperties(device)" 
+                  :key="key" 
+                  class="core-property"
+                  :class="{ 'highlight': isHighlightProperty(key), active: isPropertyActive(key, value) }"
+                >
+                  <div class="property-left">
+                    <div class="property-icon">
+                      <svg v-if="key.includes('power') || key.includes('Power')" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 2v10"></path>
+                        <path d="M18.4 6.6a9 9 0 1 1-12.77.04"></path>
+                      </svg>
+                      <svg v-else-if="key.includes('work') || key.includes('Work')" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <polyline points="12 6 12 12 16 14"></polyline>
+                      </svg>
+                      <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                      </svg>
+                    </div>
+                    <div class="property-label">{{ getPropertyLabel(key) }}</div>
+                  </div>
+                  <div class="property-value">{{ formatPropertyValue(key, value) }}</div>
+                </div>
+              </div>
+              
+              <!-- 其他参数 -->
+              <div class="other-properties">
+                <div 
+                  v-for="(value, key) in getOtherProperties(device)" 
                   :key="key" 
                   class="property-item"
-                  :class="{ active: isPropertyActive(key, value) }"
+                  :class="{ 'highlight': isHighlightProperty(key), active: isPropertyActive(key, value) }"
                 >
                   <div class="property-label">{{ getPropertyLabel(key) }}</div>
                   <div class="property-value">{{ formatPropertyValue(key, value) }}</div>
@@ -319,18 +242,127 @@
               </div>
             </div>
 
-            <!-- 离线状态 -->
-            <div v-else-if="device.netState === 0 && device.status !== 1" class="device-offline">
-              <div class="offline-icon">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                  <line x1="12" y1="9" x2="12" y2="13"></line>
-                  <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                </svg>
+            <!-- 离线/异常设备详情（展开时显示） -->
+            <div v-else-if="!isDeviceOnline(device) && isDeviceExpanded(device)" class="device-details offline-details">
+              <div class="offline-info">
+                <div class="info-item">
+                  <span class="info-label">告警原因：</span>
+                  <span class="info-value">{{ getOfflineReason(device) }}</span>
+                </div>
+                <div class="info-item">
+                  <span class="info-label">最后在线：</span>
+                  <span class="info-value">{{ getLastOnlineTime(device) }}</span>
+                </div>
               </div>
-              <span>设备离线，无法获取状态信息</span>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- IOT配置弹窗 -->
+    <div v-if="showConfigModal" class="config-modal-overlay" @click="showConfigModal = false">
+      <div class="config-modal" @click.stop>
+        <div class="modal-header">
+          <h3>IOT 配置</h3>
+          <button class="close-btn" @click="showConfigModal = false">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+        
+        <div class="modal-content">
+          <div class="config-form">
+            <div class="form-group">
+              <label>环境选择</label>
+              <select v-model="localEnv" @change="saveConfig">
+                <option value="test">测试环境 (api-test.myroki.com)</option>
+                <option value="prod">生产环境 (api.myroki.com)</option>
+              </select>
+            </div>
+            
+            <div class="form-group">
+              <label>IOT Token</label>
+              <input 
+                v-model="localIotToken"
+                type="password"
+                placeholder="请输入IOT认证Token..."
+                @blur="saveConfig"
+              />
+            </div>
+            
+            <div class="form-group">
+              <label>Family ID</label>
+              <input 
+                v-model="localFamilyId"
+                type="text"
+                placeholder="请输入家庭ID..."
+                @blur="saveConfig"
+              />
+            </div>
+          </div>
+          
+          <div class="config-status">
+            <div class="status-item" :class="{ valid: isEnvValid }">
+              <div class="status-indicator"></div>
+              <span>环境: {{ envDisplayName }}</span>
+            </div>
+            <div class="status-item" :class="{ valid: isTokenValid }">
+              <div class="status-indicator"></div>
+              <span>Token: {{ isTokenValid ? '已配置' : '未配置' }}</span>
+            </div>
+            <div class="status-item" :class="{ valid: isFamilyIdValid }">
+              <div class="status-indicator"></div>
+              <span>Family ID: {{ isFamilyIdValid ? '已配置' : '未配置' }}</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="modal-footer">
+          <button 
+            class="btn btn-outline btn-sm"
+            @click="testConnection"
+            :disabled="!isConfigValid || isTestingConnection"
+          >
+            <svg v-if="isTestingConnection" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 12a9 9 0 11-6.219-8.56"/>
+            </svg>
+            <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+            </svg>
+            {{ isTestingConnection ? '测试中...' : '测试连接' }}
+          </button>
+          
+          <button 
+            class="btn btn-outline btn-sm"
+            @click="clearConfig"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="3,6 5,6 21,6"></polyline>
+              <path d="m19,6v14a2,2 0 0,1-2,2H7a2,2 0 0,1-2-2V6m3,0V4a2,2 0 0,1,2-2h4a2,2 0 0,1,2,2v2"></path>
+            </svg>
+            清空配置
+          </button>
+          
+          <button 
+            class="btn btn-primary btn-sm"
+            @click="loadDevicesAndCloseModal"
+            :disabled="!isConfigValid || isLoadingDevices"
+          >
+            <svg v-if="isLoadingDevices" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 12a9 9 0 11-6.219-8.56"/>
+            </svg>
+            <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
+              <path d="M21 3v5h-5"></path>
+              <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path>
+              <path d="M3 21v-5h5"></path>
+            </svg>
+            {{ isLoadingDevices ? '加载中...' : '加载设备' }}
+          </button>
         </div>
       </div>
     </div>
@@ -351,6 +383,7 @@ export default {
   data() {
     return {
       showConfig: false,
+      showConfigModal: false,
       localIotToken: '',
       localFamilyId: '',
       localEnv: 'test',
@@ -358,7 +391,13 @@ export default {
       isLoadingDevices: false,
       isRefreshing: false,
       devices: [],
-      isDataFromCache: false
+      isDataFromCache: false,
+      // 新增筛选和搜索状态
+      filterStatus: 'all', // all, online, offline, error
+      filterCategory: '',
+      searchKeyword: '',
+      // 新增卡片展开/收起状态
+      expandedDevices: new Set() // 存储展开的设备ID
     }
   },
   computed: {
@@ -388,6 +427,73 @@ export default {
     
     hasRefreshingDevices() {
       return this.devices.some(device => device.isRefreshing)
+    },
+    
+    // 排序后的设备列表（在线设备优先）
+    sortedDevices() {
+      return [...this.devices].sort((a, b) => {
+        const aOnline = this.isDeviceOnline(a) ? 1 : 0
+        const bOnline = this.isDeviceOnline(b) ? 1 : 0
+        return bOnline - aOnline
+      })
+    },
+    
+    // 筛选后的设备列表
+    filteredDevices() {
+      let filtered = this.sortedDevices
+      
+      // 按状态筛选
+      if (this.filterStatus === 'online') {
+        filtered = filtered.filter(device => this.isDeviceOnline(device))
+      } else if (this.filterStatus === 'offline') {
+        filtered = filtered.filter(device => !this.isDeviceOnline(device) && !this.hasDeviceError(device))
+      } else if (this.filterStatus === 'error') {
+        filtered = filtered.filter(device => this.hasDeviceError(device))
+      }
+      
+      // 按类型筛选
+      if (this.filterCategory) {
+        filtered = filtered.filter(device => device.categoryName === this.filterCategory)
+      }
+      
+      // 按关键词搜索
+      if (this.searchKeyword.trim()) {
+        const keyword = this.searchKeyword.trim().toLowerCase()
+        filtered = filtered.filter(device => {
+          const name = (device.name || '').toLowerCase()
+          const displayType = (device.displayType || '').toLowerCase()
+          const dt = (device.dt || '').toLowerCase()
+          const deviceId = (device.deviceId || '').toLowerCase()
+          return name.includes(keyword) || displayType.includes(keyword) || 
+                 dt.includes(keyword) || deviceId.includes(keyword)
+        })
+      }
+      
+      return filtered
+    },
+    
+    // 设备类型列表
+    deviceCategories() {
+      const categories = new Set()
+      this.devices.forEach(device => {
+        if (device.categoryName) {
+          categories.add(device.categoryName)
+        }
+      })
+      return Array.from(categories).sort()
+    },
+    
+    // 统计数据
+    onlineDevicesCount() {
+      return this.devices.filter(device => this.isDeviceOnline(device)).length
+    },
+    
+    offlineDevicesCount() {
+      return this.devices.filter(device => !this.isDeviceOnline(device) && !this.hasDeviceError(device)).length
+    },
+    
+    errorDevicesCount() {
+      return this.devices.filter(device => this.hasDeviceError(device)).length
     }
   },
   mounted() {
@@ -399,6 +505,107 @@ export default {
     })
   },
   methods: {
+    // 判断设备是否在线
+    isDeviceOnline(device) {
+      return device.netState === 1 || device.status === 1
+    },
+    
+    // 判断设备是否有错误
+    hasDeviceError(device) {
+      if (!device.properties) return false
+      // 检查故障码
+      if (device.properties.faultCode && device.properties.faultCode !== 0) return true
+      // 检查告警状态
+      if (device.properties.leftAlarm && device.properties.leftAlarm !== 255) return true
+      if (device.properties.rightAlarm && device.properties.rightAlarm !== 255) return true
+      return false
+    },
+    
+    // 获取设备状态类名
+    getDeviceStatusClass(device) {
+      if (this.hasDeviceError(device)) return 'error'
+      if (this.isDeviceOnline(device)) return 'online'
+      return 'offline'
+    },
+    
+    // 获取设备状态文本
+    getDeviceStatusText(device) {
+      if (this.hasDeviceError(device)) return '异常'
+      if (this.isDeviceOnline(device)) return '在线'
+      return '离线'
+    },
+    
+    // 获取核心属性（电源、工作状态）
+    getCoreProperties(device) {
+      const properties = device.properties || {}
+      const coreProps = {}
+      
+      if (properties.powerState !== undefined) {
+        coreProps.powerState = properties.powerState
+      }
+      if (properties.workState !== undefined) {
+        coreProps.workState = properties.workState
+      }
+      if (properties.workStatus !== undefined) {
+        coreProps.workStatus = properties.workStatus
+      }
+      
+      return coreProps
+    },
+    
+    // 获取其他属性（除核心属性外）
+    getOtherProperties(device) {
+      const allProps = this.getDisplayProperties(device)
+      const coreKeys = ['powerState', 'workState', 'workStatus']
+      const otherProps = {}
+      
+      Object.keys(allProps).forEach(key => {
+        if (!coreKeys.includes(key)) {
+          otherProps[key] = allProps[key]
+        }
+      })
+      
+      return otherProps
+    },
+    
+    // 处理设备卡片点击
+    handleDeviceClick(device) {
+      if (this.expandedDevices.has(device.deviceId)) {
+        this.expandedDevices.delete(device.deviceId)
+      } else {
+        this.expandedDevices.add(device.deviceId)
+      }
+      // 强制更新以确保UI刷新
+      this.$forceUpdate()
+    },
+    
+    // 判断设备卡片是否展开
+    isDeviceExpanded(device) {
+      return this.expandedDevices.has(device.deviceId)
+    },
+    
+    // 判断是否是高优参数（电源状态、煮沸功率）
+    isHighlightProperty(key) {
+      return ['powerState', 'stageOneMicroWaveLevel'].includes(key)
+    },
+    
+    // 获取离线原因
+    getOfflineReason(device) {
+      if (this.hasDeviceError(device)) {
+        if (device.properties?.faultCode && device.properties.faultCode !== 0) {
+          return this.formatPropertyValue('faultCode', device.properties.faultCode)
+        }
+        return '设备异常'
+      }
+      return '网络连接中断'
+    },
+    
+    // 获取最后在线时间
+    getLastOnlineTime() {
+      // TODO: 从设备数据中获取最后在线时间
+      return '2分钟前'
+    },
+    
     // 安全地更新IOT配置到store
     updateIOTConfig(config) {
       // 如果store中有updateIOTConfig action，则调用它
@@ -693,6 +900,11 @@ export default {
       } finally {
         this.isLoadingDevices = false
       }
+    },
+    
+    async loadDevicesAndCloseModal() {
+      await this.loadDevices()
+      this.showConfigModal = false
     },
     
     async refreshDevices() {
@@ -1673,27 +1885,186 @@ export default {
   overflow: hidden;
 }
 
-/* 配置区域 */
-.config-section {
-  background: var(--bg-surface);
-  border-radius: 12px;
-  border: 1px solid var(--border-color);
-  flex-shrink: 0;
+/* IOT配置弹窗 */
+.config-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
 }
 
-.section-header {
+.config-modal {
+  background: var(--bg-surface);
+  border-radius: 12px;
+  width: 90%;
+  max-width: 500px;
+  max-height: 90vh;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.close-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: all 0.2s ease;
+}
+
+.close-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.modal-content {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.modal-footer {
+  display: flex;
+  gap: 8px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--border-color);
+  justify-content: flex-end;
+}
+
+/* 统计和筛选栏 */
+.stats-filter-bar {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 16px 20px;
   border-bottom: 1px solid var(--border-color);
+  gap: 16px;
+  flex-wrap: wrap;
 }
 
-.section-header h3 {
-  margin: 0;
+.stats-tags {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.stat-tag {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 13px;
+}
+
+.stat-tag:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent-blue);
+}
+
+.stat-tag.active {
+  background: var(--accent-blue);
+  border-color: var(--accent-blue);
+  color: white;
+}
+
+.stat-tag .stat-label {
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.stat-tag.active .stat-label {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.stat-tag .stat-value {
+  font-weight: 700;
   font-size: 16px;
-  font-weight: 600;
   color: var(--text-primary);
+}
+
+.stat-tag.active .stat-value {
+  color: white;
+}
+
+.stat-tag.stat-online .stat-value {
+  color: #10b981;
+}
+
+.stat-tag.stat-online.active .stat-value {
+  color: white;
+}
+
+.stat-tag.stat-offline .stat-value {
+  color: #6b7280;
+}
+
+.stat-tag.stat-offline.active .stat-value {
+  color: white;
+}
+
+.stat-tag.stat-error .stat-value {
+  color: #f59e0b;
+}
+
+.stat-tag.stat-error.active .stat-value {
+  color: white;
+}
+
+.filter-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.filter-select {
+  padding: 6px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 13px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color 0.2s ease;
+}
+
+.filter-select:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
 }
 
 .header-actions {
@@ -1904,9 +2275,10 @@ export default {
   gap: 12px;
   min-height: 200px;
   padding-bottom: 16px;
+  align-items: start;
 }
 
-/* 设备卡片 - 紧凑设计 */
+/* 设备卡片 - 优化设计 */
 .device-card {
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
@@ -1916,12 +2288,13 @@ export default {
   position: relative;
   overflow: hidden;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  cursor: pointer;
 }
 
 .device-card:hover {
   border-color: var(--accent-blue);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  transform: translateY(-2px);
 }
 
 .device-card.online {
@@ -1929,36 +2302,70 @@ export default {
   background: rgba(16, 185, 129, 0.02);
 }
 
-.device-card.offline {
-  opacity: 0.75;
+.device-card.online:hover {
+  border-color: #10b981;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.15);
 }
 
-/* 设备头部 - 水平布局 */
+.device-card.offline {
+  opacity: 0.7;
+  background: rgba(107, 114, 128, 0.02);
+  padding: 12px 16px;
+}
+
+.device-card.offline:hover {
+  opacity: 0.85;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  transform: translateY(-1px);
+}
+
+.device-card.error {
+  border-color: rgba(245, 158, 11, 0.3);
+  background: rgba(245, 158, 11, 0.02);
+  padding: 12px 16px;
+}
+
+.device-card.error:hover {
+  border-color: #f59e0b;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.15);
+}
+
+/* 展开状态 */
+.device-card.expanded {
+  padding: 16px;
+}
+
+.device-card.expanded.offline,
+.device-card.expanded.error {
+  padding: 16px;
+}
+
+/* 设备头部 */
 .device-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   margin-bottom: 16px;
 }
 
 .device-main-info {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   flex: 1;
-  min-width: 0; /* 允许内容收缩 */
+  min-width: 0;
 }
 
 .device-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
   background: var(--bg-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--text-secondary);
   margin-right: 12px;
-  flex-shrink: 0; /* 防止图标被压缩 */
+  flex-shrink: 0;
 }
 
 .device-card.online .device-icon {
@@ -1971,74 +2378,26 @@ export default {
   color: #6b7280;
 }
 
-.device-status-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0; /* 防止右侧按钮被压缩 */
+.device-card.error .device-icon {
+  background: rgba(245, 158, 11, 0.1);
+  color: #d97706;
 }
 
-.device-status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #ef4444;
-  transition: all 0.2s ease;
-}
-
-.device-status-dot.online {
-  background: #10b981;
-}
-
-.device-refresh-btn {
-  width: 24px;
-  height: 24px;
-  border: none;
-  background: transparent;
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  color: var(--text-tertiary);
-  transition: all 0.2s ease;
-  opacity: 0;
-}
-
-.device-card:hover .device-refresh-btn,
-.device-refresh-btn.refreshing {
-  opacity: 1;
-}
-
-.device-refresh-btn.refreshing {
-  color: var(--accent-blue);
-}
-
-.device-refresh-btn:hover:not(:disabled) {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.device-refresh-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
-/* 设备信息 - 紧凑内联布局 */
+/* 设备信息 */
 .device-info {
   flex: 1;
-  min-width: 0; /* 允许内容收缩 */
+  min-width: 0;
 }
 
 .device-name {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--text-primary);
-  margin: 0 0 4px 0;
-  line-height: 1.2;
+  margin: 0 0 8px 0;
+  line-height: 1.3;
   display: -webkit-box;
-  -webkit-line-clamp: 1;
-  line-clamp: 1;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -2051,12 +2410,14 @@ export default {
 }
 
 .device-category {
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 11px;
+  font-weight: 600;
   color: var(--text-secondary);
-  padding: 2px 6px;
+  padding: 3px 8px;
   background: var(--bg-secondary);
   border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
 }
 
 .device-card.online .device-category {
@@ -2064,35 +2425,160 @@ export default {
   color: #059669;
 }
 
-/* 设备属性 - 优化协调的布局 */
-.device-properties {
+.device-status-badge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ef4444;
+}
+
+.status-dot.online {
+  background: #10b981;
+}
+
+.status-dot.offline {
+  background: #6b7280;
+}
+
+.status-dot.error {
+  background: #f59e0b;
+}
+
+.status-text {
+  color: var(--text-secondary);
+}
+
+.device-card.online .status-text {
+  color: #059669;
+}
+
+.device-card.error .status-text {
+  color: #d97706;
+}
+
+/* 设备详情 - 分组布局 */
+.device-details {
   border-top: 1px solid var(--border-color);
   padding-top: 12px;
+  margin-top: 12px;
 }
 
-.properties-header {
-  margin-bottom: 10px;
+/* 核心状态区 */
+.core-status {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
-.properties-header span {
-  font-size: 11px;
-  font-weight: 600;
+.core-property {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 14px;
+  background: var(--bg-secondary);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.core-property:hover {
+  background: rgba(79, 70, 229, 0.05);
+}
+
+.core-property.highlight {
+  background: rgba(79, 70, 229, 0.12);
+  border-color: rgba(79, 70, 229, 0.3);
+}
+
+.core-property.active {
+  border-color: #10b981;
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.property-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  background: var(--bg-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  flex-shrink: 0;
 }
 
-.properties-grid {
+.core-property.active .property-icon {
+  background: rgba(16, 185, 129, 0.1);
+  color: #059669;
+}
+
+.core-property.highlight .property-icon {
+  background: rgba(79, 70, 229, 0.1);
+  color: var(--accent-blue);
+}
+
+.property-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.core-property .property-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.core-property.highlight .property-label {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.core-property.active .property-label {
+  color: #059669;
+}
+
+.core-property .property-value {
+  font-size: 15px;
+  color: var(--text-primary);
+  font-weight: 700;
+  text-align: right;
+}
+
+.core-property.highlight .property-value {
+  color: var(--accent-blue);
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.core-property.active .property-value {
+  color: #059669;
+}
+
+/* 其他属性 */
+.other-properties {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  gap: 6px;
+  margin-bottom: 12px;
 }
 
 .property-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 10px;
+  padding: 8px 12px;
   background: var(--bg-secondary);
   border: 1px solid transparent;
   border-radius: 6px;
@@ -2101,79 +2587,147 @@ export default {
 }
 
 .property-item:hover {
-  background: rgba(79, 70, 229, 0.08);
-  transform: translateY(-1px);
+  background: rgba(79, 70, 229, 0.05);
 }
 
-/* 激活状态的属性项 */
+.property-item.highlight {
+  background: rgba(79, 70, 229, 0.12);
+  border-color: rgba(79, 70, 229, 0.3);
+}
+
 .property-item.active {
   border-color: #10b981;
   background: rgba(16, 185, 129, 0.08);
-  box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.1);
 }
 
-.property-item.active:hover {
-  background: rgba(16, 185, 129, 0.12);
-  border-color: #059669;
-}
-
-.property-label {
+.property-item .property-label {
   font-size: 11px;
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
   font-weight: 600;
+  white-space: nowrap;
   flex-shrink: 0;
-  width: 45%;
-  line-height: 1.3;
-  letter-spacing: 0.2px;
+}
+
+.property-item.highlight .property-label {
+  color: var(--text-primary);
+  font-weight: 700;
 }
 
 .property-item.active .property-label {
   color: #059669;
-  font-weight: 700;
 }
 
-.property-value {
+.property-item .property-value {
   font-size: 12px;
   color: var(--text-primary);
   font-weight: 700;
   text-align: right;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
-  line-height: 1.3;
-  flex: 1;
-  min-width: 0;
-  word-break: break-all;
-  letter-spacing: 0.3px;
 }
 
-.property-item.active .property-value {
-  color: #059669;
+.property-item.highlight .property-value {
+  color: var(--accent-blue);
+  font-size: 13px;
   font-weight: 800;
 }
 
-/* 离线状态 - 紧凑显示 */
-.device-offline {
-  padding: 16px;
-  text-align: center;
-  color: var(--text-tertiary);
+.property-item.active .property-value {
+  color: #10b981;
+}
+
+/* 离线/异常详情 */
+.offline-details {
+  padding: 12px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+}
+
+.offline-info {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
   gap: 8px;
+}
+
+.info-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   font-size: 13px;
 }
 
-.offline-icon {
-  width: 16px;
-  height: 16px;
+.info-label {
+  color: var(--text-secondary);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.info-value {
+  color: var(--text-primary);
+  font-weight: 500;
+  text-align: right;
+}
+
+/* 设备操作按钮 */
+.device-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.action-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.action-btn:hover {
+  background: var(--accent-blue);
+  border-color: var(--accent-blue);
+  color: white;
+  transform: translateY(-1px);
+}
+
+.action-btn svg {
+  flex-shrink: 0;
+}
+
+/* 离线/异常状态 */
+.device-offline,
+.device-error {
+  padding: 0;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+}
+
+.offline-icon,
+.error-icon {
+  width: 24px;
+  height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #dc2626;
 }
 
-.device-offline span {
-  font-size: 13px;
-  font-weight: 500;
+.device-error .error-icon {
+  color: #f59e0b;
 }
 
 /* 按钮样式 */
@@ -2241,7 +2795,44 @@ export default {
 }
 
 /* 响应式设计 */
+@media (max-width: 1200px) {
+  .device-grid {
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  }
+}
+
 @media (max-width: 768px) {
+  .stats-filter-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .stats-tags {
+    width: 100%;
+    justify-content: space-between;
+  }
+  
+  .stat-tag {
+    flex: 1;
+    justify-content: center;
+    padding: 8px 12px;
+  }
+  
+  .filter-actions {
+    width: 100%;
+    flex-direction: column;
+  }
+  
+  .search-box,
+  .filter-select,
+  .filter-actions .btn {
+    width: 100%;
+  }
+  
+  .search-box input {
+    width: 100%;
+  }
+  
   .device-grid {
     grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
     gap: 10px;
@@ -2269,28 +2860,43 @@ export default {
     padding: 12px;
   }
   
-  /* 移动端始终显示刷新按钮 */
-  .device-refresh-btn {
-    opacity: 1;
-  }
-  
-  /* 移动端设备卡片调整 */
   .device-card {
     padding: 12px;
   }
   
+  .device-card.offline,
+  .device-card.error {
+    padding: 10px 12px;
+  }
+  
+  .device-card.expanded {
+    padding: 12px;
+  }
+  
   .device-name {
-    font-size: 15px;
+    font-size: 14px;
   }
   
   .device-icon {
-    width: 32px;
-    height: 32px;
+    width: 36px;
+    height: 36px;
     margin-right: 10px;
+  }
+  
+  .other-properties {
+    grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 480px) {
+  .stats-tags {
+    flex-direction: column;
+  }
+  
+  .stat-tag {
+    width: 100%;
+  }
+  
   .device-grid {
     grid-template-columns: 1fr;
     gap: 8px;
@@ -2304,18 +2910,37 @@ export default {
     padding: 10px;
   }
   
+  .device-card.offline,
+  .device-card.error {
+    padding: 8px 10px;
+  }
+  
+  .device-card.expanded {
+    padding: 10px;
+  }
+  
   .device-name {
-    font-size: 14px;
+    font-size: 13px;
   }
   
   .device-icon {
-    width: 28px;
-    height: 28px;
+    width: 32px;
+    height: 32px;
     margin-right: 8px;
   }
   
-  .properties-grid {
+  .other-properties {
     grid-template-columns: 1fr;
+  }
+  
+  .device-actions {
+    flex-direction: column;
+    gap: 6px;
+  }
+  
+  .action-btn {
+    width: 100%;
+    padding: 8px 10px;
   }
 }
 </style>
