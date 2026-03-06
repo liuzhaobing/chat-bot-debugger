@@ -43,7 +43,7 @@ class AgenticTestAgent:
         
         # App IDs
         self.judge_app_id = "988988"  # 判断App ID
-        self.generate_query_app_id = "999999"  # 生成查询App ID (预留)
+        self.generate_query_app_id = "c7a27bd4e3cf49008ae99fc69817f155"  # 生成查询App ID (DeviceControlQueryGenerator)
         
         # 设备状态缓存
         self.previous_device_status = {}
@@ -338,6 +338,55 @@ class AgenticTestAgent:
             logger.error(f"Judge app call failed: {e}")
             return await self._get_mock_judge_result(asr_text)
     
+    async def call_query_generator_app(self, test_scenario: str, conversation_history: list) -> Dict[str, Any]:
+        """调用DeviceControlGenerator APP生成下一轮测试query"""
+        try:
+            # 获取QueryGenerator App实例
+            app = await database_sync_to_async(App.objects.get)(id=self.generate_query_app_id)
+            app_viewset = AppViewSet()
+            
+            # 准备家庭设备列表
+            family_devices_list = []
+            if self.iot_config.get('token') and self.iot_config.get('familyId'):
+                devices_result = await self.iot_service.get_family_devices(
+                    self.iot_config['familyId'], 
+                    self.iot_config['token']
+                )
+                if devices_result.get('success', False) or devices_result.get('rc') == 0:
+                    family_devices_list = devices_result.get('data', [])
+            
+            # 准备参数
+            from datetime import datetime
+            parameters = {
+                "test_scenario": test_scenario,
+                "family_devices": json.dumps(family_devices_list, ensure_ascii=False),
+                "conversation_history": conversation_history,
+                "current_device_status": json.dumps(self.current_device_status, ensure_ascii=False),
+                "current_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            
+            # 调用App
+            result = await database_sync_to_async(app_viewset._execute_app)(
+                app=app, 
+                parameters=parameters
+            )
+            
+            if result["status"] == "success":
+                try:
+                    # 尝试解析JSON结果
+                    query_result = json.loads(result["content"])
+                    return query_result
+                except json.JSONDecodeError:
+                    logger.error(f'Query generator returned non-JSON: {result["content"]}')
+                    return await self._get_mock_query_result(test_scenario)
+            else:
+                logger.error(f'Query generator app call failed: {result.get("error")}')
+                return await self._get_mock_query_result(test_scenario)
+                
+        except Exception as e:
+            logger.error(f"Query generator app call failed: {e}")
+            return await self._get_mock_query_result(test_scenario)
+    
     async def generate_next_query(self, judge_result: Dict[str, Any], asr_text: str) -> str:
         """根据判断结果生成下一个查询"""
         try:
@@ -350,36 +399,36 @@ class AgenticTestAgent:
             if suggested_action == 'end_conversation':
                 return ""
             
-            # 根据分析结果生成查询
-            analysis = judge_result.get('analysis', '')
+            # 构建对话历史
+            conversation_history = [
+                {"role": "user", "content": self.current_query},
+                {"role": "assistant", "content": asr_text}
+            ]
             
-            # 简单的查询生成逻辑（可以后续用专门的App替换）
-            if '设备' in asr_text or '状态' in asr_text:
-                queries = [
-                    "请检查一下设备的运行状态是否正常",
-                    "设备状态已更新，请确认是否符合预期",
-                    "我来帮您查看设备的详细信息"
-                ]
-            elif '温度' in asr_text:
-                queries = [
-                    "温度设置已调整，请确认是否合适",
-                    "当前温度状态如何，需要进一步调整吗"
-                ]
-            elif '开' in asr_text or '关' in asr_text:
-                queries = [
-                    "设备开关状态已变更，请确认操作结果",
-                    "操作已执行，设备状态是否符合预期"
-                ]
-            else:
-                queries = [
-                    "我已经了解您的需求，让我检查一下相关设备",
-                    "好的，我来帮您处理这个问题",
-                    "收到指令，正在为您查询相关信息"
-                ]
+            # 调用TestQueryGenerator APP生成下一轮query
+            test_scenario = "测试厨电设备的语音控制功能，包括开关机、档位调节、灯光控制等基本操作"
+            query_result = await self.call_query_generator_app(test_scenario, conversation_history)
             
-            # 随机选择一个查询
-            import random
-            next_query = random.choice(queries)
+            # 记录生成的query结果
+            await self.log_event('query_generated', json.dumps(query_result, ensure_ascii=False), {
+                'app_id': self.generate_query_app_id,
+                'loop_step': self.loop_step
+            })
+            
+            # 发送query生成结果到前端
+            await self.send_callback('query_generated', query_result)
+            
+            # 检查是否应该继续
+            if not query_result.get('should_continue', True):
+                await self.send_callback('log', '测试场景已完成')
+                return ""
+            
+            # 返回生成的query
+            next_query = query_result.get('next_query', '')
+            if next_query:
+                await self.send_callback('log', f'生成测试意图: {query_result.get("test_intent", "N/A")}')
+                await self.send_callback('log', f'目标设备: {query_result.get("target_device_name", "N/A")}')
+                await self.send_callback('log', f'期望变化: {json.dumps(query_result.get("expected_device_changes", {}), ensure_ascii=False)}')
             
             return next_query
             
@@ -396,6 +445,23 @@ class AgenticTestAgent:
             'suggested_action': 'continue_conversation',
             'detected_intent': 'device_query',
             'device_mentioned': True
+        }
+    
+    async def _get_mock_query_result(self, test_scenario: str) -> Dict[str, Any]:
+        """生成模拟的query生成结果"""
+        return {
+            'next_query': '打开油烟机',
+            'target_device_guid': 'mock_device_guid',
+            'target_device_name': '油烟机',
+            'expected_device_changes': {
+                'workStatus': '1',
+                'workStatus_text': '开机'
+            },
+            'expected_response_keywords': ['已打开', '油烟机', '开启'],
+            'expected_response_semantic': '确认油烟机已经打开',
+            'test_intent': '测试油烟机开机功能',
+            'should_continue': True,
+            'reasoning': '使用模拟数据生成测试query'
         }
     
     async def handle_intervention(self, message: str):
