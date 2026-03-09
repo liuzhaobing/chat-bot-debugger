@@ -123,6 +123,7 @@ import TranscriptPanel from '@/components/agentic-test/TranscriptPanel.vue'
 import SessionManager from '@/components/agentic-test/SessionManager.vue'
 import VadAsrTestPanel from '@/components/agentic-test/VadAsrTestPanel.vue'
 import RealtimeAudioProcessor, { createAudioMessage } from '@/utils/realtimeAudioProcessor.js'
+import { getAgenticTestWsUrl } from '@/config/worker.js'
 
 export default {
   name: 'AgenticTestView',
@@ -476,7 +477,8 @@ export default {
           
           // 使用当前会话ID或创建新的连接
           const sessionId = this.currentSession?.id || 'default'
-          const wsUrl = `ws://localhost:8000/ws/agentic-test/${sessionId}/`
+          // 连接到 Worker 服务的 WebSocket
+          const wsUrl = getAgenticTestWsUrl(sessionId)
           
           this.websocket = new WebSocket(wsUrl)
           

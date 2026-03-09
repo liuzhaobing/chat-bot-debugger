@@ -1,0 +1,56 @@
+# FastAPI 核心
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+gunicorn==23.0.0
+python-multipart==0.0.12
+
+# 数据库 ORM
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.30.0  # PostgreSQL async driver
+aiosqlite==0.20.0  # SQLite async driver
+alembic==1.14.0  # 仅用于检查，不做迁移
+
+# Redis
+redis[hiredis]==5.2.0
+aioredis==2.0.1
+
+# 数据验证
+pydantic==2.10.3
+pydantic-settings==2.6.1
+
+# JWT 认证
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# HTTP 客户端
+httpx==0.28.1
+aiohttp==3.11.10
+
+# WebSocket
+websockets==14.1
+python-socketio==5.12.0
+
+# 日志
+python-json-logger==3.2.1
+structlog==24.4.0
+
+# 音频处理
+pydub==0.25.1
+webrtcvad==2.0.10
+numpy==2.2.1
+
+# 工具
+python-dotenv==1.0.1
+tenacity==9.0.0  # 重试机制
+prometheus-client==0.21.0  # 监控指标
+jsondiff==2.2.1  # JSON差异对比
+
+# 测试
+pytest==8.3.4
+pytest-asyncio==0.24.0
+pytest-cov==6.0.0
+httpx==0.28.1  # 用于测试
+
+# 类型检查
+mypy==1.13.0
+types-redis==4.6.0.20241004

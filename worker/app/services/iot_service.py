@@ -1,37 +1,38 @@
 """
-Agentic Test 服务模块（简化版）
-仅包含 HTTP API 所需的 IOTService
-
-注意：完整的业务逻辑已迁移到 worker 服务
+IoT 服务
+从 backend/agentic_test/services.py 迁移
 """
 import asyncio
 import logging
 import random
-import os
 from typing import Dict, Any, Optional
 import httpx
+
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
 
 class IOTService:
-    """物联网设备服务 - 用于 HTTP API"""
-
-    # IoT 环境配置
-    IOT_BASE_URL_TEST = os.environ.get("IOT_BASE_URL_TEST", "http://api-test.myroki.com/rest")
-    IOT_BASE_URL_PROD = os.environ.get("IOT_BASE_URL_PROD", "http://api.myroki.com/rest")
-
+    """物联网设备服务"""
+    
     def __init__(self, token: str = "", family_id: str = "", env: str = "test"):
         """初始化IOT服务"""
         self.token = token
         self.family_id = family_id
         self.env = env
-
-        # 根据环境选择基础 URL
-        self.base_url = self.IOT_BASE_URL_PROD if env == "production" else self.IOT_BASE_URL_TEST
-
-        logger.info(f"IOTService initialized: env={env}, base_url={self.base_url}")
-
+        
+        self.base_url = settings.iot_base_url
+        
+        # 设备状态缓存
+        self.device_cache: Dict[str, Any] = {}
+        self.last_update_time: Dict[str, float] = {}
+        
+        logger.info(
+            f"IOTService initialized: env={env}, base_url={self.base_url}, "
+            f"has_token={bool(token)}, has_family_id={bool(family_id)}"
+        )
+    
     def update_config(self, token: Optional[str] = None, family_id: Optional[str] = None, env: Optional[str] = None):
         """更新IOT配置"""
         if token is not None:
@@ -40,64 +41,73 @@ class IOTService:
             self.family_id = family_id
         if env is not None:
             self.env = env
-            self.base_url = self.IOT_BASE_URL_PROD if env == "production" else self.IOT_BASE_URL_TEST
-
+            self.base_url = settings.iot_base_url
+        
+        logger.info(
+            f"IOTService config updated: env={self.env}, base_url={self.base_url}, "
+            f"has_token={bool(self.token)}, has_family_id={bool(self.family_id)}"
+        )
+    
     async def get_family_devices(self, family_id: Optional[str] = None, iot_token: Optional[str] = None) -> Dict[str, Any]:
         """查询指定家庭圈的设备清单"""
         _family_id = family_id or self.family_id
         _iot_token = iot_token or self.token
-
-        if not _family_id or not _iot_token:
-            logger.warning("Missing credentials, using mock data")
+        
+        if not _family_id or not _iot_token or settings.dev_mock_external_services:
+            logger.warning("Missing credentials or mock mode, using mock data")
             return await self._get_mock_family_devices()
-
+        
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
+            async with httpx.AsyncClient(timeout=settings.iot_timeout) as client:
                 response = await client.get(
                     f"{self.base_url}/dms/api/family/device/query-by-family-id",
                     headers={"Authorization": f"Bearer {_iot_token}"},
                     params={"familyId": _family_id}
                 )
-
+                
                 response.raise_for_status()
                 result = response.json()
-
+                
                 logger.info(f"Family devices retrieved: {_family_id}, count: {len(result.get('data', []))}")
                 return result
-
+                
         except Exception as e:
             logger.error(f"Failed to get family devices: {e}")
             return await self._get_mock_family_devices()
-
+    
     async def get_device_status(self, device_guid: str, iot_token: Optional[str] = None) -> Dict[str, Any]:
         """查询指定设备GUID的状态详情"""
         _iot_token = iot_token or self.token
-
-        if not _iot_token:
+        
+        if not _iot_token or settings.dev_mock_external_services:
             return await self._get_mock_device_status(device_guid)
-
+        
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
+            async with httpx.AsyncClient(timeout=settings.iot_timeout) as client:
                 response = await client.get(
                     f"{self.base_url}/iot/api/device/property/shadow",
                     headers={"Authorization": f"Bearer {_iot_token}"},
                     params={"deviceIds": device_guid}
                 )
-
+                
                 response.raise_for_status()
                 result = response.json()
-
+                
+                # 更新缓存
+                self.device_cache[device_guid] = result
+                self.last_update_time[device_guid] = asyncio.get_event_loop().time()
+                
                 logger.info(f"Device status retrieved: {device_guid}")
                 return result
-
+                
         except Exception as e:
             logger.error(f"Failed to get device status: {e}")
             return await self._get_mock_device_status(device_guid)
-
+    
     async def _get_mock_family_devices(self) -> Dict[str, Any]:
         """返回模拟的家庭设备清单"""
         await asyncio.sleep(0.3)
-
+        
         return {
             "rc": 0,
             "msg": "操作成功",
@@ -131,11 +141,11 @@ class IOTService:
                 }
             ]
         }
-
+    
     async def _get_mock_device_status(self, device_guid: str) -> Dict[str, Any]:
         """返回模拟的设备状态"""
         await asyncio.sleep(0.3)
-
+        
         return {
             "rc": 0,
             "msg": "操作成功",
@@ -153,6 +163,3 @@ class IOTService:
                 }
             ]
         }
-
-
-__all__ = ['IOTService']

@@ -1,7 +1,13 @@
 /**
  * Agentic Test 服务
  * 处理与后端API的通信
+ *
+ * 注意：
+ * - HTTP API 仍然通过 Django 后端 (localhost:8000)
+ * - WebSocket 已迁移到 Worker 服务 (localhost:8001)
  */
+
+import { getAgenticTestWsUrl } from '@/config/worker.js'
 
 const API_BASE_URL = process.env.VUE_APP_API_BASE_URL || 'http://localhost:8000'
 
@@ -111,12 +117,12 @@ class AgenticTestService {
   }
 
   /**
-   * 创建WebSocket连接
+   * 创建WebSocket连接 - 连接到 Worker 服务
+   * WebSocket 已从 Django 迁移到独立的 Worker 服务
    */
   createWebSocketConnection(sessionId) {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${protocol}//${window.location.host}/ws/agentic-test/${sessionId}/`
-    return new WebSocket(wsUrl)
+    // 直接连接到 Worker 服务的 WebSocket 端点
+    return new WebSocket(getAgenticTestWsUrl(sessionId))
   }
 
   /**

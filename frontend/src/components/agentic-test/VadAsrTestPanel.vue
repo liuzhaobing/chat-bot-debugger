@@ -200,6 +200,7 @@
 
 <script>
 import RealtimeAudioProcessor, { createAudioMessage } from '@/utils/realtimeAudioProcessor.js'
+import { getVadAsrTestWsUrl } from '@/config/worker.js'
 
 export default {
   name: 'VadAsrTestPanel',
@@ -407,8 +408,8 @@ export default {
     async connectWebSocket() {
       return new Promise((resolve, reject) => {
         try {
-          // 使用指定的app-id创建WebSocket连接
-          const wsUrl = `ws://localhost:8000/ws/agentic-test/vad-asr-test/?app_id=${this.APP_ID}`
+          // 使用指定的app-id创建WebSocket连接到 Worker 服务
+          const wsUrl = getVadAsrTestWsUrl(this.APP_ID)
           
           this.websocket = new WebSocket(wsUrl)
           

@@ -587,7 +587,7 @@ backend/
 |--------|--------|------|
 | IotStateVerification | `3b5c603a388541f7942396adec9a57ce` | IOT状态智能验证 |
 | DeviceControlQueryGenerator | `c7a27bd4e3cf49008ae99fc69817f155` | 生成下一个测试查询 |
-| JudgeApp | `988988` | 判断ASR结果和设备状态 |
+| JudgeApp | `e4d13f457f7f486c99ca11b39a7b8347` | 判断ASR结果和设备状态 |
 
 ---
 
