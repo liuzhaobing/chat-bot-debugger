@@ -84,7 +84,7 @@ class ASRService:
             )
 
             if result:
-                logger.info(f"ASR recognition successful: {result[:50]}...")
+                logger.info(f"ASR recognition successful: {result[:50]}")
                 return result
             else:
                 logger.warning("ASR returned empty result, using mock")

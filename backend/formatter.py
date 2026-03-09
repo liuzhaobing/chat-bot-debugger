@@ -1,9 +1,10 @@
 # -*- coding:utf-8 -*-
 # Filename: formatter
-# Description: 
+# Description:
 # Author: zhaobing.liu@outlook.com
 # Created: 2025/7/28
 # Last Modified: 2025/7/28
+import json
 import traceback
 from datetime import datetime
 
@@ -11,6 +12,14 @@ from pythonjsonlogger import jsonlogger
 
 
 class CustomJsonFormatter(jsonlogger.JsonFormatter):
+    def jsonify_log_record(self, log_record):
+        """
+        将日志记录转换为 JSON 字符串
+
+        重写此方法以禁用 ensure_ascii，支持中文等非ASCII字符正常显示
+        """
+        return json.dumps(log_record, ensure_ascii=False, default=str)
+
     def add_fields(self, log_record, record, message_dict):
         super(CustomJsonFormatter, self).add_fields(log_record, record, message_dict)
 

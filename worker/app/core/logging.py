@@ -2,6 +2,7 @@
 结构化日志配置
 支持 JSON 格式日志，包含 TraceID
 """
+import json
 import logging
 import sys
 from typing import Any, Dict
@@ -12,7 +13,15 @@ from app.config import settings
 
 class CustomJsonFormatter(jsonlogger.JsonFormatter):
     """自定义 JSON 日志格式化器"""
-    
+
+    def jsonify_log_record(self, log_record: Dict[str, Any]) -> str:
+        """
+        将日志记录转换为 JSON 字符串
+
+        重写此方法以禁用 ensure_ascii，支持中文等非ASCII字符正常显示
+        """
+        return json.dumps(log_record, ensure_ascii=False, default=str)
+
     def add_fields(
         self,
         log_record: Dict[str, Any],
