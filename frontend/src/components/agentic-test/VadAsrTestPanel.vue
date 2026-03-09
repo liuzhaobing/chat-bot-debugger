@@ -294,24 +294,32 @@ export default {
       this.isConnecting = true
       this.connectionStatus = 'connecting'
       this.addDebugLog('system', 'info', '开始启动VAD+ASR测试...')
-      
+
       try {
         // 1. 建立WebSocket连接
         await this.connectWebSocket()
-        
-        // 2. 初始化音频处理器
+
+        // 2. 发送 start_test 消息初始化后端 VAD 服务
+        if (this.isWebSocketReady()) {
+          this.websocket.send(JSON.stringify({
+            type: 'start_test'
+          }))
+          this.addDebugLog('websocket', 'info', '已发送 start_test 消息')
+        }
+
+        // 3. 初始化音频处理器
         await this.initializeAudioProcessor()
-        
-        // 3. 开始音频分析
+
+        // 4. 开始音频分析
         this.startAudioAnalysis()
-        
-        // 4. 更新状态
+
+        // 5. 更新状态
         this.isTestActive = true
         this.isConnecting = false
         this.connectionStatus = 'active'
-        
+
         this.addDebugLog('system', 'success', 'VAD+ASR测试启动成功')
-        
+
       } catch (error) {
         console.error('启动测试失败:', error)
         this.isConnecting = false
@@ -326,22 +334,30 @@ export default {
      */
     async stopTest() {
       this.addDebugLog('system', 'info', '正在停止VAD+ASR测试...')
-      
+
       try {
+        // 发送 stop_test 消息通知后端
+        if (this.isWebSocketReady()) {
+          this.websocket.send(JSON.stringify({
+            type: 'stop_test'
+          }))
+          this.addDebugLog('websocket', 'info', '已发送 stop_test 消息')
+        }
+
         // 停止音频处理
         this.stopAudioAnalysis()
-        
+
         // 断开WebSocket
         this.disconnectWebSocket()
-        
+
         // 更新状态
         this.isTestActive = false
         this.connectionStatus = 'disconnected'
         this.audioLevel = 0
         this.isVoiceActive = false
-        
+
         this.addDebugLog('system', 'success', 'VAD+ASR测试已停止')
-        
+
       } catch (error) {
         console.error('停止测试失败:', error)
         this.addDebugLog('system', 'error', `停止测试失败: ${error.message}`)
@@ -492,7 +508,9 @@ export default {
             break
             
           case 'vad_status':
-            this.addDebugLog('vad', 'info', `VAD状态: ${data.status}`, data.details)
+            // 后端消息格式: { type, content, metadata }
+            // content: "processing" | "detected" | "no_speech"
+            this.addDebugLog('vad', 'info', `VAD状态: ${data.content}`, data.metadata)
             break
             
           case 'vad_config':
@@ -500,7 +518,7 @@ export default {
             break
             
           case 'error':
-            this.addDebugLog('error', 'error', data.message, data.details)
+            this.addDebugLog('error', 'error', data.content, data.metadata)
             break
             
           default:

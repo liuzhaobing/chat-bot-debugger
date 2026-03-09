@@ -574,11 +574,11 @@ export default {
             break
             
           case 'system_status':
-            this.addSystemLog('ai', 'info', data.message)
+            this.addSystemLog('ai', 'info', data.content)
             break
             
           case 'error':
-            this.addSystemLog('error', 'error', data.message, data.details)
+            this.addSystemLog('error', 'error', data.content, data.metadata)
             break
             
           default:

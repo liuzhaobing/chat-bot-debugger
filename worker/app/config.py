@@ -83,6 +83,12 @@ class Settings(BaseSettings):
         description="ASR应用ID"
     )
     asr_timeout: int = Field(default=30, description="ASR超时时间")
+
+    # Backend API (Django)
+    backend_api_url: str = Field(
+        default="http://localhost:8000",
+        description="Django Backend API URL"
+    )
     
     # IoT
     iot_base_url_test: str = Field(
