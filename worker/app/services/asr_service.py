@@ -3,8 +3,12 @@ ASR (Automatic Speech Recognition) 服务
 通过调用 Django Backend API 执行 ASR 应用
 """
 import asyncio
+import base64
 import logging
 import random
+from datetime import datetime
+from pathlib import Path
+
 import httpx
 from typing import Optional
 
@@ -69,6 +73,9 @@ class ASRService:
             if audio_format != "wav":
                 logger.warning(f"ASR app only supports WAV format, but received: {audio_format}")
                 logger.warning("This may cause ASR recognition to fail!")
+
+            # 保存音频到本地 logs 目录，方便后续分析
+            await self._save_audio_to_logs(audio_data, audio_format)
 
             # 调用 Backend API
             result = await self._call_backend_api(
@@ -145,6 +152,34 @@ class ASRService:
         except Exception as e:
             logger.error(f"Backend API call failed: {e}")
             return None
+
+    async def _save_audio_to_logs(self, audio_data: str, audio_format: str) -> None:
+        """
+        保存音频数据到本地 logs 目录
+
+        Args:
+            audio_data: BASE64编码的音频数据
+            audio_format: 音频格式（如 wav）
+        """
+        try:
+            # 确保 logs 目录存在 (worker/logs)
+            logs_dir = Path(__file__).parent.parent.parent / "logs"
+            logs_dir.mkdir(exist_ok=True)
+
+            # 生成文件名：audio-{timestamp}.wav
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            filename = f"audio-{timestamp}.{audio_format}"
+            filepath = logs_dir / filename
+
+            # 解码 BASE64 并保存
+            audio_bytes = base64.b64decode(audio_data)
+            with open(filepath, "wb") as f:
+                f.write(audio_bytes)
+
+            logger.info(f"Audio saved to {filepath} ({len(audio_bytes)} bytes)")
+        except Exception as e:
+            logger.error(f"Failed to save audio to logs: {e}")
+            # 不抛出异常，保存失败不应影响 ASR 识别流程
 
     async def _recognize_speech_mock(self, audio_data: str) -> str:
         """模拟ASR识别"""

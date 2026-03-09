@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import base64
+import uuid
 from typing import Optional, Dict, Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, status
@@ -21,7 +22,7 @@ router = APIRouter()
 
 # ==================== Agentic Test WebSocket ====================
 
-@router.websocket("/ws/agentic-test/{session_id}")
+@router.websocket("/ws/agentic-test/{session_id}/")
 async def agentic_test_websocket(
     websocket: WebSocket,
     session_id: str,
@@ -36,7 +37,7 @@ async def agentic_test_websocket(
         token: JWT Token（用于认证）
     """
     # TODO: 实现 JWT 验证
-    user_id = "dev_user"  # 临时：开发模式
+    user_id = uuid.uuid4().hex
 
     # 初始化状态
     audio_buffer = []

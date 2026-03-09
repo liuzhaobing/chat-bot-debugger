@@ -124,6 +124,7 @@ import SessionManager from '@/components/agentic-test/SessionManager.vue'
 import VadAsrTestPanel from '@/components/agentic-test/VadAsrTestPanel.vue'
 import RealtimeAudioProcessor, { createAudioMessage } from '@/utils/realtimeAudioProcessor.js'
 import { getAgenticTestWsUrl } from '@/config/worker.js'
+import agenticTestService from '@/services/agenticTestService'
 
 export default {
   name: 'AgenticTestView',
@@ -467,66 +468,76 @@ export default {
      * 连接WebSocket
      */
     async connectToWebSocket() {
-      return new Promise((resolve, reject) => {
+      // 清理现有连接
+      if (this.websocket) {
+        this.websocket.close()
+        this.websocket = null
+      }
+
+      // 确保有有效的 session，如果没有则创建新的
+      let sessionId = this.currentSession?.id
+      if (!sessionId) {
+        this.addSystemLog('session', 'info', '正在创建新会话...')
         try {
-          // 清理现有连接
-          if (this.websocket) {
-            this.websocket.close()
-            this.websocket = null
+          const session = await agenticTestService.createSession(`会话-${new Date().toLocaleString('zh-CN')}`)
+          sessionId = session.id
+          // 更新 Vuex store 中的 currentSession
+          this.$store.commit('agenticTest/SET_CURRENT_SESSION', session)
+          this.addSystemLog('session', 'success', `会话创建成功，ID: ${sessionId}`)
+        } catch (error) {
+          console.error('创建会话失败:', error)
+          this.addSystemLog('session', 'error', '创建会话失败，使用默认 session')
+          sessionId = 'default'
+        }
+      }
+
+      // 连接到 Worker 服务的 WebSocket
+      const wsUrl = getAgenticTestWsUrl(sessionId)
+
+      return new Promise((resolve, reject) => {
+        this.websocket = new WebSocket(wsUrl)
+
+        this.websocket.onopen = () => {
+          this.connectionStatus = 'connected'
+          this.reconnectAttempts = 0
+          this.addSystemLog('websocket', 'success', 'WebSocket连接已建立')
+
+          // 连接建立后立即发送IOT配置
+          this.sendIOTConfigToServer()
+
+          resolve()
+        }
+
+        this.websocket.onmessage = (event) => {
+          this.handleWebSocketMessage(event)
+        }
+
+        this.websocket.onclose = (event) => {
+          this.addSystemLog('websocket', 'warning', `WebSocket连接已关闭: ${event.code}`)
+          if (this.isSessionActive && this.reconnectAttempts < this.maxReconnectAttempts) {
+            this.attemptReconnect()
           }
-          
-          // 使用当前会话ID或创建新的连接
-          const sessionId = this.currentSession?.id || 'default'
-          // 连接到 Worker 服务的 WebSocket
-          const wsUrl = getAgenticTestWsUrl(sessionId)
-          
-          this.websocket = new WebSocket(wsUrl)
-          
-          this.websocket.onopen = () => {
-            this.connectionStatus = 'connected'
-            this.reconnectAttempts = 0
-            this.addSystemLog('websocket', 'success', 'WebSocket连接已建立')
-            
-            // 连接建立后立即发送IOT配置
-            this.sendIOTConfigToServer()
-            
-            resolve()
-          }
-          
-          this.websocket.onmessage = (event) => {
-            this.handleWebSocketMessage(event)
-          }
-          
-          this.websocket.onclose = (event) => {
-            this.addSystemLog('websocket', 'warning', `WebSocket连接已关闭: ${event.code}`)
-            if (this.isSessionActive && this.reconnectAttempts < this.maxReconnectAttempts) {
-              this.attemptReconnect()
-            }
-          }
-          
-          this.websocket.onerror = (error) => {
-            console.error('WebSocket错误:', error)
-            this.addSystemLog('websocket', 'error', 'WebSocket连接错误')
-            reject(new Error('WebSocket连接失败'))
-          }
-          
-          // 连接超时
-          setTimeout(() => {
-            try {
-              if (this.websocket && this.websocket.readyState !== WebSocket.OPEN) {
-                this.websocket.close()
-                this.websocket = null
-                reject(new Error('WebSocket连接超时'))
-              }
-            } catch (error) {
-              console.error('WebSocket超时检查错误:', error)
+        }
+
+        this.websocket.onerror = (error) => {
+          console.error('WebSocket错误:', error)
+          this.addSystemLog('websocket', 'error', 'WebSocket连接错误')
+          reject(new Error('WebSocket连接失败'))
+        }
+
+        // 连接超时
+        setTimeout(() => {
+          try {
+            if (this.websocket && this.websocket.readyState !== WebSocket.OPEN) {
+              this.websocket.close()
+              this.websocket = null
               reject(new Error('WebSocket连接超时'))
             }
-          }, 10000)
-          
-        } catch (error) {
-          reject(error)
-        }
+          } catch (error) {
+            console.error('WebSocket超时检查错误:', error)
+            reject(new Error('WebSocket连接超时'))
+          }
+        }, 10000)
       })
     },
 
