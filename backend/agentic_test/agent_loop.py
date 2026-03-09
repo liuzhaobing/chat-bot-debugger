@@ -65,30 +65,59 @@ class AgenticTestAgent:
         await self.send_callback('log', f'开始处理查询: {initial_query}')
         await self.send_callback('status', '智能体循环已启动')
         
-        # 初始化设备状态
-        await self.initialize_device_status()
-        
-        # 开始主循环
-        while self.is_running and self.loop_step < self.max_loop_steps:
-            try:
-                self.loop_step += 1
-                await self.send_callback('status', f'执行循环步骤 {self.loop_step}')
-                
-                # 执行完整的Agent循环
-                should_continue = await self.execute_full_loop()
-                
-                if not should_continue:
-                    await self.send_callback('status', '循环完成，等待新的音频输入...')
-                    break
+        try:
+            # 初始化设备状态
+            await self.initialize_device_status()
+            
+            # 查询设备状态前先检查当前query要操作的设备
+            await self._check_target_device_before_query()
+            
+            # 开始主循环
+            while self.is_running and self.loop_step < self.max_loop_steps:
+                try:
+                    self.loop_step += 1
+                    await self.send_callback('status', f'执行循环步骤 {self.loop_step}')
                     
-                # 短暂延迟，避免过快循环
-                await asyncio.sleep(1.0)
+                    # 执行完整的Agent循环
+                    should_continue = await self.execute_full_loop()
+                    
+                    if not should_continue:
+                        await self.send_callback('status', '循环完成，等待新的音频输入...')
+                        break
+                        
+                    # 短暂延迟，避免过快循环
+                    await asyncio.sleep(1.0)
+                    
+                except asyncio.CancelledError:
+                    logger.info("Agent loop cancelled")
+                    await self.send_callback('status', '循环已取消')
+                    break
+                except Exception as e:
+                    logger.error(f"Agent loop step error: {e}", exc_info=True)
+                    await self.log_event('system_error', str(e))
+                    await self.send_callback('error', f'循环步骤 {self.loop_step} 执行错误: {str(e)}')
+                    
+                    # 错误恢复策略
+                    if self.loop_step < self.max_loop_steps:
+                        await self.send_callback('status', '尝试恢复循环...')
+                        await asyncio.sleep(2.0)
+                        continue
+                    else:
+                        break
+            
+            # 循环结束
+            if self.loop_step >= self.max_loop_steps:
+                await self.send_callback('warning', f'已达到最大循环步骤数 ({self.max_loop_steps})，循环终止')
+                await self.log_event('system_status', f'循环达到最大步骤数: {self.max_loop_steps}')
                 
-            except Exception as e:
-                logger.error(f"Agent loop error: {e}")
-                await self.log_event('system_error', str(e))
-                await self.send_callback('error', f'循环执行错误: {str(e)}')
-                break
+        except Exception as e:
+            logger.error(f"Agent loop fatal error: {e}", exc_info=True)
+            await self.log_event('system_error', f'循环致命错误: {str(e)}')
+            await self.send_callback('error', f'循环发生致命错误: {str(e)}')
+        finally:
+            self.is_running = False
+            await self.send_callback('status', '智能体循环已结束')
+            await self.log_event('system_status', '智能体循环已结束')
     
     async def initialize_device_status(self):
         """初始化设备状态"""
@@ -124,6 +153,40 @@ class AgenticTestAgent:
             logger.error(f"Failed to initialize device status: {e}")
             await self.send_callback('warning', f'设备状态初始化失败: {str(e)}')
     
+    async def _check_target_device_before_query(self):
+        """在发送query前检查要操作的设备状态"""
+        try:
+            await self.send_callback('status', '检查目标设备状态...')
+            
+            # 从query中识别目标设备
+            if self.iot_config.get('token') and self.iot_config.get('familyId'):
+                devices_result = await self.iot_service.get_family_devices(
+                    self.iot_config['familyId'],
+                    self.iot_config['token']
+                )
+                
+                if devices_result.get('success', False) or devices_result.get('rc') == 0:
+                    devices = devices_result.get('data', [])
+                    
+                    # 识别目标设备GUID
+                    from .smart_test_agent import SmartTestAgent
+                    target_guid = SmartTestAgent.identify_target_device_guid(self, self.current_query, devices)
+                    
+                    if target_guid:
+                        # 获取目标设备状态
+                        status_result = await self.iot_service.get_device_status(target_guid, self.iot_config['token'])
+                        
+                        if status_result.get('success', False) or status_result.get('rc') == 0:
+                            await self.send_callback('device_status_check', '目标设备状态已获取', {
+                                'device_guid': target_guid,
+                                'status': status_result.get('data', [])
+                            })
+                            await self.log_event('device_status_check', f'目标设备: {target_guid}')
+                        
+        except Exception as e:
+            logger.error(f"Failed to check target device: {e}")
+            await self.send_callback('warning', f'设备状态检查失败: {str(e)}')
+    
     async def execute_full_loop(self):
         """执行完整的Agent循环步骤"""
         try:
@@ -153,9 +216,13 @@ class AgenticTestAgent:
             
             return False  # 等待音频输入，暂停循环
             
+        except asyncio.CancelledError:
+            logger.info("execute_full_loop cancelled")
+            raise
         except Exception as e:
-            logger.error(f"Error in execute_full_loop: {e}")
+            logger.error(f"Error in execute_full_loop: {e}", exc_info=True)
             await self.send_callback('error', f'循环执行失败: {str(e)}')
+            await self.log_event('system_error', f'execute_full_loop error: {str(e)}')
             return False
         
     async def process_audio(self, audio_data: str, audio_format: str = 'webm'):
@@ -223,10 +290,13 @@ class AgenticTestAgent:
                 await self.send_callback('status', '对话完成，等待新的音频输入...')
                 await self.send_callback('ai_response', '好的，我已经了解了当前情况。还有什么需要帮助的吗？')
                 
+        except asyncio.CancelledError:
+            logger.info("process_audio cancelled")
+            raise
         except Exception as e:
-            logger.error(f"Error processing audio: {e}")
+            logger.error(f"Error processing audio: {e}", exc_info=True)
             await self.send_callback('error', f'音频处理失败: {str(e)}')
-            await self.log_event('system_error', str(e))
+            await self.log_event('system_error', f'process_audio error: {str(e)}')
     
     async def update_device_status(self):
         """更新设备状态"""
@@ -465,21 +535,67 @@ class AgenticTestAgent:
         }
     
     async def handle_intervention(self, message: str):
-        """处理人工干预"""
-        await self.log_event('user_query', f'人工干预: {message}')
-        self.current_query = message
-        self.loop_step = 0  # 重置循环步骤
-        await self.send_callback('log', f'接收到干预指令: {message}')
-        
-        # 重新开始循环
-        if self.is_running:
-            await self.execute_full_loop()
+        """处理人工干预 - 支持测试组长介入"""
+        try:
+            await self.log_event('user_query', f'人工干预: {message}')
+            await self.send_callback('log', f'接收到干预指令: {message}')
+            
+            # 检查是否是控制指令
+            message_lower = message.lower()
+            
+            if any(cmd in message_lower for cmd in ['停止', 'stop', '暂停', 'pause']):
+                await self.stop()
+                await self.send_callback('status', '已响应停止指令')
+                return
+            
+            if any(cmd in message_lower for cmd in ['继续', 'continue', '恢复', 'resume']):
+                if not self.is_running:
+                    self.is_running = True
+                    await self.send_callback('status', '已恢复运行')
+                    await self.execute_full_loop()
+                return
+            
+            if any(cmd in message_lower for cmd in ['跳过', 'skip', '下一个', 'next']):
+                await self.send_callback('status', '跳过当前步骤')
+                self.current_query = "继续下一个测试"
+                await self.execute_full_loop()
+                return
+            
+            # 否则作为新的测试查询
+            self.current_query = message
+            self.loop_step = 0  # 重置循环步骤
+            await self.send_callback('log', f'更新测试查询: {message}')
+            
+            # 重新开始循环
+            if self.is_running:
+                await self.execute_full_loop()
+            else:
+                self.is_running = True
+                await self.start_loop(message, self.iot_config)
+                
+        except Exception as e:
+            logger.error(f"Error handling intervention: {e}", exc_info=True)
+            await self.send_callback('error', f'处理干预失败: {str(e)}')
+            await self.log_event('system_error', f'handle_intervention error: {str(e)}')
     
     async def stop(self):
         """停止智能体"""
         self.is_running = False
         await self.send_callback('status', '智能体已停止')
         await self.log_event('system_status', '智能体循环已停止')
+        
+        # 清理资源
+        try:
+            # 清空设备状态缓存
+            self.previous_device_status = {}
+            self.current_device_status = {}
+            
+            # 重置循环步骤
+            self.loop_step = 0
+            
+            logger.info(f"Agent stopped for session {self.session_id}")
+        except Exception as e:
+            logger.error(f"Error during agent stop cleanup: {e}")
     
     async def update_iot_config(self, config: Dict[str, str]):
         """更新IOT配置"""
