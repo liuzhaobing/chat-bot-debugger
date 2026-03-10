@@ -28,6 +28,7 @@ from app.services.asr_service import ASRService
 from app.services.vad_service import VADService
 from app.services.iot_service import IOTService
 from app.services.audio_processor import AudioProcessingService
+from app.services.backend_service import BackendService
 from app.utils.audio_utils import AudioConverter
 from app.config import settings
 
@@ -119,6 +120,7 @@ class AgenticTestAgent:
             env=self.iot_config.get('env', 'test')
         )
         self.audio_service = AudioProcessingService()
+        self.backend_service = BackendService()
 
         # 设备状态缓存
         self.previous_device_status: Dict = {}
@@ -789,16 +791,53 @@ class AgenticTestAgent:
             current_status: Dict,
             previous_status: Dict
     ) -> Dict[str, Any]:
-        """调用判断App分析ASR结果和设备状态变化"""
+        """
+        调用判断App分析ASR结果和设备状态变化
+
+        Args:
+            asr_text: ASR识别出的文本
+            current_status: 当前设备状态
+            previous_status: 之前的设备状态
+
+        Returns:
+            分析结果字典，包含:
+            - analysis: 分析描述
+            - confidence: 置信度
+            - should_continue: 是否应继续对话
+            - suggested_action: 建议的行动
+            - detected_intent: 检测到的意图
+        """
         try:
             # 检查是否使用 mock 模式
             if settings.dev_mock_external_services:
                 return await self._get_mock_judge_result(asr_text)
 
-            # TODO: 实现通过 HTTP 调用 Django Backend 的 App 执行接口
-            # 目前使用 mock 模式
-            logger.warning("Judge app call not fully implemented, using mock mode")
-            return await self._get_mock_judge_result(asr_text)
+            # 使用 BackendService 调用 Judge App
+            result = await self.backend_service.invoke_app(
+                app_id=self.JUDGE_APP_ID,
+                message=f"分析用户语音: {asr_text}",
+                parameters={
+                    "asr_text": asr_text,
+                    "current_device_status": current_status or {},
+                    "previous_device_status": previous_status or {}
+                }
+            )
+
+            if result.success and result.content:
+                try:
+                    # 尝试解析 JSON 结果
+                    parsed_result = json.loads(result.content)
+                    await self.log_event('app_call', json.dumps(parsed_result, ensure_ascii=False), {
+                        'app_id': self.JUDGE_APP_ID,
+                        'latency_ms': result.latency_ms
+                    })
+                    return parsed_result
+                except json.JSONDecodeError:
+                    logger.warning(f"Judge app returned non-JSON content: {result.content[:100]}")
+                    return await self._get_mock_judge_result(asr_text)
+            else:
+                logger.warning(f"Judge app call failed: {result.error}")
+                return await self._get_mock_judge_result(asr_text)
 
         except Exception as e:
             logger.error(f"Judge app call failed: {e}")
@@ -809,14 +848,52 @@ class AgenticTestAgent:
             test_scenario: str,
             conversation_history: list
     ) -> Dict[str, Any]:
-        """调用DeviceControlGenerator APP生成下一轮测试query"""
+        """
+        调用DeviceControlGenerator APP生成下一轮测试query
+
+        Args:
+            test_scenario: 测试场景描述
+            conversation_history: 对话历史 [{"role": "user|assistant", "content": "..."}]
+
+        Returns:
+            查询生成结果字典，包含:
+            - next_query: 下一个测试查询
+            - target_device_guid: 目标设备GUID
+            - target_device_name: 目标设备名称
+            - expected_device_changes: 预期的设备状态变化
+            - expected_response_keywords: 预期的响应关键词
+            - test_intent: 测试意图
+            - should_continue: 是否应继续测试
+        """
         try:
             if settings.dev_mock_external_services:
                 return await self._get_mock_query_result(test_scenario)
 
-            # TODO: 实现通过 HTTP 调用 Django Backend 的 App 执行接口
-            logger.warning("Query generator app call not fully implemented, using mock mode")
-            return await self._get_mock_query_result(test_scenario)
+            # 使用 BackendService 调用 QueryGenerator App
+            result = await self.backend_service.invoke_app(
+                app_id=self.QUERY_GENERATOR_APP_ID,
+                message=f"生成测试查询: {test_scenario}",
+                context=conversation_history,
+                parameters={
+                    "test_scenario": test_scenario
+                }
+            )
+
+            if result.success and result.content:
+                try:
+                    # 尝试解析 JSON 结果
+                    parsed_result = json.loads(result.content)
+                    await self.log_event('app_call', json.dumps(parsed_result, ensure_ascii=False), {
+                        'app_id': self.QUERY_GENERATOR_APP_ID,
+                        'latency_ms': result.latency_ms
+                    })
+                    return parsed_result
+                except json.JSONDecodeError:
+                    logger.warning(f"QueryGenerator app returned non-JSON content: {result.content[:100]}")
+                    return await self._get_mock_query_result(test_scenario)
+            else:
+                logger.warning(f"QueryGenerator app call failed: {result.error}")
+                return await self._get_mock_query_result(test_scenario)
 
         except Exception as e:
             logger.error(f"Query generator app call failed: {e}")

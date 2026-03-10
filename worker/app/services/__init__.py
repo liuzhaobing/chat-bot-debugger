@@ -10,6 +10,7 @@ from .agent_service import AgenticTestAgent
 from .smart_test_agent import SmartTestAgent
 from .scenario_generator import ScenarioGenerator
 from .verifiers import IOTStateVerifier, ResponseVerifier, CombinedValidator
+from .backend_service import BackendService, AppInvokeResult, get_backend_service
 
 __all__ = [
     "TTSService",
@@ -23,4 +24,7 @@ __all__ = [
     "IOTStateVerifier",
     "ResponseVerifier",
     "CombinedValidator",
+    "BackendService",
+    "AppInvokeResult",
+    "get_backend_service",
 ]

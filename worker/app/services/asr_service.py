@@ -8,11 +8,10 @@ import logging
 import random
 from datetime import datetime
 from pathlib import Path
-
-import httpx
 from typing import Optional
 
 from app.config import settings
+from app.services.backend_service import BackendService
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +34,7 @@ class ASRService:
             app_id: 可选的 ASR 应用 ID，如果不提供则使用配置中的默认值
         """
         self.app_id = app_id or settings.asr_app_id
-        self.backend_url = settings.backend_api_url
-        self.timeout = settings.asr_timeout
+        self.backend_service = BackendService()
 
     async def recognize_speech(
             self,
@@ -60,10 +58,6 @@ class ASRService:
             🔥 audio_format参数必须设置为"wav"
             🔥 audio_data必须是完整WAV文件的BASE64编码，不能是原始PCM
         """
-        # 开发模式下使用 mock
-        # if settings.dev_mock_external_services:
-        #     return await self._recognize_speech_mock(audio_data)
-
         try:
             logger.info(f"Starting ASR recognition with app_id: {self.app_id}")
             logger.info(f"Audio data length: {len(audio_data) if audio_data else 0}")
@@ -78,16 +72,20 @@ class ASRService:
             await self._save_audio_to_logs(audio_data, audio_format)
 
             # 调用 Backend API
-            result = await self._call_backend_api(
-                audio_data=audio_data,
-                audio_format=audio_format,
+            result = await self.backend_service.invoke_app(
+                app_id=self.app_id,
+                parameters={
+                    "audio_data": audio_data,
+                    "format": audio_format,
+                    "language": "zh-CN"
+                }
             )
 
-            if result:
-                logger.info(f"ASR recognition successful: {result[:50]}")
-                return result
+            if result.success and result.content:
+                logger.info(f"ASR recognition successful: {result.content[:50]}")
+                return result.content
             else:
-                logger.warning("ASR returned empty result, using mock")
+                logger.warning(f"ASR returned empty or failed: {result.error}")
                 return await self._recognize_speech_mock(audio_data)
 
         except Exception as e:
@@ -96,62 +94,6 @@ class ASRService:
             # 降级到模拟模式
             logger.warning("Falling back to mock ASR")
             return await self._recognize_speech_mock(audio_data)
-
-    async def _call_backend_api(
-            self,
-            audio_data: str,
-            additional_message: Optional[str] = "",
-            audio_format: Optional[str] = "wav",
-            audio_language: Optional[str] = "zh-CN",
-    ) -> Optional[str]:
-        """
-        调用 Django Backend API 执行 ASR 应用
-
-        API 端点: POST /api/apps/{app_id}/invoke/
-        请求格式: {
-            "message": "音频数据描述",
-            "parameters": {"audio_data": "...", "audio_format": "wav", "audio_language": "zh-CN"}
-        }
-        """
-        url = f"{self.backend_url}/api/apps/{self.app_id}/invoke/"
-
-        # 构建请求数据
-        # ASR 应用的输入格式：音频的 base64 数据放在 parameters.audio_data 中
-        payload = {
-            "message": additional_message,
-            "parameters": {
-                "audio_data": audio_data,
-                "language": audio_language,
-                "format": audio_format
-            }
-        }
-
-        try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                logger.debug(f"Calling Backend API: {url}")
-                response = await client.post(url, json=payload)
-                response.raise_for_status()
-
-                data = response.json()
-
-                if data.get("status") == "success":
-                    content = data.get("content", "")
-                    logger.info(f"Backend API returned success, content length: {len(content)}")
-                    return content
-                else:
-                    error = data.get("error", "Unknown error")
-                    logger.error(f"Backend API returned error: {error}")
-                    return None
-
-        except httpx.TimeoutException:
-            logger.error(f"Backend API timeout after {self.timeout}s")
-            return None
-        except httpx.HTTPStatusError as e:
-            logger.error(f"Backend API HTTP error: {e.response.status_code} - {e.response.text}")
-            return None
-        except Exception as e:
-            logger.error(f"Backend API call failed: {e}")
-            return None
 
     async def _save_audio_to_logs(self, audio_data: str, audio_format: str) -> None:
         """
