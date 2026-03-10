@@ -61,8 +61,8 @@ class ASRService:
             🔥 audio_data必须是完整WAV文件的BASE64编码，不能是原始PCM
         """
         # 开发模式下使用 mock
-        if settings.dev_mock_external_services:
-            return await self._recognize_speech_mock(audio_data)
+        # if settings.dev_mock_external_services:
+        #     return await self._recognize_speech_mock(audio_data)
 
         try:
             logger.info(f"Starting ASR recognition with app_id: {self.app_id}")
