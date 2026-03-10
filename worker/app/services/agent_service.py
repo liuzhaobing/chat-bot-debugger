@@ -315,6 +315,7 @@ class AgenticTestAgent:
             if next_query and next_query.strip():
                 self.current_query = next_query
                 await self.send_callback('log', f'生成新查询: {self.current_query}')
+                await self.send_callback('ai_response', self.current_query)
                 await self.send_callback('query_generated', {
                     'next_query': next_query,
                     'should_continue': True
