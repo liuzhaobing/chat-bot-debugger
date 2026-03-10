@@ -502,8 +502,16 @@ export default {
           this.reconnectAttempts = 0
           this.addSystemLog('websocket', 'success', 'WebSocket连接已建立')
 
-          // 连接建立后立即发送IOT配置
-          this.sendIOTConfigToServer()
+          // 连接建立后立即发送start_test（已包含iot_config，无需单独发送update_iot_config）
+          const iotConfig = this.getIOTConfigFromStorage()
+          const startTestMessage = {
+            type: 'start_test',
+            query: '我的家庭圈有哪些一体机？',
+            iot_config: iotConfig,
+            timestamp: Date.now()
+          }
+          this.websocket.send(JSON.stringify(startTestMessage))
+          this.addSystemLog('test', 'info', '已发送start_test消息', iotConfig)
 
           resolve()
         }
@@ -547,13 +555,22 @@ export default {
     disconnectFromWebSocket() {
       if (this.websocket) {
         try {
+          // 连接关闭前先发送stop_test
+          if (this.websocket.readyState === WebSocket.OPEN) {
+            const stopTestMessage = {
+              type: 'stop_test',
+              timestamp: Date.now()
+            }
+            this.websocket.send(JSON.stringify(stopTestMessage))
+            this.addSystemLog('test', 'info', '已发送stop_test消息')
+          }
           this.websocket.close()
         } catch (error) {
           console.error('关闭WebSocket时出错:', error)
         }
         this.websocket = null
       }
-      
+
       if (this.reconnectTimeout) {
         clearTimeout(this.reconnectTimeout)
         this.reconnectTimeout = null

@@ -230,6 +230,10 @@ class AgenticTestAgent:
                 await self.send_callback('status', '语音识别结果为空')
                 return
 
+            if asr_result.strip() == '<noise>':
+                await self.send_callback('status', '语音识别结果为<noise>')
+                return
+
             # 更新设备状态
             await self.send_callback('status', '查询设备状态...')
             await self.update_device_status()

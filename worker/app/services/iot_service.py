@@ -22,7 +22,7 @@ class IOTService:
         self.family_id = family_id
         self.env = env
         
-        self.base_url = settings.iot_base_url
+        self.base_url = settings.iot_base_url_prod if env == "prod" else settings.iot_base_url_test
         
         # 设备状态缓存
         self.device_cache: Dict[str, Any] = {}
