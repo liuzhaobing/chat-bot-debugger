@@ -28,7 +28,7 @@ class IOTService:
         self.env = env
 
         # 根据环境选择基础 URL
-        self.base_url = self.IOT_BASE_URL_PROD if env == "production" else self.IOT_BASE_URL_TEST
+        self.base_url = self.IOT_BASE_URL_PROD if env == "prod" else self.IOT_BASE_URL_TEST
 
         logger.info(f"IOTService initialized: env={env}, base_url={self.base_url}")
 
@@ -40,7 +40,7 @@ class IOTService:
             self.family_id = family_id
         if env is not None:
             self.env = env
-            self.base_url = self.IOT_BASE_URL_PROD if env == "production" else self.IOT_BASE_URL_TEST
+            self.base_url = self.IOT_BASE_URL_PROD if env == "prod" else self.IOT_BASE_URL_TEST
 
     async def get_family_devices(self, family_id: Optional[str] = None, iot_token: Optional[str] = None) -> Dict[str, Any]:
         """查询指定家庭圈的设备清单"""
@@ -54,7 +54,7 @@ class IOTService:
         try:
             async with httpx.AsyncClient(timeout=30) as client:
                 response = await client.get(
-                    f"{self.base_url}/dms/api/family/device/query-by-family-id",
+                    f"{self.base_url}/dms/api/family/device/queryByFamily",
                     headers={"Authorization": f"Bearer {_iot_token}"},
                     params={"familyId": _family_id}
                 )

@@ -53,14 +53,14 @@ class IOTService:
         _family_id = family_id or self.family_id
         _iot_token = iot_token or self.token
         
-        if not _family_id or not _iot_token or settings.dev_mock_external_services:
+        if not _family_id or not _iot_token:
             logger.warning("Missing credentials or mock mode, using mock data")
             return await self._get_mock_family_devices()
         
         try:
             async with httpx.AsyncClient(timeout=settings.iot_timeout) as client:
                 response = await client.get(
-                    f"{self.base_url}/dms/api/family/device/query-by-family-id",
+                    f"{self.base_url}/dms/api/family/device/queryByFamily",
                     headers={"Authorization": f"Bearer {_iot_token}"},
                     params={"familyId": _family_id}
                 )
