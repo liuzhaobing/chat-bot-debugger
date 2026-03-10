@@ -2,13 +2,19 @@
 Agentic Test Agent 服务
 从 backend/agentic_test/agent_loop.py 迁移
 核心业务逻辑
+
+架构说明:
+- 音频输入层 (Audio Input Layer): 处理音频缓冲、VAD检测、ASR识别
+- 云端大脑处理层 (Brain Layer): NLP处理、业务逻辑、决策生成
+- 音频输出层 (Audio Output Layer): TTS生成、扬声器播报
 """
 import asyncio
 import json
 import logging
 import base64
 import time
-from typing import Optional, Callable, Dict, Any
+from typing import Optional, Callable, Dict, Any, Tuple
+from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy import select
@@ -26,6 +32,50 @@ from app.utils.audio_utils import AudioConverter
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# 数据类定义 - 用于各层之间的数据传递
+# ============================================================================
+
+@dataclass
+class AudioInputResult:
+    """音频输入处理结果"""
+    success: bool
+    audio_bytes: Optional[bytes] = None
+    audio_duration_s: float = 0.0
+    error_message: Optional[str] = None
+
+
+@dataclass
+class VADASRResult:
+    """VAD和ASR处理结果"""
+    success: bool
+    has_speech: bool = False
+    asr_text: str = ""
+    speech_ratio: float = 0.0
+    confidence: float = 0.8
+    error_message: Optional[str] = None
+
+
+@dataclass
+class BrainProcessResult:
+    """云端大脑处理结果"""
+    success: bool
+    next_query: str = ""
+    should_continue: bool = True
+    ai_response: str = ""
+    analysis: Optional[Dict[str, Any]] = None
+    error_message: Optional[str] = None
+
+
+@dataclass
+class AudioOutputResult:
+    """音频输出处理结果"""
+    success: bool
+    audio_data: Optional[bytes] = None
+    text: str = ""
+    error_message: Optional[str] = None
 
 
 class AgenticTestAgent:
@@ -182,47 +232,33 @@ class AgenticTestAgent:
             logger.error(f"Failed to initialize device status: {e}")
             await self.send_callback('warning', f'设备状态初始化失败: {str(e)}')
 
-    async def execute_full_loop(self) -> bool:
-        """执行完整的Agent循环步骤"""
+    # ========================================================================
+    # 音频输入层 (Audio Input Layer)
+    # 负责: 音频缓冲管理、VAD检测、ASR识别
+    # ========================================================================
+
+    async def process_audio_input_buffer(
+            self,
+            audio_data: str,
+            audio_format: str = 'webm'
+    ) -> AudioInputResult:
+        """
+        处理音频输入缓冲
+
+        将接收到的音频数据进行缓冲、累积，当达到处理阈值时返回合并后的音频数据。
+
+        Args:
+            audio_data: Base64编码的音频数据
+            audio_format: 音频格式，默认webm
+
+        Returns:
+            AudioInputResult: 包含音频字节数据和时长的结果对象
+                - success=True 且 audio_bytes 不为空时表示数据已准备好进行下一步处理
+                - success=True 且 audio_bytes 为空时表示缓冲未满，需继续累积
+                - success=False 表示处理出错
+        """
         try:
-            if self.current_asr_result == '<noise>' and time.perf_counter() - self.real_voice_active_time < 15:
-                return True
-            # Step 1: 生成TTS音频
-            await self.send_callback('status', '正在生成语音...')
-            tts_result = await self.tts_service.generate_speech(self.current_query)
-            self.real_voice_active_time = time.perf_counter()
-            await self.log_event('tts_generated', self.current_query, {
-                'audio_length': len(tts_result),
-                'loop_step': self.loop_step
-            })
-
-            # Step 2: 发送音频到前端播放
-            await self.send_callback('audio_play', tts_result, {
-                'type': 'tts',
-                'text': self.current_query,
-                'loop_step': self.loop_step
-            })
-
-            # Step 3: 等待智能音响回应
-            await self.send_callback('status', '等待智能音响回应...')
-            await asyncio.sleep(3.0)
-
-            # Step 4: 等待音频输入
-            await self.send_callback('status', '等待音频输入...')
-            return True
-
-        except Exception as e:
-            logger.error(f"Error in execute_full_loop: {e}", exc_info=True)
-            await self.send_callback('error', f'循环执行失败: {str(e)}')
-            return False
-
-    async def process_audio(self, audio_data: str, audio_format: str = 'webm'):
-        """处理接收到的音频数据"""
-        if not self.is_running:
-            return
-
-        try:
-            # 解码音频数据
+            # 解码Base64音频数据
             audio_bytes = base64.b64decode(audio_data)
 
             await self.log_event('mic_capture', '接收到音频数据', {
@@ -231,7 +267,7 @@ class AgenticTestAgent:
                 'loop_step': self.loop_step
             })
 
-            # 所有格式统一使用缓冲处理
+            # 添加到缓冲区
             self.audio_buffer.add_audio(audio_bytes)
 
             # 检查是否达到处理阈值
@@ -240,22 +276,61 @@ class AgenticTestAgent:
                 logger.debug(
                     f"Audio buffer not ready: {buffer_stats['buffer_size']}/{buffer_stats['target_size']} bytes"
                 )
-                return
+                return AudioInputResult(
+                    success=True,
+                    audio_bytes=None,
+                    audio_duration_s=0.0
+                )
 
             # 触发音频输入事件，通知主循环
             self._audio_input_event.set()
 
-            # 关键：先取出数据并清空缓冲区，避免并发竞争导致新数据丢失
-            # 新的音频数据会进入干净的 buffer
+            # 取出数据并清空缓冲区，避免并发竞争
             combined_audio = self.audio_buffer.get_combined_audio()
-            audio_duration_s = len(combined_audio) / 32000
+            audio_duration_s = len(combined_audio) / 32000  # 假设32kHz采样率
             self.audio_buffer.clear()
 
-            logger.info(f"Processing buffered audio: {len(combined_audio)} bytes, duration: {audio_duration_s:.2f}s")
+            logger.info(f"Audio buffer ready: {len(combined_audio)} bytes, duration: {audio_duration_s:.2f}s")
 
+            return AudioInputResult(
+                success=True,
+                audio_bytes=combined_audio,
+                audio_duration_s=audio_duration_s
+            )
+
+        except Exception as e:
+            logger.error(f"Error processing audio input buffer: {e}", exc_info=True)
+            return AudioInputResult(
+                success=False,
+                error_message=str(e)
+            )
+
+    async def perform_vad_and_asr(
+            self,
+            audio_bytes: bytes,
+            audio_duration_s: float
+    ) -> VADASRResult:
+        """
+        执行VAD检测和ASR识别
+
+        对音频数据进行语音活动检测(VAD)和自动语音识别(ASR)处理。
+        这是音频输入处理的核心步骤，将音频转换为文本。
+
+        Args:
+            audio_bytes: PCM格式的音频字节数据
+            audio_duration_s: 音频时长(秒)，用于日志和状态报告
+
+        Returns:
+            VADASRResult: 包含VAD和ASR处理结果
+                - has_speech: 是否检测到语音
+                - asr_text: ASR识别出的文本
+                - speech_ratio: 语音占比
+                - confidence: 置信度
+        """
+        try:
             # VAD检测
             await self.send_callback('status', '正在进行语音活动检测...')
-            audio_b64 = base64.b64encode(combined_audio).decode('utf-8')
+            audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
             vad_result = await self.vad_service.detect_speech(audio_b64)
             await self.send_callback('vad_result', vad_result)
 
@@ -266,16 +341,19 @@ class AgenticTestAgent:
                                          "has_speech": vad_result.get("has_speech", False),
                                          "speech_ratio": vad_result.get("speech_ratio", 0.0),
                                          "audio_duration_s": audio_duration_s
-                                     }
-                                     )
+                                     })
 
             if not vad_result.get('has_speech'):
                 await self.send_callback('status', '未检测到语音')
-                return
+                return VADASRResult(
+                    success=True,
+                    has_speech=False,
+                    speech_ratio=vad_result.get('speech_ratio', 0.0)
+                )
 
             # ASR识别
             await self.send_callback('status', '正在识别语音...')
-            wav_audio_b64 = AudioConverter.pcm_to_wav_base64(combined_audio)
+            wav_audio_b64 = AudioConverter.pcm_to_wav_base64(audio_bytes)
 
             asr_result = await self.asr_service.recognize_speech(wav_audio_b64, audio_format="wav")
             await self.send_callback('transcript_final', asr_result, {
@@ -284,34 +362,108 @@ class AgenticTestAgent:
                 'audio_duration_s': audio_duration_s
             })
 
-            if not asr_result.strip():
+            asr_text = asr_result.strip()
+            if not asr_text:
                 await self.send_callback('status', '语音识别结果为空')
-                return
+                return VADASRResult(
+                    success=True,
+                    has_speech=True,
+                    asr_text="",
+                    speech_ratio=vad_result.get('speech_ratio', 0.0)
+                )
 
-            self.current_asr_result = asr_result.strip()
-            if asr_result.strip() == '<noise>':
-                await self.send_callback('status', '语音识别结果为<noise>')
-                return
+            # 更新ASR结果记录
+            self.current_asr_result = asr_text
+            if asr_text != '<noise>':
+                self.current_asr_true_result = asr_text
+                self.real_voice_active_time = time.perf_counter()
 
-            self.current_asr_true_result = asr_result.strip()
-            self.real_voice_active_time = time.perf_counter()
+            logger.info(f"ASR result: '{asr_text}'")
 
-            # 更新设备状态
-            # await self.send_callback('status', '查询设备状态...')
+            return VADASRResult(
+                success=True,
+                has_speech=True,
+                asr_text=asr_text,
+                speech_ratio=vad_result.get('speech_ratio', 0.0),
+                confidence=vad_result.get('confidence', 0.8)
+            )
+
+        except Exception as e:
+            logger.error(f"Error in VAD/ASR processing: {e}", exc_info=True)
+            await self.send_callback('error', f'VAD/ASR处理失败: {str(e)}')
+            return VADASRResult(
+                success=False,
+                error_message=str(e)
+            )
+
+    # ========================================================================
+    # 云端大脑处理层 (Brain Layer)
+    # 负责: NLP处理、业务逻辑、决策生成
+    # 此层的函数可独立测试和调试
+    # ========================================================================
+
+    async def process_brain(
+            self,
+            asr_text: str,
+            context: Optional[Dict[str, Any]] = None
+    ) -> BrainProcessResult:
+        """
+        云端大脑处理核心函数
+
+        这是系统的核心处理单元，类似于传统架构中的NLP层。
+        接收ASR识别的文本，进行业务逻辑处理，生成下一步行动。
+
+        此函数设计为可独立测试:
+        - 可以直接调用此函数传入模拟的ASR文本进行调试
+        - 返回结构化的结果对象，便于断言和验证
+        - 不依赖外部音频输入，纯文本处理
+
+        Args:
+            asr_text: ASR识别出的文本
+            context: 可选的上下文信息，包含:
+                - current_query: 当前查询
+                - loop_step: 当前循环步数
+                - device_status: 设备状态
+
+        Returns:
+            BrainProcessResult: 云端大脑处理结果
+                - next_query: 生成的下一个查询
+                - should_continue: 是否应该继续对话
+                - ai_response: AI响应文本
+                - analysis: 分析结果详情
+        """
+        try:
+            context = context or {}
+            await self.send_callback('status', '云端大脑正在处理...')
+            await self.send_callback('brain_input', asr_text)
+
+            # 检查noise结果
+            if asr_text == '<noise>':
+                return BrainProcessResult(
+                    success=True,
+                    next_query="",
+                    should_continue=False,
+                    ai_response="检测到噪音，请重新说话",
+                    analysis={'type': 'noise_detected'}
+                )
+
+            # 更新设备状态(可选)
             # await self.update_device_status()
 
             # 调用判断App分析结果
             # judge_result = await self.call_judge_app(
-            #     asr_result,
+            #     asr_text,
             #     self.current_device_status,
             #     self.previous_device_status
             # )
             # await self.log_event('app_call', json.dumps(judge_result), {'app_id': self.JUDGE_APP_ID})
 
             # 生成下一个查询
-            # next_query = await self.generate_next_query(judge_result, asr_result)
+            # next_query = await self.generate_next_query(judge_result, asr_text)
 
+            # 当前使用硬编码的测试查询
             next_query = "打开一体机的灯光"
+
             if next_query and next_query.strip():
                 self.current_query = next_query
                 await self.send_callback('log', f'生成新查询: {self.current_query}')
@@ -320,11 +472,258 @@ class AgenticTestAgent:
                     'next_query': next_query,
                     'should_continue': True
                 })
+
+                await self.log_event('brain_process', f'ASR: {asr_text} -> Query: {next_query}', {
+                    'asr_text': asr_text,
+                    'next_query': next_query,
+                    'loop_step': self.loop_step
+                })
+
+                return BrainProcessResult(
+                    success=True,
+                    next_query=next_query,
+                    should_continue=True,
+                    ai_response=next_query,
+                    analysis={
+                        'asr_text': asr_text,
+                        'generated_query': next_query
+                    }
+                )
+            else:
+                await self.send_callback('status', '对话完成，等待新的音频输入...')
+                await self.send_callback('ai_response', '好的，我已经了解了当前情况。')
+                return BrainProcessResult(
+                    success=True,
+                    next_query="",
+                    should_continue=False,
+                    ai_response='好的，我已经了解了当前情况。'
+                )
+
+        except Exception as e:
+            logger.error(f"Error in brain processing: {e}", exc_info=True)
+            await self.send_callback('error', f'云端大脑处理失败: {str(e)}')
+            return BrainProcessResult(
+                success=False,
+                error_message=str(e)
+            )
+
+    async def process_brain_with_device_context(
+            self,
+            asr_text: str
+    ) -> BrainProcessResult:
+        """
+        带设备上下文的云端大脑处理
+
+        便捷方法，自动包含设备状态上下文调用云端大脑处理。
+
+        Args:
+            asr_text: ASR识别出的文本
+
+        Returns:
+            BrainProcessResult: 云端大脑处理结果
+        """
+        context = {
+            'current_query': self.current_query,
+            'loop_step': self.loop_step,
+            'device_status': {
+                'current': self.current_device_status,
+                'previous': self.previous_device_status
+            }
+        }
+        return await self.process_brain(asr_text, context)
+
+    # ========================================================================
+    # 音频输出层 (Audio Output Layer)
+    # 负责: TTS生成、扬声器播报
+    # ========================================================================
+
+    async def generate_and_play_audio(
+            self,
+            text: str,
+            metadata: Optional[Dict[str, Any]] = None
+    ) -> AudioOutputResult:
+        """
+        生成TTS音频并发送到前端播放
+
+        将文本转换为语音(TTS)，并通过回调发送到前端进行播放。
+        这是音频输出处理的核心步骤。
+
+        Args:
+            text: 要转换为语音的文本
+            metadata: 可选的元数据，会随音频一起发送
+
+        Returns:
+            AudioOutputResult: 音频输出处理结果
+                - audio_data: 生成的TTS音频数据
+                - text: 原始文本
+        """
+        try:
+            if not text or not text.strip():
+                await self.send_callback('status', '文本为空，跳过TTS')
+                return AudioOutputResult(
+                    success=True,
+                    text=""
+                )
+
+            # Step 1: 生成TTS音频
+            await self.send_callback('status', '正在生成语音...')
+            tts_result = await self.tts_service.generate_speech(text)
+            self.real_voice_active_time = time.perf_counter()
+
+            await self.log_event('tts_generated', text, {
+                'audio_length': len(tts_result),
+                'loop_step': self.loop_step
+            })
+
+            # Step 2: 发送音频到前端播放
+            playback_metadata = metadata or {}
+            playback_metadata.update({
+                'type': 'tts',
+                'text': text,
+                'loop_step': self.loop_step
+            })
+
+            await self.send_callback('audio_play', tts_result, playback_metadata)
+
+            logger.info(f"TTS generated and sent: {len(tts_result)} bytes for text '{text[:50]}...'")
+
+            return AudioOutputResult(
+                success=True,
+                audio_data=tts_result,
+                text=text
+            )
+
+        except Exception as e:
+            logger.error(f"Error generating and playing audio: {e}", exc_info=True)
+            await self.send_callback('error', f'TTS生成失败: {str(e)}')
+            return AudioOutputResult(
+                success=False,
+                text=text,
+                error_message=str(e)
+            )
+
+    async def wait_for_speaker_response(
+            self,
+            wait_time: float = 3.0
+    ) -> bool:
+        """
+        等待智能音响响应
+
+        在发送TTS后等待智能音响处理和响应。
+
+        Args:
+            wait_time: 等待时间(秒)
+
+        Returns:
+            bool: 等待是否完成
+        """
+        try:
+            await self.send_callback('status', '等待智能音响回应...')
+            await asyncio.sleep(wait_time)
+            return True
+        except asyncio.CancelledError:
+            logger.info("Speaker wait cancelled")
+            return False
+        except Exception as e:
+            logger.error(f"Error waiting for speaker: {e}")
+            return False
+
+    # ========================================================================
+    # 主循环和协调方法
+    # ========================================================================
+
+    async def execute_full_loop(self) -> bool:
+        """
+        执行完整的Agent循环步骤
+
+        协调音频输出流程，使用音频输出层函数完成TTS生成和播放。
+        此方法现在是音频输出的协调器，职责清晰。
+
+        Returns:
+            bool: 是否应该继续循环
+        """
+        try:
+            # 检查noise结果快速返回
+            if self.current_asr_result == '<noise>' and time.perf_counter() - self.real_voice_active_time < 15:
+                return True
+
+            # 使用音频输出层: 生成TTS并发送到前端播放
+            audio_output_result = await self.generate_and_play_audio(self.current_query)
+
+            if not audio_output_result.success:
+                logger.error(f"Audio output failed: {audio_output_result.error_message}")
+                return False
+
+            # 等待智能音响响应
+            await self.wait_for_speaker_response(wait_time=3.0)
+
+            # 等待音频输入
+            await self.send_callback('status', '等待音频输入...')
+            return True
+
+        except Exception as e:
+            logger.error(f"Error in execute_full_loop: {e}", exc_info=True)
+            await self.send_callback('error', f'循环执行失败: {str(e)}')
+            return False
+
+    async def process_audio(self, audio_data: str, audio_format: str = 'webm'):
+        """
+        处理接收到的音频数据
+
+        这是音频处理的协调方法，组织音频输入层、云端大脑处理层的调用。
+        流程: 音频缓冲 -> VAD/ASR -> 云端大脑处理 -> 音频输出
+
+        Args:
+            audio_data: Base64编码的音频数据
+            audio_format: 音频格式，默认webm
+        """
+        if not self.is_running:
+            return
+
+        try:
+            # ===== 音频输入层: 缓冲处理 =====
+            input_result = await self.process_audio_input_buffer(audio_data, audio_format)
+
+            if not input_result.success:
+                await self.send_callback('error', f'音频输入处理失败: {input_result.error_message}')
+                return
+
+            # 缓冲区未满，等待更多数据
+            if input_result.audio_bytes is None:
+                return
+
+            # ===== 音频输入层: VAD和ASR处理 =====
+            vad_asr_result = await self.perform_vad_and_asr(
+                input_result.audio_bytes,
+                input_result.audio_duration_s
+            )
+
+            if not vad_asr_result.success:
+                await self.send_callback('error', f'VAD/ASR处理失败: {vad_asr_result.error_message}')
+                return
+
+            # 未检测到语音或结果为空
+            if not vad_asr_result.has_speech or not vad_asr_result.asr_text:
+                return
+
+            # 检测到noise
+            if vad_asr_result.asr_text == '<noise>':
+                await self.send_callback('status', '语音识别结果为<noise>')
+                return
+
+            # ===== 云端大脑处理层: NLP处理和决策 =====
+            brain_result = await self.process_brain_with_device_context(vad_asr_result.asr_text)
+
+            if not brain_result.success:
+                await self.send_callback('error', f'云端大脑处理失败: {brain_result.error_message}')
+                return
+
+            # 根据云端大脑决策执行下一步
+            if brain_result.should_continue and brain_result.next_query:
                 await asyncio.sleep(1.0)
                 await self.execute_full_loop()
             else:
                 await self.send_callback('status', '对话完成，等待新的音频输入...')
-                await self.send_callback('ai_response', '好的，我已经了解了当前情况。')
 
         except Exception as e:
             logger.error(f"Error processing audio: {e}", exc_info=True)
