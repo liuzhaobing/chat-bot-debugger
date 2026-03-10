@@ -235,23 +235,33 @@ async def agentic_test_websocket(
 
             except json.JSONDecodeError as e:
                 logger.error(f"Invalid JSON received: {e}")
-                await connection_manager.send_message(
-                    session_id,
-                    {"type": "error", "content": "JSON格式错误"}
-                )
+                # 只在连接存在时尝试发送消息
+                if session_id in connection_manager.active_connections:
+                    try:
+                        await connection_manager.send_message(
+                            session_id,
+                            {"type": "error", "content": "JSON格式错误"}
+                        )
+                    except Exception:
+                        pass  # 忽略发送失败
 
             except Exception as e:
-                logger.error(f"Error processing message: {e}")
-                await connection_manager.send_message(
-                    session_id,
-                    {
-                        "type": "error",
-                        "content": f"消息处理错误: {str(e)}"
-                    }
-                )
+                logger.error(f"Error processing message: {e}", exc_info=True)
+                # 只在连接存在时尝试发送消息
+                if session_id in connection_manager.active_connections:
+                    try:
+                        await connection_manager.send_message(
+                            session_id,
+                            {
+                                "type": "error",
+                                "content": f"消息处理错误: {str(e)}"
+                            }
+                        )
+                    except Exception:
+                        pass  # 忽略发送失败
 
     except Exception as e:
-        logger.error(f"WebSocket connection error: {e}")
+        logger.error(f"WebSocket connection error: {e}", exc_info=True)
 
     finally:
         # 停止 agent

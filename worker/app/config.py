@@ -2,16 +2,22 @@
 配置管理模块
 使用 Pydantic Settings 管理环境变量
 """
+import os
+from pathlib import Path
 from typing import List, Optional
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# 获取 worker 目录的绝对路径
+WORKER_DIR = Path(__file__).parent.parent.resolve()
+ENV_FILE_PATH = WORKER_DIR / ".env"
+
 
 class Settings(BaseSettings):
     """应用配置类"""
-    
+
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=str(ENV_FILE_PATH),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore"
