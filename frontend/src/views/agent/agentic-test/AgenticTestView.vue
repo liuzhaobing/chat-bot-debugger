@@ -343,7 +343,7 @@ export default {
         
         this.audioProcessor.onVoiceActivity = (isActive) => {
           if (isActive) {
-            this.addTranscriptMessage('user', '', true, false)
+            // this.addTranscriptMessage('user', '', true, false)
             this.addSystemLog('speech', 'info', '检测到语音输入开始')
           } else {
             this.addSystemLog('speech', 'info', '语音输入结束')

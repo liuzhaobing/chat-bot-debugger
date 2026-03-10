@@ -69,6 +69,13 @@ class AgenticTestAgent:
         self.previous_device_status: Dict = {}
         self.current_device_status: Dict = {}
 
+        # 音频缓冲处理器
+        from app.utils.audio_utils import AudioBufferProcessor
+        self.audio_buffer = AudioBufferProcessor()
+
+        # 音频输入等待事件
+        self._audio_input_event = asyncio.Event()
+
         logger.info(
             f"AgenticTestAgent initialized for session {session_id} with IOT config: "
             f"env={self.iot_config.get('env')}, has_token={bool(self.iot_config.get('token'))}"
@@ -101,8 +108,17 @@ class AgenticTestAgent:
                     should_continue = await self.execute_full_loop()
 
                     if not should_continue:
-                        await self.send_callback('status', '循环完成，等待新的音频输入...')
-                        break
+                        # 等待音频输入，保持 is_running 为 True
+                        await self.send_callback('status', '等待新的音频输入...')
+                        # 清除事件标志，等待 process_audio 触发
+                        self._audio_input_event.clear()
+                        # 等待音频输入事件，最多等待 300 秒
+                        try:
+                            await asyncio.wait_for(self._audio_input_event.wait(), timeout=300.0)
+                            await self.send_callback('status', '收到音频输入，继续处理...')
+                        except asyncio.TimeoutError:
+                            await self.send_callback('status', '等待音频超时，继续监听...')
+                            continue
 
                     await asyncio.sleep(1.0)
 
@@ -198,16 +214,52 @@ class AgenticTestAgent:
             return
 
         try:
+            # 解码音频数据
+            audio_bytes = base64.b64decode(audio_data)
+
             await self.log_event('mic_capture', '接收到音频数据', {
                 'data_length': len(audio_data),
                 'format': audio_format,
                 'loop_step': self.loop_step
             })
 
+            # 所有格式统一使用缓冲处理
+            self.audio_buffer.add_audio(audio_bytes)
+
+            # 检查是否达到处理阈值
+            if not self.audio_buffer.should_process():
+                buffer_stats = self.audio_buffer.get_stats()
+                logger.debug(
+                    f"Audio buffer not ready: {buffer_stats['buffer_size']}/{buffer_stats['target_size']} bytes"
+                )
+                return
+
+            # 触发音频输入事件，通知主循环
+            self._audio_input_event.set()
+
+            # 关键：先取出数据并清空缓冲区，避免并发竞争导致新数据丢失
+            # 新的音频数据会进入干净的 buffer
+            combined_audio = self.audio_buffer.get_combined_audio()
+            audio_duration_s = len(combined_audio) / 32000
+            self.audio_buffer.clear()
+
+            logger.info(f"Processing buffered audio: {len(combined_audio)} bytes, duration: {audio_duration_s:.2f}s")
+
             # VAD检测
             await self.send_callback('status', '正在进行语音活动检测...')
-            vad_result = await self.vad_service.detect_speech(audio_data)
+            audio_b64 = base64.b64encode(combined_audio).decode('utf-8')
+            vad_result = await self.vad_service.detect_speech(audio_b64)
             await self.send_callback('vad_result', vad_result)
+
+            # 发送VAD状态
+            await self.send_callback('vad_status',
+                "detected" if vad_result.get('has_speech') else "no_speech",
+                {
+                    "has_speech": vad_result.get("has_speech", False),
+                    "speech_ratio": vad_result.get("speech_ratio", 0.0),
+                    "audio_duration_s": audio_duration_s
+                }
+            )
 
             if not vad_result.get('has_speech'):
                 await self.send_callback('status', '未检测到语音')
@@ -215,15 +267,13 @@ class AgenticTestAgent:
 
             # ASR识别
             await self.send_callback('status', '正在识别语音...')
-
-            # 转换音频格式
-            audio_bytes = base64.b64decode(audio_data)
-            wav_audio_b64 = AudioConverter.pcm_to_wav_base64(audio_bytes)
+            wav_audio_b64 = AudioConverter.pcm_to_wav_base64(combined_audio)
 
             asr_result = await self.asr_service.recognize_speech(wav_audio_b64, audio_format="wav")
             await self.send_callback('transcript_final', asr_result, {
                 'confidence': vad_result.get('confidence', 0.8),
-                'loop_step': self.loop_step
+                'loop_step': self.loop_step,
+                'audio_duration_s': audio_duration_s
             })
 
             if not asr_result.strip():
@@ -466,11 +516,20 @@ class AgenticTestAgent:
     async def stop(self):
         """停止智能体"""
         self.is_running = False
+
+        # 触发事件，解除可能的等待
+        if hasattr(self, '_audio_input_event'):
+            self._audio_input_event.set()
+
         await self.send_callback('status', '智能体已停止')
 
         self.previous_device_status = {}
         self.current_device_status = {}
         self.loop_step = 0
+
+        # 清空音频缓冲区
+        if hasattr(self, 'audio_buffer'):
+            self.audio_buffer.clear()
 
         logger.info(f"Agent stopped for session {self.session_id}")
 

@@ -40,8 +40,8 @@ async def agentic_test_websocket(
     user_id = uuid.uuid4().hex
 
     # 初始化状态
-    audio_buffer = []
-    audio_packet_count = 0
+    from app.utils.audio_utils import AudioBufferProcessor
+    audio_buffer = AudioBufferProcessor()
     agent = None
     iot_config = {}
 
@@ -145,8 +145,7 @@ async def agentic_test_websocket(
                         await agent.stop()
 
                     # 清空音频缓冲区
-                    audio_buffer = []
-                    audio_packet_count = 0
+                    audio_buffer.clear()
 
                     await connection_manager.send_message(
                         session_id,
@@ -183,7 +182,7 @@ async def agentic_test_websocket(
                         # 没有 Agent，直接进行 VAD+ASR
                         await _process_audio_without_agent(
                             session_id, audio_data, audio_format,
-                            audio_buffer, audio_packet_count
+                            audio_buffer, 0
                         )
 
                 elif message_type == "intervention":
@@ -289,93 +288,77 @@ async def _process_audio_without_agent(
     session_id: str,
     audio_data: str,
     audio_format: str,
-    audio_buffer: list,
-    audio_packet_count: int
+    audio_buffer,  # AudioBufferProcessor instance
+    audio_packet_count: int  # kept for backward compatibility
 ):
     """处理没有 Agent 时的音频数据"""
     from app.services.vad_service import VADService
     from app.services.asr_service import ASRService
-    from app.utils.audio_utils import AudioConverter
+    from app.utils.audio_utils import AudioConverter, AudioBufferProcessor
 
     try:
         # 解码base64音频数据
         audio_bytes = base64.b64decode(audio_data)
 
-        # PCM格式使用缓冲处理
-        if audio_format == 'pcm':
-            # 添加到缓冲区
-            audio_buffer.append(audio_bytes)
-            audio_packet_count += 1
+        # 使用统一的缓冲处理器（兼容旧的 list 类型）
+        if not isinstance(audio_buffer, AudioBufferProcessor):
+            audio_buffer = AudioBufferProcessor()
 
-            # 缓冲策略：累积3秒的音频数据再处理
-            target_buffer_size = 96000  # 3秒 @ 16kHz, 16bit, mono
-            combined_audio = b''.join(audio_buffer)
+        # 所有格式统一使用缓冲处理
+        audio_buffer.add_audio(audio_bytes)
 
-            if len(combined_audio) >= target_buffer_size:
-                logger.info(f"Processing buffered audio: {len(combined_audio)} bytes")
+        # 检查是否达到处理阈值
+        if not audio_buffer.should_process():
+            logger.debug(
+                f"Audio buffer not ready: {audio_buffer.get_buffer_size()}/{audio_buffer.target_buffer_size} bytes"
+            )
+            return
 
-                # VAD+ASR处理
-                vad_service = VADService()
-                asr_service = ASRService()
+        # 关键：先取出数据并清空缓冲区，避免并发竞争导致新数据丢失
+        combined_audio = audio_buffer.get_combined_audio()
+        audio_duration_s = len(combined_audio) / 32000
+        audio_buffer.clear()
 
-                # VAD检测
-                audio_b64 = base64.b64encode(combined_audio).decode('utf-8')
-                vad_result = await vad_service.detect_speech(audio_b64)
+        logger.info(f"Processing buffered audio: {len(combined_audio)} bytes, duration: {audio_duration_s:.2f}s")
 
-                # 发送VAD状态
-                await connection_manager.send_message(
-                    session_id,
-                    {
-                        "type": "vad_status",
-                        "content": "detected" if vad_result.get('has_speech') else "no_speech",
-                        "metadata": {
-                            "has_speech": vad_result.get("has_speech", False),
-                            "speech_ratio": vad_result.get("speech_ratio", 0.0),
-                            "audio_duration_s": len(combined_audio) / 32000
-                        }
+        # VAD+ASR处理
+        vad_service = VADService()
+        asr_service = ASRService()
+
+        # VAD检测
+        audio_b64 = base64.b64encode(combined_audio).decode('utf-8')
+        vad_result = await vad_service.detect_speech(audio_b64)
+
+        # 发送VAD状态
+        await connection_manager.send_message(
+            session_id,
+            {
+                "type": "vad_status",
+                "content": "detected" if vad_result.get('has_speech') else "no_speech",
+                "metadata": {
+                    "has_speech": vad_result.get("has_speech", False),
+                    "speech_ratio": vad_result.get("speech_ratio", 0.0),
+                    "audio_duration_s": audio_duration_s
+                }
+            }
+        )
+
+        # ASR识别
+        if vad_result.get('has_speech'):
+            wav_audio_b64 = AudioConverter.pcm_to_wav_base64(combined_audio)
+            asr_result = await asr_service.recognize_speech(wav_audio_b64, audio_format="wav")
+
+            await connection_manager.send_message(
+                session_id,
+                {
+                    "type": "transcript_final",
+                    "content": asr_result,
+                    "metadata": {
+                        "session_id": session_id,
+                        "audio_duration_s": audio_duration_s
                     }
-                )
-
-                # ASR识别
-                if vad_result.get('has_speech'):
-                    wav_audio_b64 = AudioConverter.pcm_to_wav_base64(combined_audio)
-                    asr_result = await asr_service.recognize_speech(wav_audio_b64, audio_format="wav")
-
-                    await connection_manager.send_message(
-                        session_id,
-                        {
-                            "type": "transcript_final",
-                            "content": asr_result,
-                            "metadata": {
-                                "session_id": session_id,
-                                "audio_duration_s": len(combined_audio) / 32000
-                            }
-                        }
-                    )
-
-                # 清空缓冲区
-                audio_buffer.clear()
-                audio_packet_count = 0
-        else:
-            # 其他格式直接处理
-            vad_service = VADService()
-            asr_service = ASRService()
-
-            audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
-            vad_result = await vad_service.detect_speech(audio_b64)
-
-            if vad_result.get('has_speech'):
-                wav_audio_b64 = AudioConverter.pcm_to_wav_base64(audio_bytes)
-                asr_result = await asr_service.recognize_speech(wav_audio_b64, audio_format="wav")
-
-                await connection_manager.send_message(
-                    session_id,
-                    {
-                        "type": "transcript_final",
-                        "content": asr_result,
-                        "metadata": {"session_id": session_id}
-                    }
-                )
+                }
+            )
 
     except Exception as e:
         logger.error(f"Error processing audio without agent: {e}")
@@ -420,7 +403,8 @@ async def vad_asr_test_websocket(
     actual_app_id = app_id or settings.asr_app_id
 
     # 初始化状态
-    audio_buffer = []
+    from app.utils.audio_utils import AudioBufferProcessor
+    audio_buffer = AudioBufferProcessor()
     is_testing = False
     vad_service = None
     asr_service = None
@@ -492,7 +476,7 @@ async def vad_asr_test_websocket(
                     vad_service = VADService()
                     asr_service = ASRService()
                     is_testing = True
-                    audio_buffer = []
+                    audio_buffer.clear()
 
                     logger.info(f"VAD+ASR services initialized: VAD level={vad_service.vad_level}")
 
@@ -516,7 +500,7 @@ async def vad_asr_test_websocket(
 
                     # 清理服务实例
                     is_testing = False
-                    audio_buffer = []
+                    audio_buffer.clear()
                     vad_service = None
                     asr_service = None
 
@@ -634,113 +618,70 @@ async def _process_vad_asr_audio_direct(
     websocket: WebSocket,
     audio_data: str,
     audio_format: str,
-    audio_buffer: list,
+    audio_buffer,  # AudioBufferProcessor instance
     app_id: str,
     vad_service,
     asr_service
 ):
     """处理 VAD+ASR 测试的音频数据（直接使用 WebSocket）"""
-    from app.utils.audio_utils import AudioConverter
+    from app.utils.audio_utils import AudioConverter, AudioBufferProcessor
 
     try:
         # 解码音频
         audio_bytes = base64.b64decode(audio_data)
 
-        # PCM 格式使用缓冲处理
-        if audio_format == 'pcm':
-            audio_buffer.append(audio_bytes)
+        # 使用统一的缓冲处理器（兼容旧的 list 类型）
+        if not isinstance(audio_buffer, AudioBufferProcessor):
+            audio_buffer = AudioBufferProcessor()
 
-            # 缓冲策略：累积3秒音频
-            target_buffer_size = 96000  # 3秒 @ 16kHz, 16bit, mono
-            max_buffer_size = 192000  # 6秒
-            combined_audio = b''.join(audio_buffer)
+        # 所有格式统一使用缓冲处理
+        audio_buffer.add_audio(audio_bytes)
 
-            logger.debug(f"Audio buffer: {len(combined_audio)} bytes, chunks: {len(audio_buffer)}")
+        # 检查是否达到处理阈值
+        if not audio_buffer.should_process():
+            logger.debug(
+                f"Audio buffer not ready: {audio_buffer.get_buffer_size()}/{audio_buffer.target_buffer_size} bytes"
+            )
+            return
 
-            if len(combined_audio) >= target_buffer_size:
-                logger.info(f"Processing audio chunk: {len(combined_audio)} bytes")
+        # 关键：先取出数据并清空缓冲区，避免并发竞争导致新数据丢失
+        combined_audio = audio_buffer.get_combined_audio()
+        audio_duration_s = len(combined_audio) / 32000
+        audio_buffer.clear()
 
-                # VAD 检测
-                if vad_service:
-                    audio_b64 = base64.b64encode(combined_audio).decode('utf-8')
-                    vad_result = await vad_service.detect_speech(audio_b64)
+        logger.info(f"Processing buffered audio: {len(combined_audio)} bytes, duration: {audio_duration_s:.2f}s")
 
-                    # 发送 VAD 结果
-                    await _send_ws_message(websocket, {
-                        "type": "vad_status",
-                        "content": "detected" if vad_result.get('has_speech') else "no_speech",
-                        "metadata": {
-                            "has_speech": vad_result.get("has_speech", False),
-                            "confidence": vad_result.get("confidence", 0.0),
-                            "speech_ratio": vad_result.get("speech_ratio", 0.0),
-                            "audio_duration_s": len(combined_audio) / 32000
-                        }
-                    })
+        # VAD 检测
+        if vad_service:
+            audio_b64 = base64.b64encode(combined_audio).decode('utf-8')
+            vad_result = await vad_service.detect_speech(audio_b64)
 
-                    # ASR 识别
-                    if vad_result.get('has_speech') and asr_service:
-                        wav_audio_b64 = AudioConverter.pcm_to_wav_base64(combined_audio)
-                        asr_result = await asr_service.recognize_speech(wav_audio_b64, audio_format="wav")
+            # 发送 VAD 结果
+            await _send_ws_message(websocket, {
+                "type": "vad_status",
+                "content": "detected" if vad_result.get('has_speech') else "no_speech",
+                "metadata": {
+                    "has_speech": vad_result.get("has_speech", False),
+                    "confidence": vad_result.get("confidence", 0.0),
+                    "speech_ratio": vad_result.get("speech_ratio", 0.0),
+                    "audio_duration_s": audio_duration_s
+                }
+            })
 
-                        await _send_ws_message(websocket, {
-                            "type": "transcript_final",
-                            "content": asr_result,
-                            "metadata": {
-                                "app_id": app_id,
-                                "audio_duration_s": len(combined_audio) / 32000,
-                                "vad_confidence": vad_result.get("confidence", 0.0)
-                            }
-                        })
-
-                # 清空缓冲区
-                audio_buffer.clear()
-
-            elif len(combined_audio) > max_buffer_size:
-                # 缓冲区过大，强制处理
-                logger.warning(f"Buffer overflow, force processing")
-                if vad_service:
-                    audio_b64 = base64.b64encode(combined_audio).decode('utf-8')
-                    vad_result = await vad_service.detect_speech(audio_b64)
-
-                    if vad_result.get('has_speech') and asr_service:
-                        wav_audio_b64 = AudioConverter.pcm_to_wav_base64(combined_audio)
-                        asr_result = await asr_service.recognize_speech(wav_audio_b64, audio_format="wav")
-
-                        await _send_ws_message(websocket, {
-                            "type": "transcript_final",
-                            "content": asr_result,
-                            "metadata": {"app_id": app_id}
-                        })
-
-                # 保留最后1.5秒数据
-                keep_size = 48000
-                audio_buffer.clear()
-                audio_buffer.append(combined_audio[-keep_size:])
-
-        else:
-            # 其他格式直接处理
-            if vad_service:
-                audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
-                vad_result = await vad_service.detect_speech(audio_b64)
+            # ASR 识别
+            if vad_result.get('has_speech') and asr_service:
+                wav_audio_b64 = AudioConverter.pcm_to_wav_base64(combined_audio)
+                asr_result = await asr_service.recognize_speech(wav_audio_b64, audio_format="wav")
 
                 await _send_ws_message(websocket, {
-                    "type": "vad_status",
-                    "content": "detected" if vad_result.get('has_speech') else "no_speech",
+                    "type": "transcript_final",
+                    "content": asr_result,
                     "metadata": {
-                        "has_speech": vad_result.get("has_speech", False),
-                        "audio_duration_s": len(audio_bytes) / 32000
+                        "app_id": app_id,
+                        "audio_duration_s": audio_duration_s,
+                        "vad_confidence": vad_result.get("confidence", 0.0)
                     }
                 })
-
-                if vad_result.get('has_speech') and asr_service:
-                    wav_audio_b64 = AudioConverter.pcm_to_wav_base64(audio_bytes)
-                    asr_result = await asr_service.recognize_speech(wav_audio_b64, audio_format="wav")
-
-                    await _send_ws_message(websocket, {
-                        "type": "transcript_final",
-                        "content": asr_result,
-                        "metadata": {"app_id": app_id}
-                    })
 
     except Exception as e:
         logger.error(f"Error in VAD+ASR audio processing: {e}", exc_info=True)
