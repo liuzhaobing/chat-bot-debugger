@@ -246,7 +246,14 @@ async def agentic_test_websocket(
                         pass  # 忽略发送失败
 
             except Exception as e:
+                error_msg = str(e)
                 logger.error(f"Error processing message: {e}", exc_info=True)
+
+                # 检查是否是连接已断开的错误
+                if "not connected" in error_msg.lower() or "accept" in error_msg.lower():
+                    logger.info(f"WebSocket connection lost: {session_id}")
+                    break
+
                 # 只在连接存在时尝试发送消息
                 if session_id in connection_manager.active_connections:
                     try:
@@ -254,11 +261,14 @@ async def agentic_test_websocket(
                             session_id,
                             {
                                 "type": "error",
-                                "content": f"消息处理错误: {str(e)}"
+                                "content": f"消息处理错误: {error_msg}"
                             }
                         )
                     except Exception:
                         pass  # 忽略发送失败
+                else:
+                    # 连接已不存在，退出循环
+                    break
 
     except Exception as e:
         logger.error(f"WebSocket connection error: {e}", exc_info=True)

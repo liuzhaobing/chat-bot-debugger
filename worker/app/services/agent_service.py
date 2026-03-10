@@ -45,7 +45,7 @@ class AgenticTestAgent:
         self.is_running = False
         self.current_query = ""
         self.loop_step = 0
-        self.max_loop_steps = 10
+        self.max_loop_steps = 1000
 
         # IOT配置
         self.iot_config = iot_config or {
@@ -145,7 +145,7 @@ class AgenticTestAgent:
                 devices = devices_result.get('data', [])
                 await self.send_callback('log', f'发现 {len(devices)} 个设备')
 
-                for device in devices[:3]:
+                for device in devices:
                     device_guid = device.get('deviceGuid')
                     if device_guid:
                         status_result = await self.iot_service.get_device_status(
