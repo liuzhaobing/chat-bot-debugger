@@ -36,10 +36,46 @@ class RealtimeAudioProcessor {
   }
 
   /**
+   * 检查浏览器是否支持音频 API
+   */
+  checkBrowserSupport() {
+    const issues = []
+
+    if (!navigator.mediaDevices) {
+      issues.push('navigator.mediaDevices 不存在（需要 HTTPS 或 localhost）')
+    } else if (typeof navigator.mediaDevices.getUserMedia !== 'function') {
+      issues.push('getUserMedia API 不可用')
+    }
+
+    if (!window.AudioContext && !window.webkitAudioContext) {
+      issues.push('AudioContext API 不可用')
+    }
+
+    return {
+      supported: issues.length === 0,
+      issues,
+      isSecureContext: window.isSecureContext,
+      protocol: window.location.protocol,
+      hostname: window.location.hostname
+    }
+  }
+
+  /**
    * 初始化音频处理器
    */
   async initialize() {
     try {
+      // 检查浏览器支持
+      const support = this.checkBrowserSupport()
+      if (!support.supported) {
+        throw new Error(`浏览器不支持: ${support.issues.join(', ')}`)
+      }
+
+      // 非安全上下文警告
+      if (!support.isSecureContext && support.hostname !== 'localhost' && support.hostname !== '127.0.0.1') {
+        console.warn('非安全上下文，音频 API 可能受限')
+      }
+
       // 获取麦克风权限
       this.mediaStream = await navigator.mediaDevices.getUserMedia({
         audio: {

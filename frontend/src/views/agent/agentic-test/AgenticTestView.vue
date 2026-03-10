@@ -157,31 +157,35 @@ export default {
       activePanel: 'transcript', // 'transcript' | 'devices'
       showMainInterface: false,
       showVadAsrTest: false,
-      
+
       // 会话状态
       isSessionActive: false,
       isConnecting: false,
       connectionStatus: 'disconnected', // 'disconnected' | 'connecting' | 'connected' | 'active'
       sessionDuration: 0,
       sessionTimer: null,
-      
+
       // 音频状态（使用统一的RealtimeAudioProcessor）
       audioProcessor: null,
       hasAudioActivity: false,
       currentAudioLevel: 0,
       isMuted: false,
-      
+
+      // 音频播放器（用于TTS播放）
+      audioPlaybackContext: null,
+      currentPlayingAudio: null,
+
       // 数据
       transcriptMessages: [],
       systemLogs: [],
-      
+
       // IOT配置
       iotConfig: {
         token: '',
         familyId: '',
         env: 'test'
       },
-      
+
       // WebSocket
       websocket: null,
       reconnectAttempts: 0,
@@ -328,19 +332,36 @@ export default {
      */
     async initializeAudioProcessor() {
       try {
-        // 创建音频处理器实例
+        // 检查浏览器支持
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          const isSecure = window.isSecureContext
+          const protocol = window.location.protocol
+          const hostname = window.location.hostname
+
+          let errorMsg = '浏览器不支持音频功能'
+          if (!isSecure && hostname !== 'localhost' && hostname !== '127.0.0.1') {
+            errorMsg = `需要 HTTPS 或 localhost 访问才能使用麦克风（当前: ${protocol}//${hostname}）`
+          }
+
+          throw new Error(errorMsg)
+        }
+
+        // 1. 先初始化音频播放上下文（扬声器权限）
+        await this.initializeAudioPlaybackContext()
+
+        // 2. 创建音频处理器实例
         this.audioProcessor = new RealtimeAudioProcessor({
           sampleRate: 16000,
           channelCount: 1,
           bufferSize: 256
         })
-        
+
         // 设置回调函数
         this.audioProcessor.onAudioLevel = (level) => {
           this.currentAudioLevel = level
           this.hasAudioActivity = level > 0.02
         }
-        
+
         this.audioProcessor.onVoiceActivity = (isActive) => {
           if (isActive) {
             // this.addTranscriptMessage('user', '', true, false)
@@ -349,37 +370,89 @@ export default {
             this.addSystemLog('speech', 'info', '语音输入结束')
           }
         }
-        
+
         this.audioProcessor.onAudioData = (audioBytes) => {
           if (this.isWebSocketReady()) {
             this.sendRealTimeAudioData(audioBytes)
           }
         }
-        
+
         this.audioProcessor.onError = (error) => {
           this.addSystemLog('error', 'error', `音频处理错误: ${error.message}`)
           this.handleAudioError('audio_error', error)
         }
-        
-        // 初始化
+
+        // 初始化麦克风
         const initialized = await this.audioProcessor.initialize()
         if (!initialized) {
           throw new Error('音频处理器初始化失败')
         }
-        
+
         // 启动音频处理
         this.audioProcessor.start()
-        
+
         this.addSystemLog('audio', 'success', '实时音频处理器初始化成功', {
           sampleRate: 16000,
           bufferSize: 256,
-          latency: '16ms'
+          latency: '16ms',
+          playbackReady: !!this.audioPlaybackContext
         })
-        
+
       } catch (error) {
         console.error('音频处理器初始化失败:', error)
         this.addSystemLog('system', 'error', '音频处理器初始化失败', { error: error.message })
         throw error
+      }
+    },
+
+    /**
+     * 初始化音频播放上下文（用于TTS播放）
+     * 解决浏览器自动播放策略限制
+     */
+    async initializeAudioPlaybackContext() {
+      try {
+        // 创建用于播放的 AudioContext
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext
+        this.audioPlaybackContext = new AudioContextClass({ sampleRate: 24000 })
+
+        // 确保上下文处于运行状态（需要用户交互后才能激活）
+        if (this.audioPlaybackContext.state === 'suspended') {
+          await this.audioPlaybackContext.resume()
+          this.addSystemLog('audio', 'info', '音频播放上下文已激活')
+        }
+
+        this.addSystemLog('audio', 'success', '音频播放上下文初始化成功', {
+          state: this.audioPlaybackContext.state,
+          sampleRate: this.audioPlaybackContext.sampleRate
+        })
+
+        return true
+      } catch (error) {
+        console.error('初始化音频播放上下文失败:', error)
+        this.addSystemLog('audio', 'warning', `音频播放上下文初始化失败: ${error.message}`)
+        return false
+      }
+    },
+
+    /**
+     * 释放音频播放上下文
+     */
+    async releaseAudioPlaybackContext() {
+      try {
+        // 停止当前播放的音频
+        if (this.currentPlayingAudio) {
+          this.currentPlayingAudio.pause()
+          this.currentPlayingAudio = null
+        }
+
+        // 关闭音频上下文
+        if (this.audioPlaybackContext && this.audioPlaybackContext.state !== 'closed') {
+          await this.audioPlaybackContext.close()
+          this.audioPlaybackContext = null
+          this.addSystemLog('audio', 'info', '音频播放上下文已释放')
+        }
+      } catch (error) {
+        console.error('释放音频播放上下文失败:', error)
       }
     },
 
@@ -583,38 +656,190 @@ export default {
     handleWebSocketMessage(event) {
       try {
         const data = JSON.parse(event.data)
-        
+
         switch (data.type) {
           case 'transcript_partial':
             this.updatePartialTranscript(data.content)
             break
-            
+
           case 'transcript_final':
             this.addTranscriptMessage('user', data.content, false, true)
             break
-            
+
           case 'ai_response':
             this.addTranscriptMessage('agent', data.content, false, true)
             break
-            
+
           case 'ai_response_partial':
             this.updatePartialAIResponse(data.content)
             break
-            
+
+          case 'audio_play':
+            // 播放 TTS 音频
+            this.playAudioFromBase64(data.content, data.metadata?.type)
+            break
+
           case 'system_status':
             this.addSystemLog('ai', 'info', data.content)
             break
-            
+
+          case 'status':
+          case 'log':
+          case 'warning':
+          case 'vad_status':
+          case 'vad_result':
+            // 系统状态类消息，记录日志
+            this.addSystemLog('system', 'info', data.content, data.metadata)
+            break
+
           case 'error':
             this.addSystemLog('error', 'error', data.content, data.metadata)
             break
-            
+
           default:
             console.log('未知消息类型:', data.type, data)
         }
       } catch (error) {
         console.error('解析WebSocket消息失败:', error)
         this.addSystemLog('websocket', 'error', '消息解析失败')
+      }
+    },
+
+    /**
+     * 播放 Base64 编码的音频 - 使用 AudioContext 直接播放 PCM 数据
+     * 参考 dial-agent 的实现
+     */
+    async playAudioFromBase64(base64Audio, audioType = 'tts') {
+      if (!base64Audio) {
+        this.addSystemLog('audio', 'warning', '音频数据为空，跳过播放')
+        return
+      }
+
+      try {
+        // 停止之前播放的音频
+        if (this.currentPlayingAudio) {
+          try {
+            this.currentPlayingAudio.stop()
+          } catch (e) {
+            // 忽略已停止的错误
+          }
+          this.currentPlayingAudio = null
+        }
+
+        // 确保音频播放上下文存在且处于运行状态
+        if (!this.audioPlaybackContext) {
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext
+          this.audioPlaybackContext = new AudioContextClass({ sampleRate: 24000 })
+        }
+
+        if (this.audioPlaybackContext.state === 'suspended') {
+          await this.audioPlaybackContext.resume()
+        }
+
+        // 解码 base64 音频数据
+        const binaryString = atob(base64Audio)
+        const len = binaryString.length
+        const bytes = new Uint8Array(len)
+
+        for (let i = 0; i < len; i++) {
+          bytes[i] = binaryString.charCodeAt(i)
+        }
+
+        // 检测是否是 WAV 格式（有 RIFF 头）
+        const isWav = len >= 12 &&
+          bytes[0] === 0x52 && bytes[1] === 0x49 &&
+          bytes[2] === 0x46 && bytes[3] === 0x46
+
+        let float32Array
+        let sampleRate = 24000
+
+        if (isWav) {
+          // WAV 格式：解析头部获取采样率和数据偏移
+          const view = new DataView(bytes.buffer)
+          let dataOffset = 12
+          let dataLength = 0
+
+          // 查找 fmt 和 data 块
+          while (dataOffset < len - 8) {
+            const chunkId = String.fromCharCode(
+              bytes[dataOffset], bytes[dataOffset + 1],
+              bytes[dataOffset + 2], bytes[dataOffset + 3]
+            )
+            const chunkSize = view.getUint32(dataOffset + 4, true)
+
+            if (chunkId === 'fmt ') {
+              // 获取采样率 (位于 fmt 块偏移 12 处)
+              sampleRate = view.getUint32(dataOffset + 12, true)
+            } else if (chunkId === 'data') {
+              dataLength = chunkSize
+              break
+            }
+
+            dataOffset += 8 + chunkSize
+          }
+
+          // 确保数据长度是偶数（Int16 需要）
+          dataLength = Math.floor(dataLength / 2) * 2
+
+          if (dataLength > 0) {
+            // 从 WAV 文件中提取 PCM 数据
+            const pcmBytes = bytes.slice(dataOffset + 8, dataOffset + 8 + dataLength)
+            const pcmData = new Int16Array(pcmBytes.buffer)
+
+            // 转换 Int16 PCM 到 Float32
+            float32Array = new Float32Array(pcmData.length)
+            const scale = 1.0 / 32768.0
+            for (let i = 0; i < pcmData.length; i++) {
+              float32Array[i] = pcmData[i] * scale
+            }
+          }
+        } else {
+          // 假设是原始 PCM 数据，确保长度是偶数
+          const alignedLen = Math.floor(len / 2) * 2
+          const pcmData = new Int16Array(bytes.buffer, 0, alignedLen / 2)
+
+          // 转换 Int16 PCM 到 Float32
+          float32Array = new Float32Array(pcmData.length)
+          const scale = 1.0 / 32768.0
+          for (let i = 0; i < pcmData.length; i++) {
+            float32Array[i] = pcmData[i] * scale
+          }
+        }
+
+        if (!float32Array || float32Array.length === 0) {
+          throw new Error('无法解析音频数据')
+        }
+
+        // 创建 AudioBuffer
+        const audioBuffer = this.audioPlaybackContext.createBuffer(
+          1, // 单声道
+          float32Array.length,
+          sampleRate
+        )
+        audioBuffer.getChannelData(0).set(float32Array)
+
+        // 播放音频
+        const source = this.audioPlaybackContext.createBufferSource()
+        source.buffer = audioBuffer
+        source.connect(this.audioPlaybackContext.destination)
+
+        this.addSystemLog('audio', 'info', `开始播放${audioType === 'tts' ? 'TTS' : '音频'}`, {
+          sampleRate,
+          duration: (float32Array.length / sampleRate).toFixed(2) + 's'
+        })
+
+        source.onended = () => {
+          this.addSystemLog('audio', 'info', '音频播放完成')
+          this.currentPlayingAudio = null
+        }
+
+        source.start()
+        this.currentPlayingAudio = source
+
+      } catch (error) {
+        console.error('播放音频失败:', error)
+        this.addSystemLog('audio', 'error', `播放音频失败: ${error.message}`)
+        this.currentPlayingAudio = null
       }
     },
 
@@ -830,22 +1055,25 @@ export default {
     /**
      * 清理资源
      */
-    cleanup() {
+    async cleanup() {
       console.log('开始清理资源...')
-      
+
       // 停止会话计时器
       this.stopSessionTimer()
-      
+
       // 断开WebSocket
       this.disconnectFromWebSocket()
-      
-      // 销毁音频处理器
+
+      // 销毁音频处理器（释放麦克风）
       if (this.audioProcessor) {
         console.log('销毁音频处理器...')
         this.audioProcessor.destroy()
         this.audioProcessor = null
       }
-      
+
+      // 释放音频播放上下文（释放扬声器）
+      await this.releaseAudioPlaybackContext()
+
       // 重置状态
       this.isSessionActive = false
       this.isConnecting = false
@@ -853,7 +1081,7 @@ export default {
       this.hasAudioActivity = false
       this.currentAudioLevel = 0
       this.sessionDuration = 0
-      
+
       console.log('资源清理完成')
     }
   }

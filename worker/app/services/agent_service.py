@@ -201,7 +201,7 @@ class AgenticTestAgent:
 
             # Step 4: 等待音频输入
             await self.send_callback('status', '等待音频输入...')
-            return False  # 等待音频输入
+            return True
 
         except Exception as e:
             logger.error(f"Error in execute_full_loop: {e}", exc_info=True)
@@ -285,20 +285,21 @@ class AgenticTestAgent:
                 return
 
             # 更新设备状态
-            await self.send_callback('status', '查询设备状态...')
-            await self.update_device_status()
+            # await self.send_callback('status', '查询设备状态...')
+            # await self.update_device_status()
 
             # 调用判断App分析结果
-            judge_result = await self.call_judge_app(
-                asr_result,
-                self.current_device_status,
-                self.previous_device_status
-            )
-            await self.log_event('app_call', json.dumps(judge_result), {'app_id': self.JUDGE_APP_ID})
+            # judge_result = await self.call_judge_app(
+            #     asr_result,
+            #     self.current_device_status,
+            #     self.previous_device_status
+            # )
+            # await self.log_event('app_call', json.dumps(judge_result), {'app_id': self.JUDGE_APP_ID})
 
             # 生成下一个查询
-            next_query = await self.generate_next_query(judge_result, asr_result)
+            # next_query = await self.generate_next_query(judge_result, asr_result)
 
+            next_query = "打开一体机的灯光"
             if next_query and next_query.strip():
                 self.current_query = next_query
                 await self.send_callback('log', f'生成新查询: {self.current_query}')

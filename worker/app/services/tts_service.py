@@ -42,9 +42,6 @@ class TTSService:
         Returns:
             base64编码的音频数据
         """
-        if self._use_mock or settings.dev_mock_external_services:
-            return await self._generate_mock_speech(text)
-        
         try:
             headers = {
                 "Content-Type": "application/json",
