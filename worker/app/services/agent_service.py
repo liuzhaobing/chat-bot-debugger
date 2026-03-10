@@ -7,6 +7,7 @@ import asyncio
 import json
 import logging
 import base64
+import time
 from typing import Optional, Callable, Dict, Any
 from datetime import datetime
 
@@ -35,15 +36,19 @@ class AgenticTestAgent:
     QUERY_GENERATOR_APP_ID = "c7a27bd4e3cf49008ae99fc69817f155"
 
     def __init__(
-        self,
-        session_id: str,
-        send_callback: Callable,
-        iot_config: Optional[Dict[str, str]] = None
+            self,
+            session_id: str,
+            send_callback: Callable,
+            iot_config: Optional[Dict[str, str]] = None
     ):
         self.session_id = session_id
         self.send_callback = send_callback
         self.is_running = False
         self.current_query = ""
+        self.current_asr_result = "<noise>"
+        self.current_asr_true_result = ""
+        self.real_voice_active_time = 0.0  # 记录上一次语音结束的时间点
+
         self.loop_step = 0
         self.max_loop_steps = 1000
 
@@ -180,9 +185,12 @@ class AgenticTestAgent:
     async def execute_full_loop(self) -> bool:
         """执行完整的Agent循环步骤"""
         try:
+            if self.current_asr_result == '<noise>' and time.perf_counter() - self.real_voice_active_time < 15:
+                return True
             # Step 1: 生成TTS音频
             await self.send_callback('status', '正在生成语音...')
             tts_result = await self.tts_service.generate_speech(self.current_query)
+            self.real_voice_active_time = time.perf_counter()
             await self.log_event('tts_generated', self.current_query, {
                 'audio_length': len(tts_result),
                 'loop_step': self.loop_step
@@ -253,13 +261,13 @@ class AgenticTestAgent:
 
             # 发送VAD状态
             await self.send_callback('vad_status',
-                "detected" if vad_result.get('has_speech') else "no_speech",
-                {
-                    "has_speech": vad_result.get("has_speech", False),
-                    "speech_ratio": vad_result.get("speech_ratio", 0.0),
-                    "audio_duration_s": audio_duration_s
-                }
-            )
+                                     "detected" if vad_result.get('has_speech') else "no_speech",
+                                     {
+                                         "has_speech": vad_result.get("has_speech", False),
+                                         "speech_ratio": vad_result.get("speech_ratio", 0.0),
+                                         "audio_duration_s": audio_duration_s
+                                     }
+                                     )
 
             if not vad_result.get('has_speech'):
                 await self.send_callback('status', '未检测到语音')
@@ -280,9 +288,13 @@ class AgenticTestAgent:
                 await self.send_callback('status', '语音识别结果为空')
                 return
 
+            self.current_asr_result = asr_result.strip()
             if asr_result.strip() == '<noise>':
                 await self.send_callback('status', '语音识别结果为<noise>')
                 return
+
+            self.current_asr_true_result = asr_result.strip()
+            self.real_voice_active_time = time.perf_counter()
 
             # 更新设备状态
             # await self.send_callback('status', '查询设备状态...')
@@ -372,10 +384,10 @@ class AgenticTestAgent:
         return changes
 
     async def call_judge_app(
-        self,
-        asr_text: str,
-        current_status: Dict,
-        previous_status: Dict
+            self,
+            asr_text: str,
+            current_status: Dict,
+            previous_status: Dict
     ) -> Dict[str, Any]:
         """调用判断App分析ASR结果和设备状态变化"""
         try:
@@ -393,9 +405,9 @@ class AgenticTestAgent:
             return await self._get_mock_judge_result(asr_text)
 
     async def call_query_generator_app(
-        self,
-        test_scenario: str,
-        conversation_history: list
+            self,
+            test_scenario: str,
+            conversation_history: list
     ) -> Dict[str, Any]:
         """调用DeviceControlGenerator APP生成下一轮测试query"""
         try:
