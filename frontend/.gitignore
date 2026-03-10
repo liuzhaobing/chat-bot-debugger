@@ -2,8 +2,8 @@
 node_modules
 /dist
 
-
 # local env files
+.env
 .env.local
 .env.*.local
 
@@ -21,3 +21,16 @@ pnpm-debug.log*
 *.njsproj
 *.sln
 *.sw?
+
+# Vue specific
+*.local
+
+# Test coverage
+coverage/
+
+# Cache
+.cache/
+.eslintcache
+
+# OS
+Thumbs.db
