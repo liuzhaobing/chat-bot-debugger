@@ -460,11 +460,12 @@ class AgenticTestAgent:
             # )
             # await self.log_event('app_call', json.dumps(judge_result), {'app_id': self.JUDGE_APP_ID})
 
+            judge_result = {'should_continue': True, }
             # 生成下一个查询
-            # next_query = await self.generate_next_query(judge_result, asr_text)
+            next_query = await self.generate_next_query(judge_result, asr_text)
 
             # 当前使用硬编码的测试查询
-            next_query = "打开一体机的灯光"
+            # next_query = "打开一体机的灯光"
 
             if next_query and next_query.strip():
                 self.current_query = next_query
@@ -846,6 +847,8 @@ class AgenticTestAgent:
     async def call_query_generator_app(
             self,
             test_scenario: str,
+            family_devices: list,
+            current_device_status: Any,
             conversation_history: list
     ) -> Dict[str, Any]:
         """
@@ -853,6 +856,8 @@ class AgenticTestAgent:
 
         Args:
             test_scenario: 测试场景描述
+            family_devices: 家庭圈设备列表
+            current_device_status: 设备状态详情
             conversation_history: 对话历史 [{"role": "user|assistant", "content": "..."}]
 
         Returns:
@@ -872,10 +877,12 @@ class AgenticTestAgent:
             # 使用 BackendService 调用 QueryGenerator App
             result = await self.backend_service.invoke_app(
                 app_id=self.QUERY_GENERATOR_APP_ID,
-                message=f"生成测试查询: {test_scenario}",
-                context=conversation_history,
                 parameters={
-                    "test_scenario": test_scenario
+                    "test_scenario": test_scenario,
+                    "family_devices": family_devices,
+                    "conversation_history": conversation_history,
+                    "current_device_status": current_device_status,
+                    "current_time": datetime.now().strftime("%Y年%m月%d日%H:%M:%S"),
                 }
             )
 
@@ -915,7 +922,12 @@ class AgenticTestAgent:
             ]
 
             test_scenario = "测试厨电设备的语音控制功能"
-            query_result = await self.call_query_generator_app(test_scenario, conversation_history)
+            query_result = await self.call_query_generator_app(
+                test_scenario=test_scenario,
+                family_devices=[],
+                current_device_status=[],
+                conversation_history=conversation_history,
+            )
 
             await self.log_event('query_generated', json.dumps(query_result, ensure_ascii=False), {
                 'app_id': self.QUERY_GENERATOR_APP_ID,
@@ -927,7 +939,7 @@ class AgenticTestAgent:
             if not query_result.get('should_continue', True):
                 return ""
 
-            next_query = query_result.get('next_query', '')
+            next_query = query_result.get('user_input', '')
             if next_query:
                 await self.send_callback('log', f'生成测试意图: {query_result.get("test_intent", "N/A")}')
 
