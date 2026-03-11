@@ -13,7 +13,7 @@ import json
 import logging
 import base64
 import time
-from typing import Optional, Callable, Dict, Any, Tuple
+from typing import Optional, Callable, Dict, Any, Tuple, List
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -123,6 +123,7 @@ class AgenticTestAgent:
         self.backend_service = BackendService()
 
         # 设备状态缓存
+        self.family_devices: Dict = {}
         self.previous_device_status: Dict = {}
         self.current_device_status: Dict = {}
 
@@ -218,8 +219,20 @@ class AgenticTestAgent:
                 devices = devices_result.get('data', [])
                 await self.send_callback('log', f'发现 {len(devices)} 个设备')
 
+                self.family_devices = {}
                 for device in devices:
                     device_guid = device.get('deviceGuid')
+                    category_name = device.get('categoryName')
+                    nick_name = device.get('name')
+                    display_type = device.get('displayType')
+                    device_status = device.get('device_status')
+                    self.family_devices[device_guid] = {
+                        'device_guid': device_guid,
+                        'category_name': category_name,
+                        'nick_name': nick_name,
+                        'display_type': display_type,
+                        'device_status': device_status
+                    }
                     if device_guid:
                         status_result = await self.iot_service.get_device_status(
                             device_guid,
@@ -463,9 +476,6 @@ class AgenticTestAgent:
             judge_result = {'should_continue': True, }
             # 生成下一个查询
             next_query = await self.generate_next_query(judge_result, asr_text)
-
-            # 当前使用硬编码的测试查询
-            # next_query = "打开一体机的灯光"
 
             if next_query and next_query.strip():
                 self.current_query = next_query
@@ -846,44 +856,27 @@ class AgenticTestAgent:
 
     async def call_query_generator_app(
             self,
-            test_scenario: str,
-            family_devices: list,
-            current_device_status: Any,
-            conversation_history: list
+            message: Any,
     ) -> Dict[str, Any]:
         """
         调用DeviceControlGenerator APP生成下一轮测试query
 
         Args:
-            test_scenario: 测试场景描述
-            family_devices: 家庭圈设备列表
-            current_device_status: 设备状态详情
-            conversation_history: 对话历史 [{"role": "user|assistant", "content": "..."}]
+            message: 输入信息
 
         Returns:
             查询生成结果字典，包含:
-            - next_query: 下一个测试查询
-            - target_device_guid: 目标设备GUID
-            - target_device_name: 目标设备名称
-            - expected_device_changes: 预期的设备状态变化
-            - expected_response_keywords: 预期的响应关键词
-            - test_intent: 测试意图
-            - should_continue: 是否应继续测试
+             - user_input: 用户输入文本（下一个测试查询）
+             - device_guid: 目标设备 GUID
+             - device_type: 目标设备类型名称
+             - expected_response_semantic: 预期的响应语义
+             - should_continue: 是否应继续测试
         """
         try:
-            if settings.dev_mock_external_services:
-                return await self._get_mock_query_result(test_scenario)
-
             # 使用 BackendService 调用 QueryGenerator App
             result = await self.backend_service.invoke_app(
                 app_id=self.QUERY_GENERATOR_APP_ID,
-                parameters={
-                    "test_scenario": test_scenario,
-                    "family_devices": family_devices,
-                    "conversation_history": conversation_history,
-                    "current_device_status": current_device_status,
-                    "current_time": datetime.now().strftime("%Y年%m月%d日%H:%M:%S"),
-                }
+                message=message,
             )
 
             if result.success and result.content:
@@ -897,16 +890,16 @@ class AgenticTestAgent:
                     return parsed_result
                 except json.JSONDecodeError:
                     logger.warning(f"QueryGenerator app returned non-JSON content: {result.content[:100]}")
-                    return await self._get_mock_query_result(test_scenario)
+                    return await self._get_mock_query_result(message)
             else:
                 logger.warning(f"QueryGenerator app call failed: {result.error}")
-                return await self._get_mock_query_result(test_scenario)
+                return await self._get_mock_query_result(message)
 
         except Exception as e:
             logger.error(f"Query generator app call failed: {e}")
-            return await self._get_mock_query_result(test_scenario)
+            return await self._get_mock_query_result(message)
 
-    async def generate_next_query(self, judge_result: Dict[str, Any], asr_text: str) -> str:
+    async def generate_next_query(self, judge_result: Dict[str, Any], asr_text: str, conversation_history: List[Dict[str, Any]]) -> str:
         """根据判断结果生成下一个查询"""
         try:
             if not judge_result.get('should_continue', True):
@@ -921,12 +914,23 @@ class AgenticTestAgent:
                 {"role": "assistant", "content": asr_text}
             ]
 
-            test_scenario = "测试厨电设备的语音控制功能"
+            test_scenario = """
+打开烟机
+打开烟机灯光
+烟机调到最大档
+烟机风量最小
+调到中等风量
+烟机风力最弱
+烟机风量/风力调大/调高
+减弱烟机风量/风力
+烟机风量再小一点
+把烟机调到弱档/强档/爆炒档
+关烟机风量
+关闭烟机灯
+帮我把烟机关了
+            """.strip()
             query_result = await self.call_query_generator_app(
-                test_scenario=test_scenario,
-                family_devices=[],
-                current_device_status=[],
-                conversation_history=conversation_history,
+                message=f"""**测试场景**：\n\n{test_scenario}\n\n**家庭设备列表**：\n\n{self.family_devices}\n\n**对话历史**：\n\n{conversation_history}\n\n**当前设备状态**：\n\n[]""".strip(),
             )
 
             await self.log_event('query_generated', json.dumps(query_result, ensure_ascii=False), {

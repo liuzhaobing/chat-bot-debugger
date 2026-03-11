@@ -18,7 +18,6 @@ from typing import Optional, Dict, Any
 worker_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(worker_dir))
 
-
 # ============================================================================
 # 从原文件导入
 # ============================================================================
@@ -60,127 +59,6 @@ class DebugAgenticTestAgent(AgenticTestAgent):
         print(f"[LogEvent] {log_type}: {content}")
         if metadata:
             print(f"           metadata: {metadata}")
-
-
-# ============================================================================
-# 测试用例
-# ============================================================================
-
-async def test_normal_input():
-    """测试正常输入"""
-    print("\n" + "=" * 60)
-    print("测试用例: 正常输入")
-    print("=" * 60)
-
-    agent = DebugAgenticTestAgent()
-    agent.loop_step = 1
-
-    result = await agent.process_brain("打开油烟机")
-
-    print("\n结果:")
-    print(f"  success: {result.success}")
-    print(f"  next_query: {result.next_query}")
-    print(f"  should_continue: {result.should_continue}")
-    print(f"  ai_response: {result.ai_response}")
-    print(f"  analysis: {result.analysis}")
-
-    return result
-
-
-async def test_noise_input():
-    """测试噪音输入"""
-    print("\n" + "=" * 60)
-    print("测试用例: 噪音输入 (<noise>)")
-    print("=" * 60)
-
-    agent = DebugAgenticTestAgent()
-    agent.loop_step = 1
-
-    result = await agent.process_brain("<noise>")
-
-    print("\n结果:")
-    print(f"  success: {result.success}")
-    print(f"  next_query: {result.next_query}")
-    print(f"  should_continue: {result.should_continue}")
-    print(f"  ai_response: {result.ai_response}")
-    print(f"  analysis: {result.analysis}")
-
-    return result
-
-
-async def test_with_context():
-    """测试带上下文的输入"""
-    print("\n" + "=" * 60)
-    print("测试用例: 带上下文的输入")
-    print("=" * 60)
-
-    agent = DebugAgenticTestAgent()
-    agent.loop_step = 5
-    agent.current_query = "上一轮的查询内容"
-
-    context = {
-        'current_query': agent.current_query,
-        'loop_step': agent.loop_step,
-        'device_status': {
-            'current': {'device_1': {'power': 'on'}},
-            'previous': {'device_1': {'power': 'off'}}
-        }
-    }
-
-    result = await agent.process_brain("把灯关掉", context)
-
-    print("\n结果:")
-    print(f"  success: {result.success}")
-    print(f"  next_query: {result.next_query}")
-    print(f"  should_continue: {result.should_continue}")
-    print(f"  ai_response: {result.ai_response}")
-    print(f"  analysis: {result.analysis}")
-
-    return result
-
-
-async def test_empty_input():
-    """测试空输入"""
-    print("\n" + "=" * 60)
-    print("测试用例: 空输入")
-    print("=" * 60)
-
-    agent = DebugAgenticTestAgent()
-    agent.loop_step = 1
-
-    result = await agent.process_brain("")
-
-    print("\n结果:")
-    print(f"  success: {result.success}")
-    print(f"  next_query: {result.next_query}")
-    print(f"  should_continue: {result.should_continue}")
-    print(f"  ai_response: {result.ai_response}")
-
-    return result
-
-
-async def test_chinese_input():
-    """测试中文输入"""
-    print("\n" + "=" * 60)
-    print("测试用例: 中文输入 (复杂场景)")
-    print("=" * 60)
-
-    agent = DebugAgenticTestAgent()
-    agent.loop_step = 1
-
-    test_cases = [
-        "帮我打开厨房的灯",
-        "把空调温度调到26度",
-        "我想听一首周杰伦的歌",
-        "今天天气怎么样",
-    ]
-
-    for text in test_cases:
-        print(f"\n输入: {text}")
-        result = await agent.process_brain(text)
-        print(f"输出: next_query={result.next_query}, should_continue={result.should_continue}")
-
-    return result
 
 
 async def interactive_debug():
@@ -226,51 +104,5 @@ async def interactive_debug():
             print(f"错误: {e}")
 
 
-# ============================================================================
-# 主函数
-# ============================================================================
-
-async def main():
-    """主函数"""
-    print("=" * 60)
-    print("process_brain 函数调试脚本")
-    print("=" * 60)
-
-    print("\n选择运行模式:")
-    print("  1. 运行所有预设测试用例")
-    print("  2. 交互式调试")
-    print("  3. 单独测试正常输入")
-    print("  4. 单独测试噪音输入")
-    print("  5. 单独测试带上下文输入")
-
-    try:
-        choice = input("\n请输入选择 (1-5): ").strip()
-    except KeyboardInterrupt:
-        print("\n退出")
-        return
-
-    if choice == '1':
-        await test_normal_input()
-        await test_noise_input()
-        await test_with_context()
-        await test_empty_input()
-        await test_chinese_input()
-    elif choice == '2':
-        await interactive_debug()
-    elif choice == '3':
-        await test_normal_input()
-    elif choice == '4':
-        await test_noise_input()
-    elif choice == '5':
-        await test_with_context()
-    else:
-        print("无效选择，运行默认测试...")
-        await test_normal_input()
-
-    print("\n" + "=" * 60)
-    print("调试完成")
-    print("=" * 60)
-
-
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(interactive_debug())
