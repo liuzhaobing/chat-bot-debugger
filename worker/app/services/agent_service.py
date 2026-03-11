@@ -134,6 +134,10 @@ class AgenticTestAgent:
         # 音频输入等待事件
         self._audio_input_event = asyncio.Event()
 
+        # 对话历史管理（最多保留最近20轮）
+        self.conversation_history: List[Dict[str, str]] = []
+        self.max_conversation_history_length = 20
+
         logger.info(
             f"AgenticTestAgent initialized for session {session_id} with IOT config: "
             f"env={self.iot_config.get('env')}, has_token={bool(self.iot_config.get('token'))}"
@@ -147,6 +151,9 @@ class AgenticTestAgent:
 
         if iot_config:
             self.iot_config.update(iot_config)
+
+        # 记录初始用户查询
+        self._add_to_conversation_history('user', initial_query)
 
         await self.log_event('user_query', initial_query)
         await self.send_callback('log', f'开始处理查询: {initial_query}')
@@ -452,15 +459,18 @@ class AgenticTestAgent:
             await self.send_callback('status', '云端大脑正在处理...')
             await self.send_callback('brain_input', asr_text)
 
-            # 检查noise结果
-            if asr_text == '<noise>':
+            # 检查noise或空结果，不记录到对话历史
+            if asr_text == '<noise>' or not asr_text or not asr_text.strip():
                 return BrainProcessResult(
                     success=True,
                     next_query="",
                     should_continue=False,
-                    ai_response="检测到噪音，请重新说话",
-                    analysis={'type': 'noise_detected'}
+                    ai_response="检测到噪音或空输入，请重新说话",
+                    analysis={'type': 'noise_or_empty_detected'}
                 )
+
+            # 记录用户输入（ASR识别的文本）
+            self._add_to_conversation_history('user', asr_text)
 
             # 更新设备状态(可选)
             # await self.update_device_status()
@@ -479,6 +489,8 @@ class AgenticTestAgent:
 
             if next_query and next_query.strip():
                 self.current_query = next_query
+                # 记录AI响应
+                self._add_to_conversation_history('assistant', next_query)
                 await self.send_callback('log', f'生成新查询: {self.current_query}')
                 await self.send_callback('ai_response', self.current_query)
                 await self.send_callback('query_generated', {
@@ -489,7 +501,8 @@ class AgenticTestAgent:
                 await self.log_event('brain_process', f'ASR: {asr_text} -> Query: {next_query}', {
                     'asr_text': asr_text,
                     'next_query': next_query,
-                    'loop_step': self.loop_step
+                    'loop_step': self.loop_step,
+                    'conversation_history_length': len(self.conversation_history)
                 })
 
                 return BrainProcessResult(
@@ -899,7 +912,7 @@ class AgenticTestAgent:
             logger.error(f"Query generator app call failed: {e}")
             return await self._get_mock_query_result(message)
 
-    async def generate_next_query(self, judge_result: Dict[str, Any], asr_text: str, conversation_history: List[Dict[str, Any]]) -> str:
+    async def generate_next_query(self, judge_result: Dict[str, Any], asr_text: str) -> str:
         """根据判断结果生成下一个查询"""
         try:
             if not judge_result.get('should_continue', True):
@@ -909,10 +922,8 @@ class AgenticTestAgent:
             if suggested_action == 'end_conversation':
                 return ""
 
-            conversation_history = [
-                {"role": "user", "content": self.current_query},
-                {"role": "assistant", "content": asr_text}
-            ]
+            # 使用全局对话历史
+            conversation_history_context = self._get_conversation_history_context()
 
             test_scenario = """
 打开烟机
@@ -930,7 +941,7 @@ class AgenticTestAgent:
 帮我把烟机关了
             """.strip()
             query_result = await self.call_query_generator_app(
-                message=f"""**测试场景**：\n\n{test_scenario}\n\n**家庭设备列表**：\n\n{self.family_devices}\n\n**对话历史**：\n\n{conversation_history}\n\n**当前设备状态**：\n\n[]""".strip(),
+                message=f"""**测试场景**：\n\n{test_scenario}\n\n**家庭设备列表**：\n\n{self.family_devices}\n\n**对话历史**：\n\n{conversation_history_context}\n\n**当前设备状态**：\n\n[]""".strip(),
             )
 
             await self.log_event('query_generated', json.dumps(query_result, ensure_ascii=False), {
@@ -981,6 +992,56 @@ class AgenticTestAgent:
             'reasoning': '使用模拟数据生成测试query'
         }
 
+    # ========================================================================
+    # 对话历史管理
+    # ========================================================================
+
+    def _add_to_conversation_history(self, role: str, content: str):
+        """
+        添加一条消息到对话历史，并限制历史长度
+
+        Args:
+            role: 消息角色 ('user' 或 'assistant')
+            content: 消息内容
+        """
+        if not content or not content.strip():
+            return
+
+        self.conversation_history.append({
+            'role': role,
+            'content': content.strip()
+        })
+
+        # 保持对话历史不超过最大长度
+        if len(self.conversation_history) > self.max_conversation_history_length:
+            # 移除最早的消息对（保持成对移除）
+            excess = len(self.conversation_history) - self.max_conversation_history_length
+            self.conversation_history = self.conversation_history[excess:]
+
+        logger.debug(f"Conversation history updated: {len(self.conversation_history)} messages")
+
+    def _get_conversation_history_context(self) -> str:
+        """
+        获取对话历史的文本格式，用于传递给LLM
+
+        Returns:
+            格式化的对话历史文本
+        """
+        if not self.conversation_history:
+            return "无历史对话"
+
+        lines = []
+        for msg in self.conversation_history:
+            role_name = "用户" if msg['role'] == 'user' else "助手"
+            lines.append(f"{role_name}: {msg['content']}")
+
+        return "\n".join(lines)
+
+    def _clear_conversation_history(self):
+        """清空对话历史"""
+        self.conversation_history = []
+        logger.info(f"Conversation history cleared for session {self.session_id}")
+
     async def handle_intervention(self, message: str):
         """处理人工干预"""
         try:
@@ -1005,6 +1066,9 @@ class AgenticTestAgent:
                 self.current_query = "继续下一个测试"
                 await self.execute_full_loop()
                 return
+
+            # 记录人工干预消息
+            self._add_to_conversation_history('user', message)
 
             self.current_query = message
             self.loop_step = 0
@@ -1036,6 +1100,9 @@ class AgenticTestAgent:
         # 清空音频缓冲区
         if hasattr(self, 'audio_buffer'):
             self.audio_buffer.clear()
+
+        # 清空对话历史
+        self._clear_conversation_history()
 
         logger.info(f"Agent stopped for session {self.session_id}")
 
