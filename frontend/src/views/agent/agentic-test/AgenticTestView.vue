@@ -362,13 +362,8 @@ export default {
           this.hasAudioActivity = level > 0.02
         }
 
-        this.audioProcessor.onVoiceActivity = (isActive) => {
-          if (isActive) {
-            // this.addTranscriptMessage('user', '', true, false)
-            this.addSystemLog('speech', 'info', '检测到语音输入开始')
-          } else {
-            this.addSystemLog('speech', 'info', '语音输入结束')
-          }
+        this.audioProcessor.onVoiceActivity = () => {
+          // 语音活动状态变化不再打印日志，避免频繁刷屏
         }
 
         this.audioProcessor.onAudioData = (audioBytes) => {
