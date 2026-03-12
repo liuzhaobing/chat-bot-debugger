@@ -29,48 +29,45 @@
           <p>等待语音输入...</p>
         </div>
         
-        <div 
-          v-for="message in transcriptMessages" 
+        <div
+          v-for="message in transcriptMessages"
           :key="message.id"
           class="transcript-message"
-          :class="{ 
+          :class="{
             'is-user': message.type === 'user',
             'is-agent': message.type === 'agent',
             'is-partial': message.isPartial,
             'is-final': message.isFinal
           }"
         >
-          <div class="message-header">
-            <div class="message-avatar">
-              <svg v-if="message.type === 'user'" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                <circle cx="12" cy="7" r="4"></circle>
-              </svg>
-              <svg v-else xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-              </svg>
-            </div>
-            <div class="message-info">
-              <span class="message-sender">{{ message.type === 'user' ? '用户' : 'AI助手' }}</span>
-              <span class="message-time">{{ formatTime(message.timestamp) }}</span>
-            </div>
-            <div class="message-status">
-              <div v-if="message.isPartial" class="status-indicator partial">
-                <div class="typing-dots">
-                  <div class="dot"></div>
-                  <div class="dot"></div>
-                  <div class="dot"></div>
-                </div>
+          <div class="message-avatar">
+            <svg v-if="message.type === 'user'" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+              <circle cx="12" cy="7" r="4"></circle>
+            </svg>
+            <svg v-else xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+          </div>
+          <div class="message-info">
+            <span class="message-sender">{{ message.type === 'user' ? '用户' : 'AI助手' }}</span>
+            <span class="message-time">{{ formatTime(message.timestamp) }}</span>
+          </div>
+          <div class="message-status">
+            <div v-if="message.isPartial" class="status-indicator partial">
+              <div class="typing-dots">
+                <div class="dot"></div>
+                <div class="dot"></div>
+                <div class="dot"></div>
               </div>
-              <div v-else-if="message.isFinal" class="status-indicator final">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <polyline points="20,6 9,17 4,12"></polyline>
-                </svg>
-              </div>
+            </div>
+            <div v-else-if="message.isFinal" class="status-indicator final">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="20,6 9,17 4,12"></polyline>
+              </svg>
             </div>
           </div>
-          
           <div class="message-content">
             <p>{{ message.content }}</p>
           </div>
@@ -117,8 +114,8 @@
           <p>暂无日志信息</p>
         </div>
         
-        <div 
-          v-for="log in filteredLogs" 
+        <div
+          v-for="log in filteredLogs"
           :key="log.id"
           class="log-entry"
           :class="'log-' + log.level"
@@ -127,12 +124,10 @@
             <div class="log-level-indicator" :class="'level-' + log.level"></div>
             <span class="log-timestamp">{{ formatTime(log.timestamp) }}</span>
             <span class="log-category">{{ getCategoryLabel(log.category) }}</span>
+            <span class="log-message">{{ log.message }}</span>
           </div>
-          <div class="log-content">
-            <p>{{ log.message }}</p>
-            <div v-if="log.details" class="log-details">
-              <pre>{{ JSON.stringify(log.details, null, 2) }}</pre>
-            </div>
+          <div v-if="hasDetails(log.details)" class="log-content">
+            <pre>{{ JSON.stringify(log.details, null, 2) }}</pre>
           </div>
         </div>
       </div>
@@ -206,6 +201,13 @@ export default {
       }
       return labels[category] || category
     },
+
+    hasDetails(details) {
+      if (!details) return false
+      if (Array.isArray(details)) return details.length > 0
+      if (typeof details === 'object') return Object.keys(details).length > 0
+      return false
+    },
     
     clearTranscript() {
       this.$emit('clear-transcript')
@@ -257,7 +259,7 @@ export default {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 20px;
+  padding: 8px 20px;
   border-bottom: 1px solid var(--border-color);
   background: var(--bg-secondary);
 }
@@ -324,7 +326,7 @@ export default {
 .logs-content {
   flex: 1;
   overflow-y: auto;
-  padding: 16px;
+  padding: 0 16px;
   min-height: 0;
 }
 
@@ -375,6 +377,9 @@ export default {
 
 /* 字幕消息 */
 .transcript-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   margin-bottom: 16px;
   padding: 12px;
   border-radius: 8px;
@@ -399,13 +404,6 @@ export default {
 
 .transcript-message.is-final {
   border-color: rgba(16, 185, 129, 0.4);
-}
-
-.message-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
 }
 
 .message-avatar {
@@ -437,9 +435,9 @@ export default {
 
 .message-info {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  flex: 1;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .message-sender {
@@ -490,6 +488,11 @@ export default {
   height: 14px;
 }
 
+.message-content {
+  flex: 1;
+  min-width: 0;
+}
+
 .message-content p {
   margin: 0;
   font-size: 14px;
@@ -531,7 +534,7 @@ export default {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 6px;
+  flex-wrap: wrap;
 }
 
 .log-level-indicator {
@@ -572,14 +575,15 @@ export default {
   font-weight: 500;
 }
 
-.log-content p {
-  margin: 0;
+.log-message {
   font-size: 13px;
   line-height: 1.4;
   color: var(--text-primary);
+  flex: 1;
+  min-width: 0;
 }
 
-.log-details {
+.log-content {
   margin-top: 8px;
   padding: 8px;
   background: var(--bg-secondary);
@@ -587,7 +591,7 @@ export default {
   border: 1px solid var(--border-color);
 }
 
-.log-details pre {
+.log-content pre {
   margin: 0;
   font-size: 11px;
   color: var(--text-secondary);
@@ -630,7 +634,7 @@ export default {
     padding: 10px;
     margin-bottom: 12px;
   }
-  
+
   .message-content p {
     font-size: 13px;
   }
@@ -639,8 +643,8 @@ export default {
     padding: 8px;
     margin-bottom: 10px;
   }
-  
-  .log-content p {
+
+  .log-message {
     font-size: 12px;
   }
 }
