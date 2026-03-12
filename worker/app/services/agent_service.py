@@ -154,6 +154,10 @@ class AgenticTestAgent:
         self.is_buffering: bool = False  # 是否正在积累
         self.buffer_lock = asyncio.Lock()  # 缓冲区锁
 
+        # Noise 重试机制
+        self.noise_retry_count: int = 0  # 当前 noise 重试次数
+        self.max_noise_retry: int = 2  # 最大重试次数（总共3次机会）
+
         # 音频输入等待事件
         self._audio_input_event = asyncio.Event()  # 音频输入完成事件
 
@@ -879,10 +883,38 @@ class AgenticTestAgent:
                     self._start_buffering()
                     return
 
-                # 检测到 noise
+                # 检测到 noise - 固定时长模式的重试逻辑
                 if vad_asr_result.asr_text == '<noise>':
-                    await self.send_callback('status', '语音识别结果为<noise>，准备下一轮...')
-                    self._start_buffering()
+                    self.noise_retry_count += 1
+                    await self.send_callback('status', f'检测到噪音 ({self.noise_retry_count}/{self.max_noise_retry + 1})')
+
+                    if self.noise_retry_count <= self.max_noise_retry:
+                        # 未达到最大重试次数，重新播放 TTS 并开始积累
+                        await self.send_callback('status', '重新播放提示音，请再次说话...')
+                        await asyncio.sleep(0.5)  # 短暂延迟
+
+                        # 重新播放当前 TTS
+                        audio_output_result = await self.generate_and_play_audio(self.current_query)
+                        if audio_output_result.success:
+                            # 播放成功，开始新的 buffer 积累（不重置 noise 计数器）
+                            self._start_buffering(reset_noise_count=False)
+                        else:
+                            # 播放失败，重置计数器并开始新一轮
+                            await self.send_callback('error', 'TTS播放失败，跳过当前轮次')
+                            self._start_buffering(reset_noise_count=True)
+                    else:
+                        # 达到最大重试次数，放弃当前轮次，生成下一个 query
+                        await self.send_callback('status', '多次检测到噪音，跳过当前轮次，生成下一个测试...')
+                        self.noise_retry_count = 0  # 重置计数器
+
+                        # 直接进入下一轮 Brain 处理（使用空的 ASR 结果来生成下一个 query）
+                        brain_result = await self.process_brain_with_device_context('')
+                        if brain_result.success and brain_result.next_query:
+                            await asyncio.sleep(1.0)
+                            await self.execute_full_loop()
+                            self._audio_input_event.set()
+                        else:
+                            await self.send_callback('status', '对话完成，等待新的音频输入...')
                     return
 
             else:
@@ -938,16 +970,23 @@ class AgenticTestAgent:
             logger.error(f"Error processing audio: {e}", exc_info=True)
             await self.send_callback('error', f'音频处理失败: {str(e)}')
 
-    def _start_buffering(self):
+    def _start_buffering(self, reset_noise_count: bool = True):
         """
         开始积累音频 buffer
 
         在 TTS 播放完成后调用，表示后端准备好接收用户的语音输入。
+
+        Args:
+            reset_noise_count: 是否重置 noise 重试计数器
+                - True: 新的一轮对话，重置计数器
+                - False: noise 重试场景，保持当前计数器
         """
         self.audio_buffer = []
         self.buffer_start_time = time.perf_counter()
         self.is_buffering = True
-        logger.info(f"Started buffering audio, duration target: {self.fixed_duration}s")
+        if reset_noise_count:
+            self.noise_retry_count = 0
+        logger.info(f"Started buffering audio, duration target: {self.fixed_duration}s, noise_retry: {self.noise_retry_count}/{self.max_noise_retry}")
         # 注意: send_callback 是异步的，这里只是设置状态，状态变化会通过其他方式通知前端
 
     def _stop_buffering(self):
