@@ -40,20 +40,6 @@
             'is-final': message.isFinal
           }"
         >
-          <div class="message-avatar">
-            <svg v-if="message.type === 'user'" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-              <circle cx="12" cy="7" r="4"></circle>
-            </svg>
-            <svg v-else xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-            </svg>
-          </div>
-          <div class="message-info">
-            <span class="message-sender">{{ message.type === 'user' ? '用户' : 'AI助手' }}</span>
-            <span class="message-time">{{ formatTime(message.timestamp) }}</span>
-          </div>
           <div class="message-status">
             <div v-if="message.isPartial" class="status-indicator partial">
               <div class="typing-dots">
@@ -67,6 +53,20 @@
                 <polyline points="20,6 9,17 4,12"></polyline>
               </svg>
             </div>
+          </div>
+          <div class="message-avatar">
+            <svg v-if="message.type === 'user'" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+              <circle cx="12" cy="7" r="4"></circle>
+            </svg>
+            <svg v-else xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+          </div>
+          <div class="message-info">
+            <span class="message-sender">{{ message.type === 'user' ? '用户' : 'AI助手' }}</span>
+            <span class="message-time">{{ formatTime(message.timestamp) }}</span>
           </div>
           <div class="message-content">
             <p>{{ message.content }}</p>
@@ -380,7 +380,8 @@ export default {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  margin-bottom: 16px;
+  margin-top: 8px;
+  margin-bottom: 8px;
   padding: 12px;
   border-radius: 8px;
   border: 1px solid var(--border-color);
