@@ -343,3 +343,27 @@ class AppScenario(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.app.name})"
+
+
+class TTSVoice(models.Model):
+    """
+    TTS 语音配置模型
+    用于存储多个 TTS 语音配置，支持不同的说话人
+    """
+    speaker = models.CharField(max_length=50, primary_key=True, help_text="说话人标识符")
+    name = models.CharField(max_length=100, unique=True, help_text="语音配置名称")
+    app_id = models.CharField(max_length=100, help_text="TTS 应用 ID")
+    access_key = models.CharField(max_length=255, help_text="TTS 访问密钥")
+    resource_id = models.CharField(max_length=100, help_text="TTS 资源 ID")
+    base_url = models.URLField(help_text="TTS 服务基础 URL")
+    is_active = models.BooleanField(default=True, help_text="是否启用")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-updated_at']
+        verbose_name = "TTS 语音配置"
+        verbose_name_plural = "TTS 语音配置"
+
+    def __str__(self):
+        return f"{self.name} ({self.speaker})"

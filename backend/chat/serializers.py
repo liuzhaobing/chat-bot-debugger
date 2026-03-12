@@ -1,7 +1,7 @@
 from rest_framework import serializers
 import re
 import json
-from .models import Provider, LLMModel, Conversation, Message, App, AppCategory, AppType, AppScenario
+from .models import Provider, LLMModel, Conversation, Message, App, AppCategory, AppType, AppScenario, TTSVoice
 
 
 class LLMModelSerializer(serializers.ModelSerializer):
@@ -381,3 +381,53 @@ class AppScenarioSerializer(serializers.ModelSerializer):
         model = AppScenario
         fields = ['id', 'app', 'name', 'description', 'parameters', 'created_at', 'updated_at']
         read_only_fields = ['created_at', 'updated_at']
+
+
+class TTSVoiceSerializer(serializers.ModelSerializer):
+    """
+    TTS 语音配置序列化器
+    用于 TTS 语音配置的 CRUD 操作
+    """
+    class Meta:
+        model = TTSVoice
+        fields = ['speaker', 'name', 'app_id', 'access_key', 'resource_id', 'base_url', 'is_active', 'created_at', 'updated_at']
+        read_only_fields = ['created_at', 'updated_at']
+        extra_kwargs = {
+            'access_key': {'write_only': True}
+        }
+    
+    def validate_name(self, value):
+        """验证语音配置名称不能为空"""
+        if not value or not value.strip():
+            raise serializers.ValidationError("语音配置名称不能为空")
+        return value
+    
+    def validate_app_id(self, value):
+        """验证应用 ID 不能为空"""
+        if not value or not value.strip():
+            raise serializers.ValidationError("应用 ID 不能为空")
+        return value
+    
+    def validate_access_key(self, value):
+        """验证访问密钥不能为空"""
+        if not value or not value.strip():
+            raise serializers.ValidationError("访问密钥不能为空")
+        return value
+    
+    def validate_resource_id(self, value):
+        """验证资源 ID 不能为空"""
+        if not value or not value.strip():
+            raise serializers.ValidationError("资源 ID 不能为空")
+        return value
+    
+    def validate_speaker(self, value):
+        """验证说话人不能为空"""
+        if not value or not value.strip():
+            raise serializers.ValidationError("说话人不能为空")
+        return value
+    
+    def validate_base_url(self, value):
+        """验证基础 URL 不能为空"""
+        if not value or not value.strip():
+            raise serializers.ValidationError("基础 URL 不能为空")
+        return value

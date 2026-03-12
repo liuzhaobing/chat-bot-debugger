@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     AgenticTestSessionViewSet, 
     DeviceStatusViewSet,
+    DeviceProtocolViewSet,
     test_iot_connection,
     get_family_devices,
     get_device_status
@@ -11,6 +12,7 @@ from .views import (
 router = DefaultRouter()
 router.register(r'sessions', AgenticTestSessionViewSet)
 router.register(r'devices', DeviceStatusViewSet)
+router.register(r'device-protocols', DeviceProtocolViewSet)
 
 urlpatterns = [
     path('api/agentic-test/', include(router.urls)),

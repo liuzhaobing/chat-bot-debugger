@@ -3,8 +3,8 @@ from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from asgiref.sync import sync_to_async
-from .models import AgenticTestSession, AgenticTestLog, DeviceStatus
-from .serializers import AgenticTestSessionSerializer, AgenticTestLogSerializer, DeviceStatusSerializer
+from .models import AgenticTestSession, AgenticTestLog, DeviceStatus, DeviceProtocol
+from .serializers import AgenticTestSessionSerializer, AgenticTestLogSerializer, DeviceStatusSerializer, DeviceProtocolSerializer
 from .services import IOTService
 import logging
 import asyncio
@@ -175,3 +175,10 @@ def get_device_status(request):
             'success': False,
             'error': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class DeviceProtocolViewSet(viewsets.ModelViewSet):
+    """设备控制协议视图集"""
+    queryset = DeviceProtocol.objects.all()
+    serializer_class = DeviceProtocolSerializer
+    lookup_field = 'id'

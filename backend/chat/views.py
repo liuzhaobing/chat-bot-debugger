@@ -10,15 +10,16 @@ import requests
 import json
 import uuid
 import time
+import base64
 from jinja2 import Template
-from .models import Provider, LLMModel, Conversation, Message, App, AppCategory, AppType, AppScenario
+from .models import Provider, LLMModel, Conversation, Message, App, AppCategory, AppType, AppScenario, TTSVoice
 from .serializers import (
     ProviderSerializer, ConversationSerializer, MessageSerializer, 
     LLMModelSerializer, AppSerializer, AppCategorySerializer,
     AppTypeSerializer, AppPublishSerializer, AppListSerializer,
     AppInvokeRequestSerializer, AppFunctionCallingRequestSerializer,
     AppMCPRequestSerializer, AppExecuteResponseSerializer,
-    AppScenarioSerializer
+    AppScenarioSerializer, TTSVoiceSerializer, serializers,
 )
 
 class ProviderViewSet(viewsets.ModelViewSet):
@@ -1248,3 +1249,110 @@ class AppScenarioViewSet(viewsets.ModelViewSet):
         if app_id:
             queryset = queryset.filter(app_id=app_id)
         return queryset
+
+
+class TTSSynthesisViewSet(viewsets.ModelViewSet):
+    """
+    TTS 语音合成视图集
+    提供基于存储的语音配置进行文本转语音的功能
+    """
+    queryset = TTSVoice.objects.all()
+    serializer_class = TTSVoiceSerializer
+    
+    class TTSSynthesisRequestSerializer(serializers.Serializer):
+        """
+        TTS 合成请求序列化器
+        """
+        text = serializers.CharField(required=True, help_text="要转换的文本")
+        sample_rate = serializers.IntegerField(default=24000, help_text="音频采样率")
+    
+    @action(detail=True, methods=['post'], url_path='invoke')
+    def invoke_execute(self, request, pk=None):
+        """
+        [POST] API 直接调用执行接口
+        
+        执行 TTS 语音合成并返回结果
+        speaker 通过 pk 传入
+        """
+        voice = self.get_object()
+        
+        # 验证请求数据
+        serializer = self.TTSSynthesisRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response({
+                "status": "error",
+                "error": serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        data = serializer.validated_data
+        text = data['text']
+        sample_rate = data['sample_rate']
+        
+        try:
+            # 构建请求头和 payload
+            headers = {
+                "Content-Type": "application/json",
+                "X-Api-App-Id": voice.app_id,
+                "X-Api-Access-Key": voice.access_key,
+                "X-Api-Resource-Id": voice.resource_id,
+            }
+            
+            payload = {
+                "req_params": {
+                    "speaker": voice.speaker,
+                    "text": text,
+                    "audio_params": {
+                        "format": "wav",
+                        "sample_rate": sample_rate,
+                    }
+                }
+            }
+            
+            # 调用 TTS 服务
+            response = requests.post(
+                voice.base_url,
+                headers=headers,
+                json=payload,
+                timeout=30
+            )
+            response.raise_for_status()
+            
+            # 处理响应
+            audio_base64_list = []
+            for line in response.iter_lines():
+                if line:
+                    try:
+                        chunk_data = json.loads(line)
+                        if "data" in chunk_data:
+                            data = chunk_data["data"]
+                            if data:
+                                audio_base64_list.append(data)
+                    except json.JSONDecodeError:
+                        continue
+            
+            # 合并音频数据
+            if not audio_base64_list:
+                return Response({
+                    "status": "error",
+                    "error": "TTS 服务返回空数据"
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+            audio_bytes = b"" .join([base64.b64decode(chunk) for chunk in audio_base64_list])
+            audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+            
+            return Response({
+                "status": "success",
+                "audio": audio_b64,
+                "speaker": voice.speaker
+            })
+            
+        except requests.RequestException as e:
+            return Response({
+                "status": "error",
+                "error": f"调用 TTS 服务失败: {str(e)}"
+            }, status=status.HTTP_502_BAD_GATEWAY)
+        except Exception as e:
+            return Response({
+                "status": "error",
+                "error": f"TTS 合成失败: {str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

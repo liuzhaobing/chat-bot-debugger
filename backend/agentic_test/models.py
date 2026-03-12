@@ -53,3 +53,16 @@ class DeviceStatus(models.Model):
     
     class Meta:
         db_table = 'device_status'
+
+
+class DeviceProtocol(models.Model):
+    """设备控制协议模型"""
+    id = models.CharField(max_length=100, primary_key=True, help_text="设备标准名")
+    protocol = models.JSONField(help_text="设备协议详情")
+    category = models.CharField(max_length=100, help_text="设备品类")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'device_protocol'
+        ordering = ['category', 'id']

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import AgenticTestSession, AgenticTestLog, DeviceStatus
+from .models import AgenticTestSession, AgenticTestLog, DeviceStatus, DeviceProtocol
 
 
 class AgenticTestSessionSerializer(serializers.ModelSerializer):
@@ -18,3 +18,9 @@ class DeviceStatusSerializer(serializers.ModelSerializer):
     class Meta:
         model = DeviceStatus
         fields = ['id', 'device_id', 'device_name', 'device_type', 'status', 'last_updated']
+
+
+class DeviceProtocolSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DeviceProtocol
+        fields = ['id', 'protocol', 'category', 'created_at', 'updated_at']
