@@ -3,8 +3,9 @@ from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from asgiref.sync import sync_to_async
-from .models import AgenticTestSession, AgenticTestLog, DeviceStatus, DeviceProtocol
-from .serializers import AgenticTestSessionSerializer, AgenticTestLogSerializer, DeviceStatusSerializer, DeviceProtocolSerializer
+from django.utils import timezone
+from .models import AgenticTestSession, AgenticTestLog, DeviceStatus, DeviceProtocol, TestTask
+from .serializers import AgenticTestSessionSerializer, AgenticTestLogSerializer, DeviceStatusSerializer, DeviceProtocolSerializer, TestTaskSerializer
 from .services import IOTService
 import logging
 import asyncio
@@ -182,3 +183,103 @@ class DeviceProtocolViewSet(viewsets.ModelViewSet):
     queryset = DeviceProtocol.objects.all()
     serializer_class = DeviceProtocolSerializer
     lookup_field = 'id'
+
+
+class TestTaskViewSet(viewsets.ModelViewSet):
+    """场景测试任务视图集
+    
+    提供测试任务的完整CRUD操作，以及启动任务、下载报告等功能
+    """
+    queryset = TestTask.objects.all()
+    serializer_class = TestTaskSerializer
+    
+    def get_queryset(self):
+        """支持按状态筛选"""
+        queryset = TestTask.objects.all()
+        status_filter = self.request.query_params.get('status')
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+        return queryset.select_related('tts_voice', 'iot_protocol')
+    
+    @action(detail=True, methods=['post'])
+    def start(self, request, pk=None):
+        """启动测试任务"""
+        task = self.get_object()
+        
+        if task.status == 'running':
+            return Response({
+                'status': 'error',
+                'message': '任务正在运行中'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # 更新任务状态
+        task.status = 'running'
+        task.started_at = timezone.now()
+        task.error_message = None
+        task.save()
+        
+        # TODO: 异步启动测试任务执行
+        # 这里可以启动一个后台任务来执行测试
+        
+        return Response({
+            'status': 'success',
+            'message': '任务已启动',
+            'task': TestTaskSerializer(task).data
+        })
+    
+    @action(detail=True, methods=['post'])
+    def complete(self, request, pk=None):
+        """完成任务（内部API，由测试执行器调用）"""
+        task = self.get_object()
+        
+        report_url = request.data.get('report_url')
+        report_data = request.data.get('report_data', {})
+        result_summary = request.data.get('result_summary', '')
+        
+        task.status = 'completed'
+        task.completed_at = timezone.now()
+        task.report_url = report_url
+        task.report_data = report_data
+        task.result_summary = result_summary
+        task.save()
+        
+        return Response({
+            'status': 'success',
+            'message': '任务已完成',
+            'task': TestTaskSerializer(task).data
+        })
+    
+    @action(detail=True, methods=['post'])
+    def fail(self, request, pk=None):
+        """标记任务失败（内部API，由测试执行器调用）"""
+        task = self.get_object()
+        
+        error_message = request.data.get('error_message', '未知错误')
+        
+        task.status = 'failed'
+        task.completed_at = timezone.now()
+        task.error_message = error_message
+        task.save()
+        
+        return Response({
+            'status': 'success',
+            'message': '任务已标记为失败',
+            'task': TestTaskSerializer(task).data
+        })
+    
+    @action(detail=True, methods=['get'])
+    def download_report(self, request, pk=None):
+        """下载测试报告"""
+        task = self.get_object()
+        
+        if not task.report_url:
+            return Response({
+                'status': 'error',
+                'message': '报告尚未生成'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        return Response({
+            'status': 'success',
+            'report_url': task.report_url,
+            'report_data': task.report_data
+        })

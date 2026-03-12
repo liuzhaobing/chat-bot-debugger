@@ -31,6 +31,17 @@
             </svg>
             <span>智能设备</span>
           </button>
+          <button 
+            class="tab-btn" 
+            :class="{ active: activePanel === 'scene' }"
+            @click="switchPanel('scene')"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9 11l3 3L22 4"></path>
+              <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"></path>
+            </svg>
+            <span>场景测试</span>
+          </button>
         </div>
       </div>
       
@@ -84,6 +95,11 @@
           <IOTConfigPanel ref="iotPanel" :hide-config="true" />
         </div>
       </div>
+
+      <!-- 场景测试面板 -->
+      <div v-if="activePanel === 'scene'" class="scene-container">
+        <SceneTestPanel />
+      </div>
     </div>
 
     <!-- 会话管理面板 - 悬浮显示 -->
@@ -122,6 +138,7 @@ import IOTConfigPanel from '@/components/agentic-test/IOTConfigPanel.vue'
 import TranscriptPanel from '@/components/agentic-test/TranscriptPanel.vue'
 import SessionManager from '@/components/agentic-test/SessionManager.vue'
 import VadAsrTestPanel from '@/components/agentic-test/VadAsrTestPanel.vue'
+import SceneTestPanel from '@/components/agentic-test/SceneTestPanel.vue'
 import RealtimeAudioProcessor, { createAudioMessage } from '@/utils/realtimeAudioProcessor.js'
 import { getAgenticTestWsUrl } from '@/config/worker.js'
 import agenticTestService from '@/services/agenticTestService'
@@ -132,7 +149,8 @@ export default {
     IOTConfigPanel,
     TranscriptPanel,
     SessionManager,
-    VadAsrTestPanel
+    VadAsrTestPanel,
+    SceneTestPanel
   },
   computed: {
     ...mapState('agenticTest', [
