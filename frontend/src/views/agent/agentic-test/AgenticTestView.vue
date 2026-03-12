@@ -190,15 +190,7 @@ export default {
       websocket: null,
       reconnectAttempts: 0,
       maxReconnectAttempts: 3,
-      reconnectTimeout: null,
-
-      // 固定时长音频录制配置
-      fixedDurationMode: true,  // 是否启用固定时长模式（false 则使用 VAD 模式）
-      fixedDurationSeconds: 30,  // 固定录制时长（秒）
-      fixedDurationBuffer: [],  // 固定时长音频缓冲区
-      fixedDurationTimer: null,  // 固定时长计时器
-      isFixedDurationRecording: false,  // 是否正在固定时长录制中
-      fixedDurationStartTime: null  // 固定时长录制开始时间
+      reconnectTimeout: null
     }
   },
   mounted() {
@@ -381,16 +373,7 @@ export default {
 
         this.audioProcessor.onAudioData = (audioBytes) => {
           if (this.isWebSocketReady()) {
-            // 根据模式选择不同的处理方式
-            if (this.fixedDurationMode) {
-              // 固定时长模式：缓存音频帧
-              if (this.isFixedDurationRecording) {
-                this.bufferFixedDurationAudio(audioBytes)
-              }
-            } else {
-              // VAD 模式：实时发送音频数据
-              this.sendRealTimeAudioData(audioBytes)
-            }
+            this.sendRealTimeAudioData(audioBytes)
           }
         }
 
@@ -853,123 +836,10 @@ export default {
         source.start()
         this.currentPlayingAudio = source
 
-        // 固定时长模式：开始录制计时
-        if (this.fixedDurationMode) {
-          this.startFixedDurationRecording()
-        }
-
       } catch (error) {
         console.error('播放音频失败:', error)
         this.addSystemLog('audio', 'error', `播放音频失败: ${error.message}`)
         this.currentPlayingAudio = null
-      }
-    },
-
-    /**
-     * 开始固定时长录制
-     */
-    startFixedDurationRecording() {
-      // 清空缓冲区
-      this.fixedDurationBuffer = []
-      this.isFixedDurationRecording = true
-      this.fixedDurationStartTime = Date.now()
-
-      this.addSystemLog('audio', 'info', `开始固定时长录制，时长: ${this.fixedDurationSeconds}秒`)
-
-      // 设置定时器，到达固定时长后发送音频
-      this.fixedDurationTimer = setTimeout(() => {
-        this.stopFixedDurationRecordingAndSend()
-      }, this.fixedDurationSeconds * 1000)
-    },
-
-    /**
-     * 缓存固定时长音频数据
-     */
-    bufferFixedDurationAudio(audioBytes) {
-      this.fixedDurationBuffer.push(audioBytes)
-    },
-
-    /**
-     * 停止固定时长录制并发送音频
-     */
-    stopFixedDurationRecordingAndSend() {
-      if (!this.isFixedDurationRecording) {
-        return
-      }
-
-      this.isFixedDurationRecording = false
-      this.fixedDurationTimer = null
-
-      // 计算录制时长
-      const duration = (Date.now() - this.fixedDurationStartTime) / 1000
-
-      this.addSystemLog('audio', 'info', `固定时长录制结束，实际时长: ${duration.toFixed(1)}秒，缓冲区大小: ${this.fixedDurationBuffer.length}`)
-
-      // 合并音频数据并发送
-      if (this.fixedDurationBuffer.length > 0 && this.isWebSocketReady()) {
-        this.sendFixedDurationAudio()
-      } else {
-        this.addSystemLog('audio', 'warning', '没有音频数据或 WebSocket 未连接，跳过发送')
-      }
-    },
-
-    /**
-     * 发送固定时长音频到服务器
-     */
-    sendFixedDurationAudio() {
-      if (!this.isWebSocketReady() || this.fixedDurationBuffer.length === 0) {
-        return
-      }
-
-      try {
-        // 合并所有音频数据
-        const totalLength = this.fixedDurationBuffer.reduce((sum, arr) => sum + arr.length, 0)
-        const combinedAudio = new Uint8Array(totalLength)
-        let offset = 0
-        for (const audioBytes of this.fixedDurationBuffer) {
-          combinedAudio.set(audioBytes, offset)
-          offset += audioBytes.length
-        }
-
-        // 转换为 base64
-        let binary = ''
-        for (let i = 0; i < combinedAudio.length; i++) {
-          binary += String.fromCharCode(combinedAudio[i])
-        }
-        const base64 = btoa(binary)
-
-        // 发送消息
-        const message = {
-          type: 'audio_data',
-          timestamp: Math.floor(Date.now()),
-          data: {
-            audio_data: base64,
-            sample_rate: 16000,
-            channels: 1,
-            format: 'pcm',
-            size: combinedAudio.length
-          },
-          audio_mode: 'fixed_duration',  // 指定使用固定时长模式
-          session_id: this.currentSession?.id || this.session_id
-        }
-
-        this.websocket.send(JSON.stringify(message))
-
-        // 计算音频时长（16kHz, 16bit, mono = 32000 bytes/second）
-        const audioDuration = combinedAudio.length / 32000
-
-        this.addSystemLog('audio', 'success', `固定时长音频已发送`, {
-          size: combinedAudio.length,
-          duration: audioDuration.toFixed(2) + 's',
-          packets: this.fixedDurationBuffer.length
-        })
-
-        // 清空缓冲区
-        this.fixedDurationBuffer = []
-
-      } catch (error) {
-        console.error('发送固定时长音频失败:', error)
-        this.addSystemLog('audio', 'error', `发送固定时长音频失败: ${error.message}`)
       }
     },
 
@@ -1190,14 +1060,6 @@ export default {
 
       // 停止会话计时器
       this.stopSessionTimer()
-
-      // 停止固定时长录制
-      if (this.fixedDurationTimer) {
-        clearTimeout(this.fixedDurationTimer)
-        this.fixedDurationTimer = null
-      }
-      this.isFixedDurationRecording = false
-      this.fixedDurationBuffer = []
 
       // 断开WebSocket
       this.disconnectFromWebSocket()

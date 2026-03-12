@@ -156,7 +156,6 @@ async def agentic_test_websocket(
                     # 支持两种消息格式
                     audio_data = None
                     audio_format = 'webm'
-                    audio_mode = None  # 音频处理模式
 
                     if 'data' in data and isinstance(data['data'], dict):
                         # 新格式
@@ -167,9 +166,6 @@ async def agentic_test_websocket(
                         audio_data = data.get('audio')
                         audio_format = data.get('format', 'webm')
 
-                    # 获取音频处理模式
-                    audio_mode = data.get('audio_mode')
-
                     if not audio_data:
                         await connection_manager.send_message(
                             session_id,
@@ -178,8 +174,8 @@ async def agentic_test_websocket(
                         continue
 
                     if agent:
-                        # 使用 Agent 处理音频，传递 audio_mode
-                        await agent.process_audio(audio_data, audio_format, audio_mode)
+                        # 使用 Agent 处理音频
+                        await agent.process_audio(audio_data, audio_format)
                     else:
                         # 没有 Agent，直接进行 VAD+ASR
                         await _process_audio_without_agent(

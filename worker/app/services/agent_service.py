@@ -80,33 +80,46 @@ class AudioOutputResult:
 
 
 class AgenticTestAgent:
-    """Agentic Test 智能体主循环"""
+    """Agentic Test 智能体主循环
+
+    固定时长音频采集方案：
+    - 前端持续发送音频数据给后端
+    - 后端在发送 TTS 时开始积累音频 buffer
+    - 积累固定时长（默认20秒）后进行 ASR 识别
+    - 实现一人一轮的交互模式
+    """
 
     # App IDs
     JUDGE_APP_ID = "e4d13f457f7f486c99ca11b39a7b8347"
     QUERY_GENERATOR_APP_ID = "c7a27bd4e3cf49008ae99fc69817f155"
 
-    # 音频处理模式
-    AUDIO_MODE_VAD = 'vad'  # VAD 方案：音频缓冲 -> VAD检测 -> ASR识别
-    AUDIO_MODE_FIXED_DURATION = 'fixed_duration'  # 固定时长方案：直接进行 ASR 识别
+    # 音频处理模式常量
+    AUDIO_MODE_VAD = 'vad'                    # VAD 模式：缓冲满即处理
+    AUDIO_MODE_FIXED_DURATION = 'fixed_duration'  # 固定时长模式：等待固定时长
+
+    # 固定时长配置（秒）
+    DEFAULT_FIXED_DURATION = 20
 
     def __init__(
             self,
             session_id: str,
             send_callback: Callable,
             iot_config: Optional[Dict[str, str]] = None,
-            audio_mode: str = 'vad'  # 默认使用 VAD 方案
+            fixed_duration: float = None,
+            audio_mode: str = None
     ):
         self.session_id = session_id
         self.send_callback = send_callback
         self.is_running = False
         self.current_query = ""
-        self.current_asr_result = "<noise>"
-        self.current_asr_true_result = ""
-        self.real_voice_active_time = 0.0  # 记录上一次语音结束的时间点
+        self.current_asr_result = ""
+        self.real_voice_active_time = 0.0
 
-        # 音频处理模式：'vad' 或 'fixed_duration'
-        self.audio_mode = audio_mode
+        # 音频处理模式（默认使用固定时长模式）
+        self.audio_mode = audio_mode or self.AUDIO_MODE_FIXED_DURATION
+
+        # 固定时长配置
+        self.fixed_duration = fixed_duration or self.DEFAULT_FIXED_DURATION
 
         self.loop_step = 0
         self.max_loop_steps = 1000
@@ -135,16 +148,14 @@ class AgenticTestAgent:
         self.previous_device_status: Dict = {}
         self.current_device_status: Dict = {}
 
-        # 音频缓冲处理器（用于 VAD 方案）
-        from app.utils.audio_utils import AudioBufferProcessor
-        self.audio_buffer = AudioBufferProcessor()
-
-        # 固定时长音频缓冲区（用于固定时长方案）
-        self.fixed_duration_audio_buffer: List[bytes] = []
-        self.fixed_duration_audio_size = 0  # 当前缓冲区大小（字节）
+        # 固定时长音频缓冲区
+        self.audio_buffer: List[bytes] = []
+        self.buffer_start_time: Optional[float] = None  # 开始积累的时间
+        self.is_buffering: bool = False  # 是否正在积累
+        self.buffer_lock = asyncio.Lock()  # 缓冲区锁
 
         # 音频输入等待事件
-        self._audio_input_event = asyncio.Event()
+        self._audio_input_event = asyncio.Event()  # 音频输入完成事件
 
         # 对话历史管理（最多保留最近20轮）
         self.conversation_history: List[Dict[str, str]] = []
@@ -153,7 +164,7 @@ class AgenticTestAgent:
         logger.info(
             f"AgenticTestAgent initialized for session {session_id} with IOT config: "
             f"env={self.iot_config.get('env')}, has_token={bool(self.iot_config.get('token'))}, "
-            f"audio_mode={self.audio_mode}"
+            f"fixed_duration={self.fixed_duration}s"
         )
 
     async def start_loop(self, initial_query: str, iot_config: Optional[Dict[str, str]] = None):
@@ -176,11 +187,10 @@ class AgenticTestAgent:
             # 初始化设备状态
             await self.initialize_device_status()
 
-            # 固定时长模式：先播放初始 TTS，然后等待前端发送音频
+            # 固定时长模式：先播放初始 TTS，然后开始积累音频
             if self.audio_mode == self.AUDIO_MODE_FIXED_DURATION:
                 await self.send_callback('status', '固定时长模式：播放初始 TTS...')
-                await self.execute_full_loop()
-                # execute_full_loop 返回 False，主循环会等待音频输入
+                await self.execute_full_loop()  # 播放 TTS 并启动 buffering
 
             # 开始主循环
             while self.is_running and self.loop_step < self.max_loop_steps:
@@ -188,9 +198,8 @@ class AgenticTestAgent:
                     self.loop_step += 1
                     await self.send_callback('status', f'执行循环步骤 {self.loop_step}')
 
-                    # VAD 模式：执行完整的Agent循环
-                    # 固定时长模式：等待前端发送音频（由 process_audio 触发）
                     if self.audio_mode == self.AUDIO_MODE_VAD:
+                        # VAD 模式：执行完整的Agent循环
                         should_continue = await self.execute_full_loop()
 
                         if not should_continue:
@@ -198,25 +207,31 @@ class AgenticTestAgent:
                             await self.send_callback('status', '等待新的音频输入...')
                             # 清除事件标志，等待 process_audio 触发
                             self._audio_input_event.clear()
-                            # 等待音频输入事件，最多等待 300 秒
+                            # 等待音频输入事件，最多等待 200 秒
                             try:
-                                await asyncio.wait_for(self._audio_input_event.wait(), timeout=300.0)
+                                await asyncio.wait_for(self._audio_input_event.wait(), timeout=200.0)
                                 await self.send_callback('status', '收到音频输入，继续处理...')
                             except asyncio.TimeoutError:
                                 await self.send_callback('status', '等待音频超时，继续监听...')
                                 continue
                     else:
-                        # 固定时长模式：等待前端发送音频
-                        await self.send_callback('status', '固定时长模式：等待前端发送音频...')
+                        # 固定时长模式：等待前端持续发送音频
+                        # process_audio 会处理音频累积、ASR、Brain 处理和下一轮 TTS
+                        # 主循环只需要保持运行状态，等待停止信号
+                        await self.send_callback('status', f'固定时长模式：等待音频输入（目标 {self.fixed_duration} 秒）...')
                         self._audio_input_event.clear()
                         try:
-                            await asyncio.wait_for(self._audio_input_event.wait(), timeout=300.0)
-                            await self.send_callback('status', '收到音频输入，处理中...')
+                            # 等待一个较长的超时时间，让 process_audio 有足够时间处理
+                            await asyncio.wait_for(self._audio_input_event.wait(), timeout=600.0)
                         except asyncio.TimeoutError:
-                            await self.send_callback('status', '等待音频超时，继续等待...')
-                            continue
+                            # 超时后检查是否仍在运行
+                            if self.is_running:
+                                await self.send_callback('status', '等待音频超时，继续等待...')
+                                continue
+                            else:
+                                break
 
-                    await asyncio.sleep(1.0)
+                    await asyncio.sleep(0.1)  # 短暂休眠，避免 CPU 空转
 
                 except asyncio.CancelledError:
                     logger.info("Agent loop cancelled")
@@ -239,6 +254,7 @@ class AgenticTestAgent:
             await self.send_callback('error', f'循环发生致命错误: {str(e)}')
         finally:
             self.is_running = False
+            self._stop_buffering()  # 确保停止 buffering
             await self.send_callback('status', '智能体循环已结束')
 
     async def initialize_device_status(self):
@@ -804,9 +820,9 @@ class AgenticTestAgent:
 
             # 根据音频模式决定是否继续循环
             if self.audio_mode == self.AUDIO_MODE_FIXED_DURATION:
-                # 固定时长模式：播放 TTS 后等待前端发送下一轮音频
-                # 前端收到 TTS 后会开始录制 30 秒，然后发送音频
-                await self.send_callback('status', '等待前端发送下一轮音频...')
+                # 固定时长模式：播放 TTS 后开始积累音频 buffer
+                await self.send_callback('status', f'TTS播放完成，开始积累 {self.fixed_duration} 秒音频...')
+                self._start_buffering()  # 开始积累音频 buffer
                 return False  # 返回 False，让主循环等待音频输入
             else:
                 # VAD 模式：继续循环，持续处理音频
@@ -818,17 +834,23 @@ class AgenticTestAgent:
             await self.send_callback('error', f'循环执行失败: {str(e)}')
             return False
 
-    async def process_audio(self, audio_data: str, audio_format: str = 'webm', audio_mode: str = None):
+    async def process_audio(self, audio_data: str, audio_format: str = 'pcm', audio_mode: str = None):
         """
         处理接收到的音频数据
 
         根据 audio_mode 选择不同的处理方式：
-        - 'vad'（默认）: VAD 方案，音频缓冲 -> VAD检测 -> ASR识别
-        - 'fixed_duration': 固定时长方案，直接进行 ASR 识别
+        - 'vad': VAD 方案，音频缓冲 -> VAD检测 -> ASR识别
+        - 'fixed_duration': 固定时长方案，后端控制 buffer 积累时机
+
+        固定时长模式流程：
+        1. TTS 播放完成后设置 is_buffering=True，开始积攒 buffer
+        2. 前端持续发送音频，后端累积到 audio_buffer
+        3. 累积时长达到 fixed_duration 后停止 buffering，进行 ASR 识别
+        4. ASR 识别完成 -> Brain 处理 -> TTS 播放 -> 回到步骤1
 
         Args:
             audio_data: Base64编码的音频数据
-            audio_format: 音频格式，默认 webm
+            audio_format: 音频格式，默认 pcm
             audio_mode: 音频处理模式，如果为 None 则使用实例的 audio_mode
         """
         if not self.is_running:
@@ -839,10 +861,12 @@ class AgenticTestAgent:
 
         try:
             if mode == self.AUDIO_MODE_FIXED_DURATION:
-                # ===== 固定时长方案: 直接进行 ASR 识别 =====
-                await self.send_callback('status', '使用固定时长方案处理音频...')
+                # ===== 固定时长方案: 后端控制 buffer 积累 =====
+                vad_asr_result = await self._process_fixed_duration_with_buffer(audio_data, audio_format)
 
-                vad_asr_result = await self.process_fixed_duration_audio(audio_data, audio_format)
+                if vad_asr_result is None:
+                    # buffer 未满，继续累积
+                    return
 
                 if not vad_asr_result.success:
                     await self.send_callback('error', f'固定时长音频处理失败: {vad_asr_result.error_message}')
@@ -850,12 +874,15 @@ class AgenticTestAgent:
 
                 # 未检测到语音或结果为空
                 if not vad_asr_result.has_speech or not vad_asr_result.asr_text:
-                    await self.send_callback('status', '语音识别结果为空，等待下一次输入...')
+                    await self.send_callback('status', '语音识别结果为空，准备下一轮...')
+                    # 重置 buffering 状态，等待下一轮
+                    self._start_buffering()
                     return
 
                 # 检测到 noise
                 if vad_asr_result.asr_text == '<noise>':
-                    await self.send_callback('status', '语音识别结果为<noise>')
+                    await self.send_callback('status', '语音识别结果为<noise>，准备下一轮...')
+                    self._start_buffering()
                     return
 
             else:
@@ -901,8 +928,7 @@ class AgenticTestAgent:
             if brain_result.should_continue and brain_result.next_query:
                 await asyncio.sleep(1.0)
                 await self.execute_full_loop()
-
-                # 固定时长模式：触发事件让主循环继续等待下一轮音频
+                # 固定时长模式：触发事件让主循环知道处理已完成
                 if mode == self.AUDIO_MODE_FIXED_DURATION:
                     self._audio_input_event.set()
             else:
@@ -911,6 +937,127 @@ class AgenticTestAgent:
         except Exception as e:
             logger.error(f"Error processing audio: {e}", exc_info=True)
             await self.send_callback('error', f'音频处理失败: {str(e)}')
+
+    def _start_buffering(self):
+        """
+        开始积累音频 buffer
+
+        在 TTS 播放完成后调用，表示后端准备好接收用户的语音输入。
+        """
+        self.audio_buffer = []
+        self.buffer_start_time = time.perf_counter()
+        self.is_buffering = True
+        logger.info(f"Started buffering audio, duration target: {self.fixed_duration}s")
+        # 注意: send_callback 是异步的，这里只是设置状态，状态变化会通过其他方式通知前端
+
+    def _stop_buffering(self):
+        """
+        停止积累音频 buffer
+        """
+        self.is_buffering = False
+        logger.info("Stopped buffering audio")
+
+    async def _process_fixed_duration_with_buffer(self, audio_data: str, audio_format: str = 'pcm') -> Optional[VADASRResult]:
+        """
+        固定时长模式：后端控制 buffer 积累和处理
+
+        Args:
+            audio_data: Base64编码的音频数据
+            audio_format: 音频格式
+
+        Returns:
+            VADASRResult: 处理结果，如果 buffer 未满返回 None
+        """
+        try:
+            # 如果不在 buffering 状态，忽略音频数据
+            if not self.is_buffering:
+                logger.debug("Not in buffering state, ignoring audio data")
+                return None
+
+            # 解码 Base64 音频数据
+            audio_bytes = base64.b64decode(audio_data)
+
+            # 累积到 buffer
+            async with self.buffer_lock:
+                self.audio_buffer.append(audio_bytes)
+                total_bytes = sum(len(chunk) for chunk in self.audio_buffer)
+
+            # 计算当前 buffer 时长（16kHz, 16bit, mono = 32000 bytes/sec）
+            current_duration = total_bytes / 32000
+
+            await self.send_callback('buffer_status', {
+                'current_duration': round(current_duration, 2),
+                'target_duration': self.fixed_duration,
+                'is_buffering': True
+            })
+
+            logger.debug(f"Buffer: {current_duration:.2f}s / {self.fixed_duration}s")
+
+            # 检查是否达到目标时长
+            if current_duration < self.fixed_duration:
+                return None  # 继续累积
+
+            # 达到目标时长，停止 buffering 并处理
+            self._stop_buffering()
+
+            await self.send_callback('status', f'音频积累完成: {current_duration:.2f}秒，开始识别...')
+
+            # 合并 buffer 中的音频
+            async with self.buffer_lock:
+                combined_audio = b''.join(self.audio_buffer)
+                self.audio_buffer = []
+
+            await self.log_event('mic_capture', '固定时长音频积累完成', {
+                'audio_bytes': len(combined_audio),
+                'duration_s': current_duration,
+                'format': audio_format,
+                'loop_step': self.loop_step
+            })
+
+            # 直接进行 ASR 识别（跳过 VAD）
+            wav_audio_b64 = AudioConverter.pcm_to_wav_base64(combined_audio)
+            asr_result = await self.asr_service.recognize_speech(wav_audio_b64, audio_format="wav")
+
+            await self.send_callback('transcript_final', asr_result, {
+                'confidence': 0.9,
+                'loop_step': self.loop_step,
+                'audio_duration_s': current_duration,
+                'audio_mode': 'fixed_duration'
+            })
+
+            asr_text = asr_result.strip()
+
+            if not asr_text:
+                return VADASRResult(
+                    success=True,
+                    has_speech=False,
+                    asr_text="",
+                    speech_ratio=0.0
+                )
+
+            # 更新 ASR 结果记录
+            self.current_asr_result = asr_text
+            if asr_text != '<noise>':
+                self.current_asr_true_result = asr_text
+                self.real_voice_active_time = time.perf_counter()
+
+            logger.info(f"Fixed duration ASR result: '{asr_text}'")
+
+            return VADASRResult(
+                success=True,
+                has_speech=True,
+                asr_text=asr_text,
+                speech_ratio=1.0,
+                confidence=0.9
+            )
+
+        except Exception as e:
+            logger.error(f"Error processing fixed duration audio with buffer: {e}", exc_info=True)
+            await self.send_callback('error', f'固定时长音频处理失败: {str(e)}')
+            return VADASRResult(
+                success=False,
+                error_message=str(e)
+            )
 
     async def update_device_status(self):
         """更新设备状态"""
