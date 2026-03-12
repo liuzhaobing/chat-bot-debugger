@@ -152,6 +152,323 @@ class AgenticTestAgent:
         self.previous_device_status: Dict = {}
         self.current_device_status: Dict = {}
 
+        # 测试用例
+        self.test_cases: List = [
+            {
+                "id": "APPL-LIGHT-001",
+                "module": "一体机 - 灯光控制(lightControl)",
+                "title": "语音打开一体机内部灯光",
+                "type": "Functional",
+                "preconditions": [
+                    "设备 CQ38-i7 在线（deviceGuid=38-i750411c84f366）",
+                    "语音端（如App/音箱/眼镜）账号已绑定该设备并具备控制权限",
+                    "设备当前无故障告警（如门故障/控制板故障）"
+                ],
+                "device_guids": [
+                    "38-i750411c84f366"
+                ],
+                "steps": [
+                    "通过语音发出指令：\"打开一体机灯\"（或\"打开烤箱灯/打开内部照明\"），识别到目标设备为CQ38-i7",
+                    "等待语音平台下发物模型指令 lightControl，参数 lightSwitch=1，controlTerminalType=语音端类型（如有）",
+                    "调用查询状态接口（如设备状态查询/灯状态上报）或通过设备面板/摄像观察确认灯光状态"
+                ],
+                "expect_results": [
+                    "语音识别成功并命中设备CQ38-i7",
+                    "下发 lightControl(lightSwitch=1) 成功，平台返回成功/设备ACK成功",
+                    "一体机内部照明灯点亮，灯状态从0变为1（或等效状态上报）"
+                ],
+                "actual_results": [],
+                "test_result": "NotRun"
+            },
+            {
+                "id": "APPL-LIGHT-002",
+                "module": "一体机 - 灯光控制(lightControl)",
+                "title": "语音关闭一体机内部灯光",
+                "type": "Functional",
+                "preconditions": [
+                    "设备 CQ38-i7 在线（deviceGuid=38-i750411c84f366）",
+                    "语音端账号已绑定该设备并具备控制权限",
+                    "一体机内部灯当前为开启状态（lightSwitch=1）"
+                ],
+                "device_guids": [
+                    "38-i750411c84f366"
+                ],
+                "steps": [
+                    "通过语音发出指令：\"关闭一体机灯\"（或\"关闭烤箱灯/关闭内部照明\"）",
+                    "等待语音平台下发物模型指令 lightControl，参数 lightSwitch=0",
+                    "查询/观察确认灯光状态"
+                ],
+                "expect_results": [
+                    "语音识别成功并命中设备CQ38-i7",
+                    "下发 lightControl(lightSwitch=0) 成功",
+                    "一体机内部照明灯熄灭，灯状态从1变为0（或等效状态上报）"
+                ],
+                "actual_results": [],
+                "test_result": "NotRun"
+            },
+            {
+                "id": "APPL-LIGHT-003",
+                "module": "一体机 - 灯光控制(lightControl)",
+                "title": "语音重复打开：灯已开启时再次打开应幂等成功",
+                "type": "State",
+                "preconditions": [
+                    "设备 CQ38-i7 在线（deviceGuid=38-i750411c84f366）",
+                    "语音端账号已绑定该设备并具备控制权限",
+                    "灯已开启（lightSwitch=1）"
+                ],
+                "device_guids": [
+                    "38-i750411c84f366"
+                ],
+                "steps": [
+                    "语音指令：\"打开一体机灯\"",
+                    "观察平台返回与设备状态上报"
+                ],
+                "expect_results": [
+                    "下发 lightControl(lightSwitch=1) 成功或返回已是目标状态（均视为成功）",
+                    "灯保持开启状态不闪烁、不重启、不出现异常告警",
+                    "状态上报保持 lightSwitch=1（或等效）"
+                ],
+                "actual_results": [],
+                "test_result": "NotRun"
+            },
+            {
+                "id": "APPL-LIGHT-004",
+                "module": "一体机 - 灯光控制(lightControl)",
+                "title": "语音重复关闭：灯已关闭时再次关闭应幂等成功",
+                "type": "State",
+                "preconditions": [
+                    "设备 CQ38-i7 在线（deviceGuid=38-i750411c84f366）",
+                    "语音端账号已绑定该设备并具备控制权限",
+                    "灯已关闭（lightSwitch=0）"
+                ],
+                "device_guids": [
+                    "38-i750411c84f366"
+                ],
+                "steps": [
+                    "语音指令：\"关闭一体机灯\"",
+                    "观察平台返回与设备状态上报"
+                ],
+                "expect_results": [
+                    "下发 lightControl(lightSwitch=0) 成功或返回已是目标状态（均视为成功）",
+                    "灯保持关闭状态",
+                    "状态上报保持 lightSwitch=0（或等效）"
+                ],
+                "actual_results": [],
+                "test_result": "NotRun"
+            },
+            {
+                "id": "APPL-LIGHT-005",
+                "module": "一体机 - 灯光控制(lightControl)",
+                "title": "语音快速切换：连续开->关->开，最终状态应为开启",
+                "type": "State",
+                "preconditions": [
+                    "设备 CQ38-i7 在线（deviceGuid=38-i750411c84f366）",
+                    "语音端账号已绑定该设备并具备控制权限"
+                ],
+                "device_guids": [
+                    "38-i750411c84f366"
+                ],
+                "steps": [
+                    "在5秒内依次语音下发：\"打开一体机灯\"、\"关闭一体机灯\"、\"打开一体机灯\"",
+                    "等待所有指令下发完成并观察设备最终状态上报"
+                ],
+                "expect_results": [
+                    "三次语音均命中设备CQ38-i7且均成功下发对应 lightControl 指令",
+                    "设备不出现卡死/重启/异常告警",
+                    "最终灯状态为开启（lightSwitch=1），状态上报与实际一致"
+                ],
+                "actual_results": [],
+                "test_result": "NotRun"
+            },
+            {
+                "id": "APPL-LIGHT-006",
+                "module": "一体机 - 灯光控制(lightControl)",
+                "title": "边界：语音指令包含设备别名/型号混合表达仍能控制灯光",
+                "type": "EdgeCase",
+                "preconditions": [
+                    "设备 CQ38-i7 在线（deviceGuid=38-i750411c84f366）",
+                    "语音端账号已绑定该设备并具备控制权限",
+                    "家庭内存在多台一体机（例如CQ38-i7、CQ01-i1、CQ9878A）以验证消歧"
+                ],
+                "device_guids": [
+                    "38-i750411c84f366",
+                    "38-i750411c84f366"
+                ],
+                "steps": [
+                    "语音指令：\"打开CQ38-i7灯\" 或 \"打开CQ38灯\" 或 \"打开一体机CQ38-i7的灯\"",
+                    "观察语音端是否提示命中CQ38-i7并执行",
+                    "查询/观察灯状态"
+                ],
+                "expect_results": [
+                    "语音NLP正确消歧并命中CQ38-i7（deviceGuid=38-i750411c84f366）",
+                    "下发 lightControl(lightSwitch=1) 成功",
+                    "CQ38-i7灯光状态变为开启"
+                ],
+                "actual_results": [],
+                "test_result": "NotRun"
+            },
+            {
+                "id": "APPL-LIGHT-007",
+                "module": "一体机 - 灯光控制(lightControl)",
+                "title": "错误处理：家庭存在多台一体机但用户说\"打开一体机灯\"应触发澄清/选择",
+                "type": "Error",
+                "preconditions": [
+                    "设备 CQ38-i7 在线（deviceGuid=38-i750411c84f366）",
+                    "同家庭存在其他一体机设备（如deviceGuid=Q01i16879c4bd72e5、9878Ac8478c00eca5）",
+                    "语音端账号已绑定这些设备或至少能被语音端发现"
+                ],
+                "device_guids": [
+                    "38-i750411c84f366",
+                    "Q01i16879c4bd72e5",
+                    "9878Ac8478c00eca5"
+                ],
+                "steps": [
+                    "语音指令：\"打开一体机灯\"（不指明具体设备）",
+                    "观察语音端交互：是否要求选择设备/确认目标",
+                    "在澄清后选择CQ38-i7并确认执行（如语音回复\"打开CQ38-i7\"）"
+                ],
+                "expect_results": [
+                    "当目标不唯一时，语音端不应误控其他一体机",
+                    "语音端发起澄清或提供可选设备列表",
+                    "确认CQ38-i7后，下发 lightControl(lightSwitch=1) 成功且仅CQ38-i7灯被打开"
+                ],
+                "actual_results": [],
+                "test_result": "NotRun"
+            },
+            {
+                "id": "APPL-LIGHT-008",
+                "module": "一体机 - 灯光控制(lightControl)",
+                "title": "错误处理：设备离线时语音打开灯应失败并给出可理解提示",
+                "type": "Error",
+                "preconditions": [
+                    "将CQ38-i7断网或断电使其离线（deviceGuid=38-i750411c84f366）",
+                    "语音端账号仍绑定该设备"
+                ],
+                "device_guids": [
+                    "38-i750411c84f366"
+                ],
+                "steps": [
+                    "语音指令：\"打开一体机CQ38-i7的灯\"",
+                    "观察语音端提示与平台下发结果（超时/离线错误）"
+                ],
+                "expect_results": [
+                    "平台下发失败，返回设备离线/不可达/超时等明确错误码或错误信息",
+                    "语音端提示用户设备离线，未改变设备灯光状态",
+                    "不应出现“已打开”等误导性成功播报"
+                ],
+                "actual_results": [],
+                "test_result": "NotRun"
+            },
+            {
+                "id": "APPL-LIGHT-009",
+                "module": "一体机 - 灯光控制(lightControl)",
+                "title": "错误处理：无权限账号尝试语音控制灯光应被拒绝",
+                "type": "Security",
+                "preconditions": [
+                    "设备 CQ38-i7 在线（deviceGuid=38-i750411c84f366）",
+                    "使用未被家庭授权/未共享该设备的账号登录语音端",
+                    "该账号可发起语音但无设备控制权限"
+                ],
+                "device_guids": [
+                    "38-i750411c84f366"
+                ],
+                "steps": [
+                    "未授权账号语音指令：\"打开CQ38-i7灯\"",
+                    "观察平台鉴权与语音端提示"
+                ],
+                "expect_results": [
+                    "平台鉴权失败（如403/无权限），不下发或下发被拒绝",
+                    "语音端提示无权限/需要授权/无法控制",
+                    "CQ38-i7灯光状态不发生变化"
+                ],
+                "actual_results": [],
+                "test_result": "NotRun"
+            },
+            {
+                "id": "APPL-LIGHT-010",
+                "module": "一体机 - 灯光控制(lightControl)",
+                "title": "安全：语音文本注入/特殊字符不应导致异常下发或越权（lightSwitch仅允许0/1）",
+                "type": "Security",
+                "preconditions": [
+                    "设备 CQ38-i7 在线（deviceGuid=38-i750411c84f366）",
+                    "语音端支持文本指令入口（如输入框/快捷命令）或可模拟ASR结果"
+                ],
+                "device_guids": [
+                    "38-i750411c84f366"
+                ],
+                "steps": [
+                    "通过文本指令输入异常内容（示例）：\"打开灯;lightSwitch=2\"、\"打开灯{\"lightSwitch\":999}\"、\"<script>alert(1)</script>打开灯\"",
+                    "观察语音解析结果与实际下发到物模型的参数",
+                    "查询/观察设备灯状态与平台日志"
+                ],
+                "expect_results": [
+                    "解析/参数校验生效：仅允许 lightSwitch 取值0或1，异常值被拒绝或纠正为合法指令",
+                    "平台与语音端不出现脚本执行/崩溃/日志污染等安全问题",
+                    "设备仅在合法指令下改变灯状态"
+                ],
+                "actual_results": [],
+                "test_result": "NotRun"
+            },
+            {
+                "id": "APPL-LIGHT-011",
+                "module": "一体机 - 灯光控制(lightControl)",
+                "title": "性能：语音开灯端到端响应时间满足要求（如<=3秒，可配置阈值）",
+                "type": "Performance",
+                "preconditions": [
+                    "设备 CQ38-i7 在线（deviceGuid=38-i750411c84f366）",
+                    "网络状况正常（语音端与设备均可稳定访问平台）",
+                    "已定义验收阈值（例如：从语音结束到灯亮<=3秒）"
+                ],
+                "device_guids": [
+                    "38-i750411c84f366"
+                ],
+                "steps": [
+                    "开始计时，在语音端发出\"打开CQ38-i7灯\"并结束说话",
+                    "记录语音识别完成时间、平台下发时间、设备ACK时间、灯亮时间（以日志或观测为准）",
+                    "重复测试10次取P95"
+                ],
+                "expect_results": [
+                    "10次均成功控制灯光开启",
+                    "端到端时延P95满足阈值（如<=3秒；以项目验收标准为准）",
+                    "无明显超时、重试风暴或丢指令现象"
+                ],
+                "actual_results": [],
+                "test_result": "NotRun"
+            },
+            {
+                "id": "APPL-LIGHT-012",
+                "module": "一体机 - 灯光控制(lightControl)",
+                "title": "状态联动：执行pause/continue/stop等工作控制后，灯光语音控制仍可用且状态不被错误重置",
+                "type": "State",
+                "preconditions": [
+                    "设备 CQ38-i7 在线（deviceGuid=38-i750411c84f366）",
+                    "设备可进入工作态（可用startWork启动任一模式，或使用设备面板启动）",
+                    "语音端账号已绑定该设备并具备控制权限"
+                ],
+                "device_guids": [
+                    "38-i750411c84f366"
+                ],
+                "steps": [
+                    "启动一体机工作（startWork或实际启动），确认设备处于运行中",
+                    "语音指令：\"打开一体机灯\"，确认灯亮",
+                    "语音/APP触发暂停（pauseWork），再语音指令：\"关闭一体机灯\"",
+                    "语音/APP触发继续（continueWork），再语音指令：\"打开一体机灯\"",
+                    "语音/APP触发停止（stopWork），确认灯状态与最后一次指令一致"
+                ],
+                "expect_results": [
+                    "在运行/暂停/继续/停止各状态下，lightControl均可正常下发并生效",
+                    "暂停/继续/停止不会将灯状态错误重置（除非产品定义必须重置并有明确说明/上报）",
+                    "每次操作均有明确ACK/状态上报，且与实际灯光一致"
+                ],
+                "actual_results": [],
+                "test_result": "NotRun"
+            }
+        ]
+
+        # 当前测试用例
+        self.current_case_index = 0
+        self.current_case: Dict = {}
+
         # 固定时长音频缓冲区
         self.audio_buffer: List[bytes] = []
         self.buffer_start_time: Optional[float] = None  # 开始积累的时间
@@ -188,12 +505,16 @@ class AgenticTestAgent:
         self._add_to_conversation_history('user', initial_query)
 
         await self.log_event('user_query', initial_query)
+        await self.send_callback('ai_response', initial_query)
         await self.send_callback('log', f'开始处理查询: {initial_query}')
         await self.send_callback('status', '智能体循环已启动')
 
         try:
             # 初始化设备状态
             await self.initialize_device_status()
+
+            # 初始化当前测试用例
+            self.current_case = self.test_cases[self.current_case_index]
 
             # 固定时长模式：先播放初始 TTS，然后开始积累音频
             if self.audio_mode == self.AUDIO_MODE_FIXED_DURATION:
@@ -287,7 +608,7 @@ class AgenticTestAgent:
                     category_name = device.get('categoryName')
                     nick_name = device.get('name')
                     display_type = device.get('displayType')
-                    device_status = device.get('device_status')
+                    device_status = device.get('status')
                     self.family_devices[device_guid] = {
                         'device_guid': device_guid,
                         'category_name': category_name,
@@ -607,7 +928,7 @@ class AgenticTestAgent:
                 next_query = await self.generate_next_query(judge_result, SKIP_TO_NEXT_QUERY)
                 if next_query and next_query.strip():
                     self.current_query = next_query
-                    self._add_to_conversation_history('assistant', next_query)
+                    self._add_to_conversation_history('user', next_query)
                     await self.send_callback('ai_response', next_query)
                     return BrainProcessResult(
                         success=True,
@@ -635,7 +956,7 @@ class AgenticTestAgent:
                 )
 
             # 记录用户输入（ASR识别的文本）
-            self._add_to_conversation_history('user', asr_text)
+            self._add_to_conversation_history('assistant', asr_text)
 
             # 更新设备状态(可选)
             # await self.update_device_status()
@@ -655,7 +976,7 @@ class AgenticTestAgent:
             if next_query and next_query.strip():
                 self.current_query = next_query
                 # 记录AI响应
-                self._add_to_conversation_history('assistant', next_query)
+                self._add_to_conversation_history('user', next_query)
                 await self.send_callback('log', f'生成新查询: {self.current_query}')
                 await self.send_callback('ai_response', self.current_query)
                 await self.send_callback('query_generated', {
@@ -1286,6 +1607,7 @@ class AgenticTestAgent:
 
     async def generate_next_query(self, judge_result: Dict[str, Any], asr_text: str) -> str:
         """根据判断结果生成下一个查询"""
+        self.current_case = self.test_cases[self.current_case_index]
         try:
             if not judge_result.get('should_continue', True):
                 return ""
@@ -1297,23 +1619,19 @@ class AgenticTestAgent:
             # 使用全局对话历史
             conversation_history_context = self._get_conversation_history_context()
 
-            test_scenario = """
-打开烟机
-打开烟机灯光
-烟机调到最大档
-烟机风量最小
-调到中等风量
-烟机风力最弱
-烟机风量/风力调大/调高
-减弱烟机风量/风力
-烟机风量再小一点
-把烟机调到弱档/强档/爆炒档
-关烟机风量
-关闭烟机灯
-帮我把烟机关了
-            """.strip()
+            # 使用家庭设备列表上下文
+            family_devices_context = self._get_family_devices_context()
+
+            # 格式化当前测试用例为 markdown 表格
+            current_case_context = self._format_current_case_context()
+
             query_result = await self.call_query_generator_app(
-                message=f"""**测试场景**：\n\n{test_scenario}\n\n**家庭设备列表**：\n\n{self.family_devices}\n\n**对话历史**：\n\n{conversation_history_context}\n\n**当前设备状态**：\n\n[]""".strip(),
+                message="\n\n".join([
+                    "**当前测试用例**：", current_case_context,
+                    "**家庭设备列表**：", family_devices_context,
+                    "**对话历史**：", conversation_history_context,
+                    "**当前设备状态**：", []
+                ])
             )
 
             await self.log_event('query_generated', json.dumps(query_result, ensure_ascii=False), {
@@ -1324,11 +1642,10 @@ class AgenticTestAgent:
             await self.send_callback('query_generated', query_result)
 
             if not query_result.get('should_continue', True):
-                return ""
+                self.current_case_index += 1
+                await self.send_callback('log', f'准备加载下一条测试用例：{self.current_case_index}.{self.test_cases[self.current_case_index].get("title")}')
 
             next_query = query_result.get('user_input', '')
-            if next_query:
-                await self.send_callback('log', f'生成测试意图: {query_result.get("test_intent", "N/A")}')
 
             return next_query
 
@@ -1404,8 +1721,8 @@ class AgenticTestAgent:
 
         lines = []
         for msg in self.conversation_history:
-            role_name = "用户" if msg['role'] == 'user' else "助手"
-            lines.append(f"{role_name}: {msg['content']}")
+            role_name = "测试员" if msg['role'] == 'user' else "被测系统"
+            lines.append(f"- {role_name}: {msg['content']}")
 
         return "\n".join(lines)
 
@@ -1413,6 +1730,72 @@ class AgenticTestAgent:
         """清空对话历史"""
         self.conversation_history = []
         logger.info(f"Conversation history cleared for session {self.session_id}")
+
+    def _get_family_devices_context(self) -> str:
+        """
+        获取家庭设备列表的文本格式，用于传递给LLM
+
+        Returns:
+            格式化的设备列表文本（markdown表格）
+        """
+        if not self.family_devices:
+            return "无设备"
+
+        lines = ["| 设备GUID | 设备类型 | 设备标准型号 | 设备昵称 | 设备状态 |", "|:---------|:---------|:---------|:---------|:---------|"]
+        for device_guid, device in self.family_devices.items():
+            nick_name = device.get('nick_name', 'N/A') or 'N/A'
+            category_name = device.get('category_name', 'N/A') or 'N/A'
+            display_type = device.get('display_type', 'N/A') or 'N/A'
+            device_status = device.get('device_status')
+            device_status = '在线' if device_status else '离线'
+            lines.append(f"| {device_guid} | {category_name} | {display_type} | {nick_name} | {device_status} |")
+
+        return "\n".join(lines)
+
+    def _format_current_case_context(self) -> str:
+        """
+        格式化当前测试用例为 markdown 表格
+
+        Returns:
+            格式化的测试用例文本（markdown表格）
+        """
+        if not self.current_case:
+            return "无用例"
+
+        # 定义表格列
+        headers = ["id", "module", "title", "type", "preconditions", "device_guids",
+                   "steps", "expect_results", "actual_results", "test_result"]
+        header_names = {
+            "id": "用例ID",
+            "module": "模块",
+            "title": "标题",
+            "type": "类型",
+            "preconditions": "前置条件",
+            "device_guids": "要操控设备的deviceGuid",
+            "steps": "测试步骤",
+            "expect_results": "预期结果",
+            "actual_results": "实际结果",
+            "test_result": "测试结果"
+        }
+
+        # 构建表头
+        lines = ["| " + " | ".join([header_names.get(h, h) for h in headers]) + " |"]
+        lines.append("|" + "|".join([":---" for _ in headers]) + "|")
+
+        # 构建数据行
+        row_values = []
+        for h in headers:
+            value = self.current_case.get(h, 'N/A')
+            if value is None:
+                value = 'N/A'
+            elif isinstance(value, list):
+                value = '<br>'.join(str(v) for v in value)
+            else:
+                value = str(value)
+            row_values.append(value)
+        lines.append("| " + " | ".join(row_values) + " |")
+
+        return "\n".join(lines)
 
     async def handle_intervention(self, message: str):
         """处理人工干预"""
