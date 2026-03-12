@@ -79,6 +79,10 @@ class AudioOutputResult:
     error_message: Optional[str] = None
 
 
+# 特殊标记：噪音重试耗尽后跳过当前轮次，直接生成下一个 query
+SKIP_TO_NEXT_QUERY = "<skip_to_next_query>"
+
+
 class AgenticTestAgent:
     """Agentic Test 智能体主循环
 
@@ -235,7 +239,7 @@ class AgenticTestAgent:
                             else:
                                 break
 
-                    await asyncio.sleep(0.1)  # 短暂休眠，避免 CPU 空转
+                    await asyncio.sleep(1.0)  # 短暂休眠，避免 CPU 空转
 
                 except asyncio.CancelledError:
                     logger.info("Agent loop cancelled")
@@ -245,7 +249,7 @@ class AgenticTestAgent:
                     await self.send_callback('error', f'循环步骤 {self.loop_step} 执行错误: {str(e)}')
 
                     if self.loop_step < self.max_loop_steps:
-                        await asyncio.sleep(2.0)
+                        await asyncio.sleep(1.0)
                         continue
                     else:
                         break
@@ -596,6 +600,31 @@ class AgenticTestAgent:
             await self.send_callback('brain_input', asr_text)
 
             # 检查noise或空结果，不记录到对话历史
+            if asr_text == SKIP_TO_NEXT_QUERY:
+                # 噪音重试耗尽，直接生成下一个 query
+                await self.send_callback('status', '噪音重试耗尽，生成下一个测试...')
+                judge_result = {'should_continue': True}
+                next_query = await self.generate_next_query(judge_result, SKIP_TO_NEXT_QUERY)
+                if next_query and next_query.strip():
+                    self.current_query = next_query
+                    self._add_to_conversation_history('assistant', next_query)
+                    await self.send_callback('ai_response', next_query)
+                    return BrainProcessResult(
+                        success=True,
+                        next_query=next_query,
+                        should_continue=True,
+                        ai_response=next_query,
+                        analysis={'type': 'skip_to_next_after_noise_retry'}
+                    )
+                else:
+                    return BrainProcessResult(
+                        success=True,
+                        next_query="",
+                        should_continue=False,
+                        ai_response="对话完成",
+                        analysis={'type': 'skip_to_next_no_more_queries'}
+                    )
+
             if asr_text == '<noise>' or not asr_text or not asr_text.strip():
                 return BrainProcessResult(
                     success=True,
@@ -820,7 +849,7 @@ class AgenticTestAgent:
                 return False
 
             # 等待智能音响响应
-            await self.wait_for_speaker_response(wait_time=3.0)
+            await self.wait_for_speaker_response(wait_time=0.0)
 
             # 根据音频模式决定是否继续循环
             if self.audio_mode == self.AUDIO_MODE_FIXED_DURATION:
@@ -907,8 +936,8 @@ class AgenticTestAgent:
                         await self.send_callback('status', '多次检测到噪音，跳过当前轮次，生成下一个测试...')
                         self.noise_retry_count = 0  # 重置计数器
 
-                        # 直接进入下一轮 Brain 处理（使用空的 ASR 结果来生成下一个 query）
-                        brain_result = await self.process_brain_with_device_context('')
+                        # 直接进入下一轮 Brain 处理（使用特殊标记生成下一个 query）
+                        brain_result = await self.process_brain_with_device_context(SKIP_TO_NEXT_QUERY)
                         if brain_result.success and brain_result.next_query:
                             await asyncio.sleep(1.0)
                             await self.execute_full_loop()

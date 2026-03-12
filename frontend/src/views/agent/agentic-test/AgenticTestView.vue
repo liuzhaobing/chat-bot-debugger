@@ -574,7 +574,7 @@ export default {
           const iotConfig = this.getIOTConfigFromStorage()
           const startTestMessage = {
             type: 'start_test',
-            query: '我的家庭圈有哪些一体机？',
+            query: '我家有哪些设备？',
             iot_config: iotConfig,
             timestamp: Date.now()
           }
