@@ -28,16 +28,16 @@ class DeviceProtocolSerializer(serializers.ModelSerializer):
 
 class TTSVoiceSimpleSerializer(serializers.Serializer):
     """TTS音色简化的序列化器"""
-    id = serializers.UUIDField()
-    display_name = serializers.CharField()
-    speaker = serializers.CharField()
+    speaker = serializers.CharField()  # TTSVoice 的主键
+    name = serializers.CharField()     # 音色名称
+    display_name = serializers.CharField(source='name')  # 兼容前端，实际返回 name
 
 
 class TestTaskSerializer(serializers.ModelSerializer):
     """测试任务序列化器"""
     tts_voice = TTSVoiceSimpleSerializer(read_only=True)
     iot_protocol = DeviceProtocolSerializer(read_only=True)
-    tts_voice_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
+    tts_voice_id = serializers.CharField(write_only=True, required=False, allow_null=True)  # 使用 CharField，因为主键是 speaker
     iot_protocol_id = serializers.CharField(write_only=True, required=False, allow_null=True)
     
     class Meta:
@@ -60,7 +60,7 @@ class TestTaskSerializer(serializers.ModelSerializer):
         if tts_voice_id:
             from chat.models import TTSVoice
             try:
-                validated_data['tts_voice'] = TTSVoice.objects.get(id=tts_voice_id)
+                validated_data['tts_voice'] = TTSVoice.objects.get(speaker=tts_voice_id)
             except TTSVoice.DoesNotExist:
                 pass
         
@@ -80,7 +80,7 @@ class TestTaskSerializer(serializers.ModelSerializer):
         if tts_voice_id is not None:
             from chat.models import TTSVoice
             try:
-                validated_data['tts_voice'] = TTSVoice.objects.get(id=tts_voice_id)
+                validated_data['tts_voice'] = TTSVoice.objects.get(speaker=tts_voice_id)
             except TTSVoice.DoesNotExist:
                 validated_data['tts_voice'] = None
         

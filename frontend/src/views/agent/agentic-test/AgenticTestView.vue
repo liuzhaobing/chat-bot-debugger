@@ -47,7 +47,8 @@
       
       <div class="toolbar-right">
         <!-- VAD+ASR测试按钮 -->
-        <button 
+        <!--
+        <button
           class="test-btn"
           @click="showVadAsrTest = true"
           title="VAD+ASR调试"
@@ -59,7 +60,7 @@
           </svg>
           <span>VAD+ASR调试</span>
         </button>
-        
+        -->
         <!-- 语音会话按钮 -->
         <button 
           class="session-status-btn" 

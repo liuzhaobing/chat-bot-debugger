@@ -123,7 +123,7 @@ class SceneTestService {
    */
   async getTTSVoices() {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/chat/tts-voices/`)
+      const response = await fetch(`${API_BASE_URL}/api/tts-voices/`)
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`)
       }
@@ -138,10 +138,11 @@ class SceneTestService {
    * TTS试听
    * @param {string} voiceId - TTS音色ID
    * @param {string} text - 试听文本
+   * @returns {string} base64音频数据 (wav格式)
    */
   async previewTTS(voiceId, text) {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/chat/tts-voices/${voiceId}/invoke/`, {
+      const response = await fetch(`${API_BASE_URL}/api/tts-voices/${voiceId}/invoke/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -152,8 +153,9 @@ class SceneTestService {
         throw new Error(`HTTP error! status: ${response.status}`)
       }
       const data = await response.json()
-      if (data.status === 'success' && data.audio_url) {
-        return data.audio_url
+      // 后端返回的是 base64 音频数据，不是 URL
+      if (data.status === 'success' && data.audio) {
+        return data.audio  // 返回 base64 音频数据
       }
       throw new Error(data.error || 'TTS synthesis failed')
     } catch (error) {

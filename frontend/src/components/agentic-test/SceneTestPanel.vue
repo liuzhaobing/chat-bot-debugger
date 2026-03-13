@@ -105,7 +105,16 @@
                 {{ formatTime(task.created_at) }}
               </div>
               <div class="td td-actions">
-                <button 
+                <button
+                  class="action-btn action-btn-execute"
+                  @click="executeTask(task)"
+                  title="执行任务"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                  </svg>
+                </button>
+                <button
                   v-if="task.status === 'completed' && task.report_url"
                   class="action-btn"
                   @click="downloadReport(task)"
@@ -117,7 +126,7 @@
                     <line x1="12" y1="15" x2="12" y2="3"></line>
                   </svg>
                 </button>
-                <button 
+                <button
                   class="action-btn"
                   @click="viewTaskDetail(task)"
                   title="查看详情"
@@ -127,7 +136,7 @@
                     <circle cx="12" cy="12" r="3"></circle>
                   </svg>
                 </button>
-                <button 
+                <button
                   class="action-btn action-btn-danger"
                   @click="deleteTask(task)"
                   title="删除任务"
@@ -184,8 +193,8 @@
             <div class="tts-selector">
               <select v-model="newTask.tts_voice_id" class="tts-select">
                 <option value="">请选择TTS音色</option>
-                <option v-for="voice in ttsVoices" :key="voice.id" :value="voice.id">
-                  {{ voice.display_name || voice.speaker }}
+                <option v-for="voice in ttsVoices" :key="voice.speaker" :value="voice.speaker">
+                  {{ voice.name || voice.speaker }}
                 </option>
               </select>
               <button 
@@ -202,7 +211,7 @@
                 {{ isPreviewing ? '试听中...' : '试听' }}
               </button>
             </div>
-            <p class="form-hint">试听文本："你好，我是你的烹饪伙伴食神"</p>
+            <p class="form-hint">试听文本："你好，我是你的AI烹饪伙伴食神"</p>
           </div>
 
           <!-- IOT设备协议选择 -->
@@ -368,7 +377,7 @@ export default {
         this.testTasks = await sceneTestService.getTestTasks()
       } catch (error) {
         console.error('加载测试任务失败:', error)
-        this.$message?.error?.('加载测试任务失败') || alert('加载测试任务失败')
+        window.$message?.error('加载测试任务失败')
       } finally {
         this.isLoading = false
       }
@@ -399,28 +408,38 @@ export default {
         this.testTasks.unshift(task)
         this.showCreateModal = false
         this.resetNewTask()
-        this.$message?.success?.('测试任务创建成功') || alert('测试任务创建成功')
+        window.$message?.success('测试任务创建成功')
       } catch (error) {
         console.error('创建测试任务失败:', error)
-        this.$message?.error?.('创建测试任务失败') || alert('创建测试任务失败')
+        window.$message?.error('创建测试任务失败')
       } finally {
         this.isCreating = false
       }
     },
     async previewTTS() {
       if (!this.newTask.tts_voice_id) return
-      
+
       this.isPreviewing = true
       try {
-        const audioUrl = await sceneTestService.previewTTS(
+        const audioBase64 = await sceneTestService.previewTTS(
           this.newTask.tts_voice_id,
-          '你好，我是你的烹饪伙伴食神'
+          '你好，我是你的AI烹饪伙伴食神'
         )
+        // 将 base64 音频数据转换为 Blob URL
+        const audioBytes = atob(audioBase64)
+        const audioArray = new Uint8Array(audioBytes.length)
+        for (let i = 0; i < audioBytes.length; i++) {
+          audioArray[i] = audioBytes.charCodeAt(i)
+        }
+        const audioBlob = new Blob([audioArray], { type: 'audio/wav' })
+        const audioUrl = URL.createObjectURL(audioBlob)
+
         const audio = new Audio(audioUrl)
+        audio.onended = () => URL.revokeObjectURL(audioUrl) // 播放完毕释放资源
         audio.play()
       } catch (error) {
         console.error('TTS试听失败:', error)
-        this.$message?.error?.('TTS试听失败') || alert('TTS试听失败')
+        window.$message?.error('TTS试听失败')
       } finally {
         this.isPreviewing = false
       }
@@ -431,10 +450,10 @@ export default {
       try {
         await sceneTestService.deleteTestTask(task.id)
         this.testTasks = this.testTasks.filter(t => t.id !== task.id)
-        this.$message?.success?.('任务已删除') || alert('任务已删除')
+        window.$message?.success('任务已删除')
       } catch (error) {
         console.error('删除任务失败:', error)
-        this.$message?.error?.('删除任务失败') || alert('删除任务失败')
+        window.$message?.error('删除任务失败')
       }
     },
     downloadReport(task) {
@@ -445,6 +464,11 @@ export default {
     viewTaskDetail(task) {
       this.selectedTask = task
       this.showDetailModal = true
+    },
+    executeTask(task) {
+      // TODO: 后期实现执行逻辑
+      console.log(task)
+      window.$message?.info('敬请期待')
     },
     resetNewTask() {
       this.newTask = {
@@ -877,6 +901,19 @@ export default {
   border-color: var(--accent-red);
   color: var(--accent-red);
   box-shadow: 0 2px 4px rgba(248, 81, 73, 0.2);
+}
+
+.action-btn-execute {
+  background: rgba(63, 185, 80, 0.1);
+  border-color: rgba(63, 185, 80, 0.3);
+  color: var(--accent-green);
+}
+
+.action-btn-execute:hover {
+  background: rgba(63, 185, 80, 0.2);
+  border-color: var(--accent-green);
+  color: var(--accent-green);
+  box-shadow: 0 2px 4px rgba(63, 185, 80, 0.2);
 }
 
 .action-btn svg {
