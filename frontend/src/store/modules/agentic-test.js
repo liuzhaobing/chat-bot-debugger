@@ -36,16 +36,27 @@ const state = {
     familyId: '',
     env: 'test'
   },
-  
+
+  // 测试配置
+  testerConfig: {
+    name: '',
+    prd_content: '',
+    tts_voice_id: '',
+    iot_protocol_id: ''
+  },
+
   // WebSocket连接
   websocket: null,
   connectionStatus: 'disconnected', // 'disconnected' | 'connecting' | 'connected' | 'active'
-  
+
   // 会话状态
   sessionActive: false,
   sessionDuration: 0,
   audioLevel: 0,
-  isMuted: false
+  isMuted: false,
+
+  // 配置初始化状态
+  isConfigInitialized: false
 }
 
 const mutations = {
@@ -130,7 +141,15 @@ const mutations = {
   SET_IOT_CONFIG(state, config) {
     state.iotConfig = { ...state.iotConfig, ...config }
   },
-  
+
+  SET_TESTER_CONFIG(state, config) {
+    state.testerConfig = { ...state.testerConfig, ...config }
+  },
+
+  SET_CONFIG_INITIALIZED(state, initialized) {
+    state.isConfigInitialized = initialized
+  },
+
   SET_WEBSOCKET(state, ws) {
     state.websocket = ws
   },
@@ -359,6 +378,7 @@ const actions = {
       state.websocket.send(JSON.stringify({
         type: 'start_test',
         query
+        // iot_config 已通过 init_config 消息发送
       }))
     }
   },
@@ -431,7 +451,23 @@ const actions = {
   updateIOTConfig({ commit }, config) {
     commit('SET_IOT_CONFIG', config)
   },
-  
+
+  // 更新测试配置
+  updateTesterConfig({ commit }, config) {
+    commit('SET_TESTER_CONFIG', config)
+  },
+
+  // 发送 init_config 消息
+  initConfig({ state }, { testerConfig, iotConfig }) {
+    if (state.websocket && state.websocket.readyState === WebSocket.OPEN) {
+      state.websocket.send(JSON.stringify({
+        type: 'init_config',
+        tester_config: testerConfig || state.testerConfig,
+        iot_config: iotConfig || state.iotConfig
+      }))
+    }
+  },
+
   // 测试IOT连接
   async testIOTConnection(_, { token, familyId, env }) {
     try {

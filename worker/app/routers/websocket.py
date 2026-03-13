@@ -44,6 +44,8 @@ async def agentic_test_websocket(
     audio_buffer = AudioBufferProcessor()
     agent = None
     iot_config = {}
+    tester_config = {}
+    is_config_initialized = False
 
     try:
         # 注册连接
@@ -51,7 +53,7 @@ async def agentic_test_websocket(
             websocket=websocket,
             session_id=session_id,
             user_id=user_id,
-            metadata={"token": token, "agent": None, "iot_config": {}}
+            metadata={"token": token, "agent": None, "iot_config": {}, "tester_config": {}}
         )
 
         # 发送连接确认
@@ -59,11 +61,11 @@ async def agentic_test_websocket(
             session_id,
             {
                 "type": "connection_status",
-                "content": "WebSocket连接已建立",
+                "content": "WebSocket连接已建立，等待初始化配置",
                 "metadata": {
                     "session_id": session_id,
                     "user_id": user_id,
-                    "waiting_for_iot_config": True
+                    "waiting_for_init_config": True
                 }
             }
         )
@@ -88,6 +90,7 @@ async def agentic_test_websocket(
                 # 获取 agent 和状态
                 agent = conn_info.metadata.get("agent")
                 iot_config = conn_info.metadata.get("iot_config", {})
+                tester_config = conn_info.metadata.get("tester_config", {})
 
                 # 处理消息
                 message_type = data.get("type")
@@ -99,14 +102,56 @@ async def agentic_test_websocket(
                         {"type": "pong", "content": "pong"}
                     )
 
-                elif message_type == "start_test":
-                    query = data.get("query", "")
+                elif message_type == "init_config":
+                    new_tester_config = data.get("tester_config", {})
                     new_iot_config = data.get("iot_config", {})
 
                     # 更新配置
                     if new_iot_config:
                         iot_config.update(new_iot_config)
                         conn_info.metadata["iot_config"] = iot_config
+
+                    # 保存 tester_config
+                    if new_tester_config:
+                        tester_config = new_tester_config
+                        conn_info.metadata["tester_config"] = tester_config
+
+                    is_config_initialized = True
+
+                    logger.info(
+                        f"Config initialized for session {session_id}: "
+                        f"tester_config={bool(tester_config)}, iot_config={bool(iot_config)}"
+                    )
+
+                    await connection_manager.send_message(
+                        session_id,
+                        {
+                            "type": "config_initialized",
+                            "content": "配置初始化成功",
+                            "metadata": {
+                                "tester_config": tester_config,
+                                "iot_config": {
+                                    "env": iot_config.get("env"),
+                                    "has_token": bool(iot_config.get("token")),
+                                    "has_family_id": bool(iot_config.get("familyId"))
+                                }
+                            }
+                        }
+                    )
+
+                elif message_type == "start_test":
+                    # 检查配置是否已初始化
+                    if not is_config_initialized:
+                        await connection_manager.send_message(
+                            session_id,
+                            {
+                                "type": "error",
+                                "content": "请先发送 init_config 消息初始化配置"
+                            }
+                        )
+                        continue
+
+                    query = data.get("query", "")
 
                     # 创建 Agent
                     from app.services.agent_service import AgenticTestAgent
@@ -122,7 +167,12 @@ async def agentic_test_websocket(
                             }
                         )
 
-                    agent = AgenticTestAgent(session_id, send_callback, iot_config)
+                    agent = AgenticTestAgent(
+                        session_id,
+                        send_callback,
+                        iot_config,
+                        tester_config=tester_config
+                    )
                     conn_info.metadata["agent"] = agent
 
                     # 启动测试

@@ -4,8 +4,9 @@
 负责测试任务的推进逻辑，包括状态机管理、噪音重试、完成判断等。
 """
 
+import json
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime
 
 from .models import (
@@ -15,6 +16,9 @@ from .models import (
     ProgressContext,
     JudgeResult,
     TesterConfig,
+    TestCase,
+    TestResultStatus,
+    CompletionCheckResult,
 )
 
 logger = logging.getLogger(__name__)
@@ -28,15 +32,21 @@ class TaskProgressor:
     - 噪音重试逻辑
     - 测试完成判断
     - 下一步行动决策
+    - 大模型验证完成状态
     """
 
-    def __init__(self, config: Optional[TesterConfig] = None):
+    # 用例完成验证 App ID
+    COMPLETION_VERIFIER_APP_ID = "completion_verifier_app"
+
+    def __init__(self, config: Optional[TesterConfig] = None, backend_service=None):
         """初始化推进器
 
         Args:
             config: 测试服务配置
+            backend_service: 后端服务实例（用于调用 App）
         """
         self.config = config or TesterConfig()
+        self.backend_service = backend_service
         self.state = TaskState.READY
         self.noise_retry_count = 0
         self.execution_retry_count = 0
@@ -159,21 +169,126 @@ class TaskProgressor:
         logger.info("Advanced to next test case")
         return True
 
-    def is_all_completed(self, total_cases: int, current_index: int) -> bool:
-        """判断是否全部完成
+    def get_unexecuted_case_indices(
+        self,
+        test_cases: List[TestCase],
+        current_index: int
+    ) -> List[int]:
+        """获取未执行用例的 index 列表（工程化判断）
 
         Args:
-            total_cases: 总用例数
-            current_index: 当前索引
+            test_cases: 测试用例列表
+            current_index: 当前用例索引
 
         Returns:
-            是否全部完成
+            未执行用例的 index 列表（空列表表示全部完成）
         """
-        completed = current_index >= total_cases
-        if completed:
-            self.state = TaskState.COMPLETED
-            logger.info(f"All test cases completed: {current_index}/{total_cases}")
-        return completed
+        unexecuted = []
+        for i, case in enumerate(test_cases):
+            if case.test_result == TestResultStatus.NOT_RUN:
+                unexecuted.append(i)
+        return unexecuted
+
+    async def verify_completion_with_llm(
+        self,
+        test_cases: List[TestCase]
+    ) -> Tuple[bool, List[int], str]:
+        """大模型验证是否所有用例都已完成
+
+        Args:
+            test_cases: 测试用例列表
+
+        Returns:
+            (是否全部完成, 未执行索引列表, 分析结果)
+        """
+        # 构建 markdown 表格
+        table = self._build_case_table(test_cases)
+
+        # 调用大模型
+        result = await self._call_verifier_app(table)
+
+        return result
+
+    def _build_case_table(self, test_cases: List[TestCase]) -> str:
+        """构建测试用例 markdown 表格
+
+        格式：
+        | index | title | test_result |
+        |-------|-------|-------------|
+        | 0     | xxx   | Pass        |
+        | 1     | xxx   | NotRun      |
+        """
+        lines = ["| index | title | test_result |", "|-------|-------|-------------|"]
+        for i, case in enumerate(test_cases):
+            lines.append(f"| {i} | {case.title} | {case.test_result.value} |")
+        return "\n".join(lines)
+
+    async def _call_verifier_app(self, table: str) -> Tuple[bool, List[int], str]:
+        """调用大模型验证 App
+
+        Args:
+            table: 测试用例表格
+
+        Returns:
+            (是否全部完成, 未执行索引列表, 分析结果)
+        """
+        try:
+            if self.backend_service:
+                result = await self.backend_service.invoke_app(
+                    app_id=self.COMPLETION_VERIFIER_APP_ID,
+                    message=f"请分析以下测试用例执行情况，判断是否全部完成：\n\n{table}",
+                    parameters={
+                        "case_table": table,
+                    }
+                )
+
+                if result.success and result.content:
+                    try:
+                        parsed_result = json.loads(result.content)
+                        completed = parsed_result.get("completed", False)
+                        unexecuted_indices = parsed_result.get("unexecuted_indices", [])
+                        analysis = parsed_result.get("analysis", "")
+                        return (completed, unexecuted_indices, analysis)
+                    except json.JSONDecodeError:
+                        logger.warning(f"Completion verifier returned non-JSON content")
+                        return self._get_default_verification_result(table)
+                else:
+                    logger.warning(f"Completion verifier app call failed: {result.error}")
+                    return self._get_default_verification_result(table)
+            else:
+                return self._get_default_verification_result(table)
+
+        except Exception as e:
+            logger.error(f"Completion verifier app call failed: {e}")
+            return self._get_default_verification_result(table)
+
+    def _get_default_verification_result(self, table: str) -> Tuple[bool, List[int], str]:
+        """获取默认的验证结果（当 App 调用失败时）
+
+        Args:
+            table: 测试用例表格
+
+        Returns:
+            (是否全部完成, 未执行索引列表, 分析结果)
+        """
+        # 简单解析表格，检查是否有 NotRun 状态
+        has_not_run = "NotRun" in table
+        if has_not_run:
+            # 尝试找出 NotRun 的索引
+            unexecuted = []
+            lines = table.split("\n")
+            for line in lines[2:]:  # 跳过表头
+                if "NotRun" in line:
+                    parts = line.split("|")
+                    if len(parts) > 1:
+                        try:
+                            idx = int(parts[1].strip())
+                            unexecuted.append(idx)
+                        except ValueError:
+                            pass
+            return (False, unexecuted, "默认验证：存在未执行的用例")
+        else:
+            return (True, [], "默认验证：所有用例已执行")
 
     def set_state(self, state: TaskState) -> None:
         """设置任务状态

@@ -15,6 +15,7 @@ from app.config import settings
 
 from .tester.models import (
     # 数据类
+    TestPoint,
     TestCase,
     TestCaseType,
     TestResult,
@@ -34,6 +35,7 @@ from .tester.models import (
     ExecutionContext,
     SessionInfo,
     ProgressContext,
+    CompletionCheckResult,
 )
 from .tester.case_manager import TestCaseManager, DEFAULT_TEST_CASES
 from .tester.executor import TestExecutor
@@ -52,7 +54,8 @@ class TesterService:
     """测试工程师服务
 
     提供完整的测试工程师功能，包括：
-    1. 测试用例设计
+    0. 测试点提取 - 从场景描述中提取需要验证的功能点
+    1. 测试用例设计 - 针对每个测试点设计具体的测试用例
     2. 测试用例执行
     3. 测试执行结果评判
     4. 测试任务推进
@@ -60,6 +63,12 @@ class TesterService:
     6. 测试完成判断
     7. 缺陷记录
     8. 测试报告输出
+
+    测试流程：
+    1. 先提取测试点（extract_test_points）
+    2. 再针对每个测试点设计测试用例（design_test_case_for_point 或 design_all_test_cases_from_points）
+    3. 执行测试用例（get_next_test_query -> process_execution_result）
+    4. 生成测试报告（finalize）
 
     从 agent_service.py 剥离的功能：
     - 测试用例管理（test_cases, current_case_index, current_case）
@@ -72,7 +81,18 @@ class TesterService:
         tester = TesterService()
         await tester.initialize(session_id, iot_config)
 
-        while not tester.is_testing_completed():
+        # 先提取测试点
+        test_points = await tester.extract_test_points(scenario_description)
+
+        # 再设计测试用例
+        test_cases = await tester.design_all_test_cases_from_points()
+
+        while True:
+            # 检查测试完成状态
+            result = await tester.check_testing_completion()
+            if result.completed:
+                break
+
             query = await tester.get_next_test_query()
             # 执行测试...
             progress = await tester.process_execution_result(asr_text, before_status, after_status)
@@ -83,6 +103,7 @@ class TesterService:
     # App IDs - 从 agent_service.py 迁移
     JUDGE_APP_ID = "e4d13f457f7f486c99ca11b39a7b8347"
     QUERY_GENERATOR_APP_ID = "c7a27bd4e3cf49008ae99fc69817f155"
+    TEST_POINT_EXTRACTOR_APP_ID = "test_point_extractor"  # 测试点提取App ID
 
     def __init__(
         self,
@@ -108,7 +129,7 @@ class TesterService:
         self.case_manager = TestCaseManager(self.config)
         self.executor = TestExecutor(self.config, backend_service)
         self.judge = TestJudge(self.config, backend_service)
-        self.progressor = TaskProgressor(self.config)
+        self.progressor = TaskProgressor(self.config, backend_service)
         self.defect_tracker = DefectTracker()
         self.reporter = TestReporter()
 
@@ -134,6 +155,10 @@ class TesterService:
         # 家庭设备列表（从 agent_service.py 迁移）
         self.family_devices: Dict[str, Any] = {}
 
+        # 测试点管理
+        self.test_points: List[TestPoint] = []
+        self.current_test_point_index: int = 0
+
     # ========================================================================
     # 初始化和配置
     # ========================================================================
@@ -142,7 +167,8 @@ class TesterService:
         self,
         session_id: str,
         iot_config: Optional[Dict[str, str]] = None,
-        family_devices: Optional[Dict[str, Any]] = None
+        family_devices: Optional[Dict[str, Any]] = None,
+        tester_config: Optional[Dict[str, Any]] = None
     ) -> None:
         """初始化测试服务
 
@@ -150,8 +176,42 @@ class TesterService:
             session_id: 会话ID
             iot_config: IOT配置
             family_devices: 家庭设备列表
+            tester_config: 测试配置（从 init_config 消息传入）
         """
         self.session_id = session_id
+
+        # 应用 tester_config（如果提供）
+        if tester_config:
+            # 更新配置
+            if tester_config.get('name'):
+                self.config.name = tester_config['name']
+            if tester_config.get('prd_content'):
+                self.config.prd_content = tester_config['prd_content']
+            if tester_config.get('tts_voice_id'):
+                self.config.tts_voice_id = tester_config['tts_voice_id']
+            if tester_config.get('iot_protocol_id'):
+                self.config.iot_protocol_id = tester_config['iot_protocol_id']
+            # App IDs
+            if tester_config.get('judge_app_id'):
+                self.config.judge_app_id = tester_config['judge_app_id']
+            else:
+                self.config.judge_app_id = self.JUDGE_APP_ID
+            if tester_config.get('query_generator_app_id'):
+                self.config.query_generator_app_id = tester_config['query_generator_app_id']
+            else:
+                self.config.query_generator_app_id = self.QUERY_GENERATOR_APP_ID
+            # 重试配置
+            if tester_config.get('max_noise_retry'):
+                self.config.max_noise_retry = tester_config['max_noise_retry']
+            if tester_config.get('max_execution_retry'):
+                self.config.max_execution_retry = tester_config['max_execution_retry']
+            # 超时配置
+            if tester_config.get('case_timeout_seconds'):
+                self.config.case_timeout_seconds = tester_config['case_timeout_seconds']
+            if tester_config.get('total_timeout_seconds'):
+                self.config.total_timeout_seconds = tester_config['total_timeout_seconds']
+
+            logger.info(f"Applied tester_config: {tester_config}")
 
         # 初始化会话信息
         self.session_info = SessionInfo(
@@ -201,27 +261,200 @@ class TesterService:
         return count
 
     # ========================================================================
+    # 0. 测试点提取
+    # ========================================================================
+
+    async def extract_test_points(
+        self,
+        scenario: str,
+        llm_service=None
+    ) -> List[TestPoint]:
+        """从场景描述中提取测试点
+
+        测试点是对测试需求的细化分解，先提取测试点，再针对每个测试点设计测试用例。
+
+        Args:
+            scenario: 场景描述（可以是需求文档、用户故事、功能描述等）
+            llm_service: LLM服务实例（可选，用于智能提取测试点）
+
+        Returns:
+            提取的测试点列表
+        """
+        # 获取家庭设备上下文
+        family_devices_context = self._get_family_devices_context()
+
+        # 调用测试点提取App
+        try:
+            if self.backend_service:
+                result = await self.backend_service.invoke_app(
+                    app_id=self.TEST_POINT_EXTRACTOR_APP_ID,
+                    message=f"从以下场景中提取测试点：\n\n{scenario}",
+                    parameters={
+                        "scenario": scenario,
+                        "family_devices": family_devices_context,
+                    }
+                )
+
+                if result.success and result.content:
+                    try:
+                        parsed_result = json.loads(result.content)
+                        test_points_data = parsed_result.get("test_points", [])
+                        self.test_points = [
+                            TestPoint.from_dict(tp) for tp in test_points_data
+                        ]
+                    except json.JSONDecodeError:
+                        logger.warning(f"TestPoint extractor returned non-JSON content")
+                        self.test_points = await self._extract_test_points_locally(scenario)
+                else:
+                    logger.warning(f"TestPoint extractor app call failed: {result.error}")
+                    self.test_points = await self._extract_test_points_locally(scenario)
+            else:
+                # 本地提取
+                self.test_points = await self._extract_test_points_locally(scenario)
+
+        except Exception as e:
+            logger.error(f"Error extracting test points: {e}")
+            self.test_points = await self._extract_test_points_locally(scenario)
+
+        await self._send_callback('test_points_extracted', {
+            'count': len(self.test_points),
+            'test_points': [tp.to_dict() for tp in self.test_points],
+        })
+        await self._log_event('test_points', json.dumps([tp.to_dict() for tp in self.test_points], ensure_ascii=False))
+
+        return self.test_points
+
+    async def _extract_test_points_locally(self, scenario: str) -> List[TestPoint]:
+        """本地提取测试点（模拟或简单规则）"""
+        # 简单的测试点提取逻辑，实际项目中应调用LLM
+        test_points = [
+            TestPoint(
+                id="TP001",
+                module="设备控制",
+                feature="灯光控制",
+                description="测试灯光的开关控制功能",
+                priority="high",
+                test_type="functional",
+                preconditions=["设备在线", "设备已绑定"],
+                related_devices=[],
+                acceptance_criteria=["语音指令能正确打开灯", "语音指令能正确关闭灯"],
+                source=scenario,
+            ),
+            TestPoint(
+                id="TP002",
+                module="设备控制",
+                feature="空调控制",
+                description="测试空调的温度调节和模式切换功能",
+                priority="high",
+                test_type="functional",
+                preconditions=["设备在线", "设备已绑定"],
+                related_devices=[],
+                acceptance_criteria=["能设置指定温度", "能切换工作模式"],
+                source=scenario,
+            ),
+        ]
+        return test_points
+
+    def get_test_points(self) -> List[TestPoint]:
+        """获取所有测试点"""
+        return self.test_points
+
+    def get_current_test_point(self) -> Optional[TestPoint]:
+        """获取当前测试点"""
+        if 0 <= self.current_test_point_index < len(self.test_points):
+            return self.test_points[self.current_test_point_index]
+        return None
+
+    def advance_to_next_test_point(self) -> bool:
+        """推进到下一个测试点"""
+        if self.current_test_point_index < len(self.test_points) - 1:
+            self.current_test_point_index += 1
+            return True
+        return False
+
+    async def design_test_case_for_point(
+        self,
+        test_point: TestPoint,
+        llm_service=None
+    ) -> TestCase:
+        """针对单个测试点设计测试用例
+
+        Args:
+            test_point: 测试点
+            llm_service: LLM服务实例
+
+        Returns:
+            设计的测试用例
+        """
+        # 调用用例设计App或本地设计
+        test_case = await self.case_manager.design_case_for_test_point(test_point, llm_service)
+
+        # 关联测试点ID
+        test_case.test_point_id = test_point.id
+
+        await self._send_callback('test_case_designed', {
+            'test_point_id': test_point.id,
+            'test_case': test_case.to_dict(),
+        })
+
+        return test_case
+
+    async def design_all_test_cases_from_points(
+        self,
+        llm_service=None
+    ) -> List[TestCase]:
+        """根据所有测试点设计测试用例
+
+        遍历所有测试点，为每个测试点设计对应的测试用例。
+
+        Args:
+            llm_service: LLM服务实例
+
+        Returns:
+            设计的测试用例列表
+        """
+        if not self.test_points:
+            logger.warning("No test points available. Please extract test points first.")
+            return []
+
+        test_cases = []
+        for test_point in self.test_points:
+            test_case = await self.design_test_case_for_point(test_point, llm_service)
+            test_cases.append(test_case)
+
+        # 添加到用例管理器
+        for case in test_cases:
+            self.case_manager.add_case(case)
+
+        await self._send_callback('test_cases_designed', {
+            'count': len(test_cases),
+            'test_cases': [tc.to_dict() for tc in test_cases],
+        })
+
+        return test_cases
+
+    # ========================================================================
     # 1. 测试用例设计
     # ========================================================================
 
     async def design_test_cases(
         self,
-        scenario: str,
-        llm_service=None
+        prd: str,
+        backend_service=None
     ) -> List[TestCase]:
         """设计测试用例
 
-        根据场景描述自动生成测试用例。
+        根据PRD（产品需求文档）自动生成测试用例。
 
         Args:
-            scenario: 场景描述
-            llm_service: LLM服务实例
+            prd: 产品需求文档内容
+            backend_service: BackendService 实例（可选）
 
         Returns:
             生成的测试用例列表
         """
-        cases = await self.case_manager.design_cases_from_scenario(scenario, llm_service)
-        await self._send_callback('log', f'根据场景 "{scenario}" 生成了 {len(cases)} 个测试用例')
+        cases = await self.case_manager.design_cases_from_prd(prd, backend_service)
+        await self._send_callback('log', f'根据PRD生成了 {len(cases)} 个测试用例')
         return cases
 
     def get_test_cases(self) -> List[TestCase]:
@@ -258,7 +491,16 @@ class TesterService:
         Returns:
             测试查询语句，如果没有更多用例则返回None
         """
+        # 获取下一个未执行的用例索引
+        next_index = self.get_next_case_index()
+        if next_index is None:
+            logger.info("No more test cases to execute")
+            return None
+
+        # 设置当前用例
+        self.case_manager.current_index = next_index
         current_case = self.case_manager.get_current_case()
+
         if not current_case:
             logger.info("No more test cases to execute")
             return None
@@ -676,12 +918,58 @@ class TesterService:
     # 6. 测试完成判断
     # ========================================================================
 
-    def is_testing_completed(self) -> bool:
-        """判断测试是否全部完成"""
-        return self.progressor.is_all_completed(
-            len(self.case_manager.test_cases),
+    async def check_testing_completion(self) -> CompletionCheckResult:
+        """判断测试是否全部完成
+
+        两阶段判断：
+        1. 工程化判断：检查用例的 test_result 状态
+        2. 大模型验证：当工程化判断返回空列表时，调用大模型验证
+
+        Returns:
+            CompletionCheckResult: 包含是否完成、未执行列表、验证方式等
+        """
+        # 第一阶段：工程化判断
+        unexecuted_indices = self.progressor.get_unexecuted_case_indices(
+            self.case_manager.test_cases,
             self.case_manager.current_index
         )
+
+        if unexecuted_indices:
+            # 还有未执行的用例
+            return CompletionCheckResult(
+                completed=False,
+                unexecuted_indices=unexecuted_indices,
+                verified_by_llm=False
+            )
+
+        # 第二阶段：大模型验证
+        completed, llm_unexecuted, analysis = await self.progressor.verify_completion_with_llm(
+            self.case_manager.test_cases
+        )
+
+        return CompletionCheckResult(
+            completed=completed,
+            unexecuted_indices=llm_unexecuted,
+            verified_by_llm=True,
+            llm_analysis=analysis
+        )
+
+    def get_next_case_index(self) -> Optional[int]:
+        """获取下一个要执行的用例索引
+
+        Returns:
+            下一个用例索引，如果没有则返回 None
+        """
+        unexecuted = self.progressor.get_unexecuted_case_indices(
+            self.case_manager.test_cases,
+            self.case_manager.current_index
+        )
+
+        if not unexecuted:
+            return None
+
+        # 返回第一个未执行的用例索引
+        return unexecuted[0]
 
     def has_more_cases(self) -> bool:
         """检查是否还有更多测试用例"""
@@ -984,6 +1272,8 @@ class TesterService:
         self.device_status_after = {}
         self.total_queries_generated = 0
         self.total_cases_executed = 0
+        self.test_points = []
+        self.current_test_point_index = 0
         self.clear_conversation_history()
         logger.info("TesterService reset")
 

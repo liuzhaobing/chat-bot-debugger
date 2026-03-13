@@ -6,16 +6,18 @@
 
 import json
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime
 
 from .models import (
+    TestPoint,
     TestCase,
     TestCaseType,
     TestResultStatus,
     TestCaseStatistics,
     TesterConfig,
 )
+from app.services.backend_service import BackendService
 
 logger = logging.getLogger(__name__)
 
@@ -177,23 +179,125 @@ class TestCaseManager:
             logger.error(f"Failed to load test cases from {source}: {e}")
             return 0
 
-    async def design_cases_from_scenario(
+    async def design_cases_from_prd(
         self,
-        scenario: str,
-        llm_service
+        prd: str,
+        backend_service: Optional[BackendService] = None
     ) -> List[TestCase]:
-        """根据场景自动设计测试用例
+        """根据PRD（产品需求文档）自动设计测试用例
+
+        通过调用后端的测试用例设计 APP，根据 PRD 内容自动生成测试用例。
 
         Args:
-            scenario: 场景描述
-            llm_service: LLM服务实例
+            prd: 产品需求文档内容
+            backend_service: BackendService 实例（可选，不传则自动创建）
 
         Returns:
             生成的测试用例列表
         """
-        # TODO: 实现基于LLM的测试用例自动生成
-        logger.info(f"Designing test cases for scenario: {scenario}")
-        return []
+        logger.info(f"Designing test cases from PRD, length: {len(prd)}")
+
+        # APP ID for test case design
+        TEST_CASE_DESIGNER_APP_ID = "43281a11ed734cbc9ed7d1e1f18a1f99"
+
+        # 使用传入的 backend_service 或创建新实例
+        service = backend_service or BackendService()
+
+        try:
+            result = await service.invoke_app(
+                app_id=TEST_CASE_DESIGNER_APP_ID,
+                message=prd
+            )
+
+            if not result.success:
+                logger.error(f"Failed to invoke test case designer app: {result.error}")
+                return []
+
+            # 解析返回的测试用例
+            content = result.content
+            logger.info(f"Test case designer returned {len(content)} chars")
+
+            # TODO: 根据 APP 返回格式解析测试用例
+            # 这里需要根据实际的 APP 返回格式进行调整
+            import json
+            try:
+                # 尝试解析 JSON 格式的用例
+                cases_data = json.loads(content)
+                test_cases = []
+                for case_data in cases_data:
+                    case = TestCase.from_dict(case_data)
+                    test_cases.append(case)
+                    self._case_map[case.id] = case
+                self.test_cases.extend(test_cases)
+                logger.info(f"Generated {len(test_cases)} test cases from PRD")
+                return test_cases
+            except json.JSONDecodeError:
+                # 如果不是 JSON 格式，记录原始内容
+                logger.warning("Test case designer returned non-JSON content, returning empty list")
+                logger.debug(f"Content: {content[:500]}...")
+                return []
+
+        except Exception as e:
+            logger.error(f"Error designing test cases from PRD: {e}", exc_info=True)
+            return []
+
+    async def design_case_for_test_point(
+        self,
+        test_point: TestPoint,
+        llm_service=None
+    ) -> TestCase:
+        """针对单个测试点设计测试用例
+
+        根据测试点的信息，设计具体的测试步骤和预期结果。
+
+        Args:
+            test_point: 测试点对象
+            llm_service: LLM服务实例（可选）
+
+        Returns:
+            设计的测试用例
+        """
+        # 根据测试类型映射
+        type_mapping = {
+            "functional": TestCaseType.FUNCTIONAL,
+            "state": TestCaseType.STATE,
+            "edge_case": TestCaseType.EDGE_CASE,
+            "error": TestCaseType.ERROR,
+        }
+        case_type = type_mapping.get(test_point.test_type, TestCaseType.FUNCTIONAL)
+
+        # 生成测试用例ID
+        case_id = f"TC-{test_point.id}"
+
+        # TODO: 如果有 llm_service，可以调用LLM生成更详细的测试步骤
+        # 这里使用简单的模板生成
+        steps = []
+        expect_results = []
+
+        # 根据验收标准生成测试步骤和预期结果
+        for i, criteria in enumerate(test_point.acceptance_criteria, 1):
+            steps.append(f"步骤{i}: 验证 {criteria}")
+            expect_results.append(criteria)
+
+        # 如果没有验收标准，使用测试点描述
+        if not steps:
+            steps = [f"验证 {test_point.description}"]
+            expect_results = [f"{test_point.description} 正常工作"]
+
+        test_case = TestCase(
+            id=case_id,
+            module=test_point.module,
+            title=f"{test_point.feature} - {test_point.description}",
+            type=case_type,
+            preconditions=test_point.preconditions.copy() if test_point.preconditions else [],
+            device_guids=test_point.related_devices.copy() if test_point.related_devices else [],
+            steps=steps,
+            expect_results=expect_results,
+            test_point_id=test_point.id,
+        )
+
+        logger.info(f"Designed test case {case_id} for test point {test_point.id}")
+        return test_case
 
     def get_current_case(self) -> Optional[TestCase]:
         """获取当前测试用例
@@ -362,3 +466,25 @@ class TestCaseManager:
         except Exception as e:
             logger.error(f"Failed to export test cases: {e}")
             return False
+
+    def get_unexecuted_cases(self) -> List[Tuple[int, TestCase]]:
+        """获取所有未执行的用例
+
+        Returns:
+            (index, TestCase) 元组列表
+        """
+        return [
+            (i, case) for i, case in enumerate(self.test_cases)
+            if case.test_result == TestResultStatus.NOT_RUN
+        ]
+
+    def get_unexecuted_indices(self) -> List[int]:
+        """获取所有未执行用例的索引列表
+
+        Returns:
+            未执行用例的索引列表
+        """
+        return [
+            i for i, case in enumerate(self.test_cases)
+            if case.test_result == TestResultStatus.NOT_RUN
+        ]

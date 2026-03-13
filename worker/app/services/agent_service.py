@@ -113,6 +113,7 @@ class AgenticTestAgent:
             session_id: str,
             send_callback: Callable,
             iot_config: Optional[Dict[str, str]] = None,
+            tester_config: Optional[Dict[str, Any]] = None,
             fixed_duration: float = None,
             audio_mode: str = None
     ):
@@ -138,6 +139,9 @@ class AgenticTestAgent:
             'familyId': '',
             'env': 'test'
         }
+
+        # 测试配置
+        self.tester_config = tester_config or {}
 
         # 初始化服务
         self.tts_service = TTSService()
@@ -187,8 +191,12 @@ class AgenticTestAgent:
         if iot_config:
             self.iot_config.update(iot_config)
 
-        # 初始化测试工程师服务
-        await self.tester_service.initialize(self.session_id, self.iot_config)
+        # 初始化测试工程师服务，传入 tester_config
+        await self.tester_service.initialize(
+            self.session_id,
+            self.iot_config,
+            tester_config=self.tester_config
+        )
 
         # 记录初始用户查询
         self.tester_service.add_to_conversation_history('user', initial_query)
@@ -213,10 +221,16 @@ class AgenticTestAgent:
             # 开始主循环
             while self.is_running and self.loop_step < self.max_loop_steps:
                 try:
-                    # 检查测试是否完成
-                    if self.tester_service.is_testing_completed():
+                    # 检查测试是否完成（两阶段判断）
+                    completion_result = await self.tester_service.check_testing_completion()
+                    if completion_result.completed:
                         await self.send_callback('status', '所有测试用例已完成')
+                        if completion_result.verified_by_llm:
+                            await self.send_callback('status', f'LLM验证完成: {completion_result.llm_analysis}')
                         break
+
+                    if completion_result.unexecuted_indices:
+                        logger.info(f"未执行用例索引: {completion_result.unexecuted_indices}")
 
                     self.loop_step += 1
                     await self.send_callback('status', f'执行循环步骤 {self.loop_step}')

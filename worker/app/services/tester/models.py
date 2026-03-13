@@ -6,7 +6,7 @@
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 from enum import Enum
 
 
@@ -77,6 +77,16 @@ class Severity(Enum):
 @dataclass
 class TesterConfig:
     """测试服务配置"""
+    # 任务基本信息
+    name: str = ""                      # 任务名称
+    prd_content: str = ""               # PRD/需求描述
+
+    # TTS 配置
+    tts_voice_id: str = ""              # TTS音色ID
+
+    # IOT 协议配置
+    iot_protocol_id: str = ""           # IOT设备协议ID
+
     # App IDs
     judge_app_id: str = "e4d13f457f7f486c99ca11b39a7b8347"
     query_generator_app_id: str = "c7a27bd4e3cf49008ae99fc69817f155"
@@ -94,6 +104,66 @@ class TesterConfig:
 
     # 用例文件路径
     test_cases_file: Optional[str] = None
+
+
+# ============================================================================
+# 测试点数据类
+# ============================================================================
+
+@dataclass
+class TestPoint:
+    """测试点
+
+    测试点是对测试需求的细化分解，每个测试点代表一个需要验证的功能点或场景。
+    先提取测试点，再针对每个测试点设计具体的测试用例。
+    """
+    id: str                              # 测试点ID，如 "TP001"
+    module: str                          # 所属模块
+    feature: str                         # 功能点名称
+    description: str                     # 测试点描述
+    priority: str = "normal"             # 优先级: high, normal, low
+    test_type: str = "functional"        # 测试类型: functional, state, edge_case, error
+    preconditions: List[str] = field(default_factory=list)  # 前置条件
+    related_devices: List[str] = field(default_factory=list)  # 相关设备GUID
+    acceptance_criteria: List[str] = field(default_factory=list)  # 验收标准
+    parent_id: Optional[str] = None      # 父测试点ID（用于层级结构）
+    source: str = ""                     # 来源：需求文档、用户故事等
+    created_at: datetime = field(default_factory=datetime.now)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典格式"""
+        return {
+            "id": self.id,
+            "module": self.module,
+            "feature": self.feature,
+            "description": self.description,
+            "priority": self.priority,
+            "test_type": self.test_type,
+            "preconditions": self.preconditions,
+            "related_devices": self.related_devices,
+            "acceptance_criteria": self.acceptance_criteria,
+            "parent_id": self.parent_id,
+            "source": self.source,
+            "created_at": self.created_at.isoformat(),
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "TestPoint":
+        """从字典创建"""
+        return cls(
+            id=data.get("id", ""),
+            module=data.get("module", ""),
+            feature=data.get("feature", ""),
+            description=data.get("description", ""),
+            priority=data.get("priority", "normal"),
+            test_type=data.get("test_type", "functional"),
+            preconditions=data.get("preconditions", []),
+            related_devices=data.get("related_devices", []),
+            acceptance_criteria=data.get("acceptance_criteria", []),
+            parent_id=data.get("parent_id"),
+            source=data.get("source", ""),
+            created_at=datetime.fromisoformat(data["created_at"]) if data.get("created_at") else datetime.now(),
+        )
 
 
 # ============================================================================
@@ -117,6 +187,7 @@ class TestCase:
     duration_seconds: Optional[float] = None
     retry_count: int = 0
     error_message: Optional[str] = None
+    test_point_id: Optional[str] = None  # 关联的测试点ID
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典格式"""
@@ -135,6 +206,7 @@ class TestCase:
             "duration_seconds": self.duration_seconds,
             "retry_count": self.retry_count,
             "error_message": self.error_message,
+            "test_point_id": self.test_point_id,
         }
 
     @classmethod
@@ -155,6 +227,7 @@ class TestCase:
             duration_seconds=data.get("duration_seconds"),
             retry_count=data.get("retry_count", 0),
             error_message=data.get("error_message"),
+            test_point_id=data.get("test_point_id"),
         )
 
 
@@ -227,6 +300,28 @@ class JudgeResult:
             "suggested_action": self.suggested_action,
             "device_mentioned": self.device_mentioned,
             "defects": self.defects,
+        }
+
+
+# ============================================================================
+# 测试完成检查结果
+# ============================================================================
+
+@dataclass
+class CompletionCheckResult:
+    """测试完成检查结果"""
+    completed: bool                           # 是否全部完成
+    unexecuted_indices: List[int]             # 未执行用例的 index 列表
+    verified_by_llm: bool = False             # 是否经过大模型验证
+    llm_analysis: Optional[str] = None        # 大模型分析结果
+
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典格式"""
+        return {
+            "completed": self.completed,
+            "unexecuted_indices": self.unexecuted_indices,
+            "verified_by_llm": self.verified_by_llm,
+            "llm_analysis": self.llm_analysis,
         }
 
 

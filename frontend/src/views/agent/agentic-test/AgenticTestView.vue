@@ -205,11 +205,22 @@ export default {
         env: 'test'
       },
 
+      // 测试配置
+      testerConfig: {
+        name: '',
+        prd_content: '',
+        tts_voice_id: '',
+        iot_protocol_id: ''
+      },
+
       // WebSocket
       websocket: null,
       reconnectAttempts: 0,
       maxReconnectAttempts: 3,
-      reconnectTimeout: null
+      reconnectTimeout: null,
+
+      // 配置初始化状态
+      isConfigInitialized: false
     }
   },
   mounted() {
@@ -300,6 +311,22 @@ export default {
         token: localStorage.getItem('iot-token') || '',
         familyId: localStorage.getItem('family-id') || '',
         env: localStorage.getItem('iot-env') || 'test'
+      }
+    },
+
+    /**
+     * 发送 start_test 消息
+     * 在配置初始化成功后调用
+     */
+    sendStartTest() {
+      if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
+        const startTestMessage = {
+          type: 'start_test',
+          query: '我家有哪些设备？',  // 初始查询
+          timestamp: Date.now()
+        }
+        this.websocket.send(JSON.stringify(startTestMessage))
+        this.addSystemLog('test', 'info', '已发送 start_test 消息')
       }
     },
 
@@ -587,19 +614,21 @@ export default {
         this.websocket.onopen = () => {
           this.connectionStatus = 'connected'
           this.reconnectAttempts = 0
+          this.isConfigInitialized = false
           this.addSystemLog('websocket', 'success', 'WebSocket连接已建立')
 
-          // 连接建立后立即发送start_test（已包含iot_config，无需单独发送update_iot_config）
+          // 连接建立后先发送 init_config 消息
           const iotConfig = this.getIOTConfigFromStorage()
-          const startTestMessage = {
-            type: 'start_test',
-            query: '我家有哪些设备？',
+          const initConfigMessage = {
+            type: 'init_config',
+            tester_config: this.testerConfig,
             iot_config: iotConfig,
             timestamp: Date.now()
           }
-          this.websocket.send(JSON.stringify(startTestMessage))
-          this.addSystemLog('test', 'info', '已发送start_test消息', iotConfig)
+          this.websocket.send(JSON.stringify(initConfigMessage))
+          this.addSystemLog('config', 'info', '已发送 init_config 消息', { tester_config: this.testerConfig, iot_config: { env: iotConfig.env, has_token: !!iotConfig.token } })
 
+          // 连接已建立，resolve Promise
           resolve()
         }
 
@@ -672,6 +701,15 @@ export default {
         const data = JSON.parse(event.data)
 
         switch (data.type) {
+          case 'config_initialized':
+            // 配置初始化成功
+            this.isConfigInitialized = true
+            this.addSystemLog('config', 'success', '配置初始化成功', data.metadata)
+            // 配置初始化成功后发送 start_test
+            this.sendStartTest()
+            // 连接建立完成，resolve Promise
+            break
+
           case 'transcript_partial':
             this.updatePartialTranscript(data.content)
             break

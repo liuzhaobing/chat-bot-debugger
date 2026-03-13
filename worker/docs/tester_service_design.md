@@ -159,8 +159,8 @@ class TestCaseManager:
     async def load_cases(self, source: str) -> int:
         """从文件/数据库加载测试用例"""
 
-    async def design_cases_from_scenario(self, scenario: str, llm_service) -> List[TestCase]:
-        """根据场景自动设计测试用例"""
+    async def design_cases_from_prd(self, prd: str, backend_service) -> List[TestCase]:
+        """根据PRD自动设计测试用例"""
 
     def get_current_case(self) -> Optional[TestCase]:
         """获取当前测试用例"""
