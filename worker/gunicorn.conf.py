@@ -53,6 +53,9 @@ def worker_abort(worker):
 def post_fork(server, worker):
     """Worker fork 后"""
     print(f"Worker {worker.pid} spawned")
+    # 重新初始化日志配置（确保在 fork 后子进程也生效）
+    from app.core.logging import setup_logging
+    setup_logging()
 
 def pre_fork(server, worker):
     """Worker fork 前"""

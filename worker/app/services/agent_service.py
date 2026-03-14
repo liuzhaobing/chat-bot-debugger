@@ -746,7 +746,7 @@ class AgenticTestAgent:
         """固定时长模式：后端控制 buffer 积累和处理"""
         try:
             if not self.is_buffering:
-                logger.debug("Not in buffering state, ignoring audio data")
+                # logger.debug("Not in buffering state, ignoring audio data")
                 return None
 
             audio_bytes = base64.b64decode(audio_data)
@@ -763,7 +763,7 @@ class AgenticTestAgent:
                 'is_buffering': True
             })
 
-            logger.debug(f"Buffer: {current_duration:.2f}s / {self.fixed_duration}s")
+            # logger.debug(f"Buffer: {current_duration:.2f}s / {self.fixed_duration}s")
 
             if current_duration < self.fixed_duration:
                 return None

@@ -94,7 +94,8 @@ async def agentic_test_websocket(
 
                 # 处理消息
                 message_type = data.get("type")
-                logger.debug(f"Received message type: {message_type}")
+                if message_type != "audio_data":
+                    logger.debug(f"Received message type: {message_type}")
 
                 if message_type == "ping":
                     await connection_manager.send_message(

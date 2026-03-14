@@ -229,12 +229,12 @@ async def info():
 
 if __name__ == "__main__":
     import uvicorn
-    
+
     uvicorn.run(
         "app.main:app",
         host=settings.worker_host,
         port=settings.worker_port,
         reload=settings.debug,
-        log_level=settings.log_level.lower(),
+        log_level="info",  # uvicorn 日志固定为 info，避免 WebSocket 协议帧日志刷屏
         access_log=True
     )

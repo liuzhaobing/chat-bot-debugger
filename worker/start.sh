@@ -35,7 +35,7 @@ if [ "$ENVIRONMENT" = "development" ] || [ "$DEBUG" = "true" ]; then
         --host $HOST \
         --port $PORT \
         --reload \
-        --log-level $LOG_LEVEL
+        --log-level info
 else
     echo "Starting in PRODUCTION mode..."
     exec gunicorn app.main:app \
@@ -45,7 +45,7 @@ else
         --timeout 120 \
         --graceful-timeout 30 \
         --keep-alive 5 \
-        --log-level $LOG_LEVEL \
+        --log-level info \
         --access-logfile - \
         --error-logfile -
 fi

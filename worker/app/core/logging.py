@@ -100,9 +100,14 @@ def setup_logging() -> None:
             root_logger.error(f"Failed to setup file logging: {e}")
     
     # 设置第三方库日志级别
+    # 注意：uvicorn 的 WebSocket 协议使用 "uvicorn.error" logger 输出帧调试日志
+    # 如果应用日志级别是 DEBUG，需要单独控制 uvicorn.error 以避免 websockets 协议日志刷屏
     logging.getLogger("uvicorn").setLevel(logging.INFO)
+    logging.getLogger("uvicorn.error").setLevel(logging.INFO)  # WebSocket 协议帧日志
+    logging.getLogger("uvicorn.access").setLevel(logging.INFO)
     logging.getLogger("fastapi").setLevel(logging.INFO)
     logging.getLogger("sqlalchemy").setLevel(logging.WARNING)
+    logging.getLogger("websockets").setLevel(logging.WARNING)  # websockets 所有模块日志
     
     root_logger.info(
         f"Logging configured: level={settings.log_level}, format={settings.log_format}"
