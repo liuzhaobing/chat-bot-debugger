@@ -6,7 +6,7 @@ from rest_framework.pagination import PageNumberPagination
 from django.http import StreamingHttpResponse
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
-import requests
+import httpx
 import json
 import uuid
 import time
@@ -14,13 +14,14 @@ import base64
 from jinja2 import Template
 from .models import Provider, LLMModel, Conversation, Message, App, AppCategory, AppType, AppScenario, TTSVoice
 from .serializers import (
-    ProviderSerializer, ConversationSerializer, MessageSerializer, 
+    ProviderSerializer, ConversationSerializer, MessageSerializer,
     LLMModelSerializer, AppSerializer, AppCategorySerializer,
     AppTypeSerializer, AppPublishSerializer, AppListSerializer,
     AppInvokeRequestSerializer, AppFunctionCallingRequestSerializer,
     AppMCPRequestSerializer, AppExecuteResponseSerializer,
     AppScenarioSerializer, TTSVoiceSerializer, serializers,
 )
+
 
 class ProviderViewSet(viewsets.ModelViewSet):
     queryset = Provider.objects.filter(is_active=True)
@@ -33,35 +34,38 @@ class ProviderViewSet(viewsets.ModelViewSet):
             "Authorization": f"Bearer {provider.api_key}",
             "Content-Type": "application/json"
         }
-        
+
         try:
             # Assume OpenAI compatible /models endpoint
-            response = requests.get(f"{provider.base_url}/models", headers=headers, timeout=10)
-            response.raise_for_status()
-            data = response.json()
-            
+            with httpx.Client() as client:
+                response = client.get(f"{provider.base_url}/models", headers=headers, timeout=10.0)
+                response.raise_for_status()
+                data = response.json()
+
             # OpenAI format: {"data": [{"id": "model-id", ...}]}
             model_list = data.get('data', [])
             saved_models = []
-            
+
             for model_data in model_list:
                 model_id = model_data.get('id')
                 if model_id:
-                     obj, created = LLMModel.objects.update_or_create(
+                    obj, created = LLMModel.objects.update_or_create(
                         provider=provider,
                         name=model_id,
                         defaults={'display_name': model_id}
-                     )
-                     saved_models.append(obj)
-            
+                    )
+                    saved_models.append(obj)
+
             return Response({"status": "success", "count": len(saved_models)})
-            
+
         except Exception as e:
             return Response({"error": str(e)}, status=400)
+
 
 class LLMModelViewSet(viewsets.ModelViewSet):
     queryset = LLMModel.objects.all()
     serializer_class = LLMModelSerializer
+
 
 class AppCategoryViewSet(viewsets.ModelViewSet):
     """
@@ -89,7 +93,7 @@ class AppTypeViewSet(viewsets.ModelViewSet):
     """
     queryset = AppType.objects.all()
     serializer_class = AppTypeSerializer
-    
+
     def get_queryset(self):
         """
         支持筛选：
@@ -97,11 +101,12 @@ class AppTypeViewSet(viewsets.ModelViewSet):
         """
         queryset = AppType.objects.all()
         is_active = self.request.query_params.get('is_active')
-        
+
         if is_active is not None:
             queryset = queryset.filter(is_active=is_active.lower() == 'true')
-        
+
         return queryset
+
 
 class AppViewSet(viewsets.ModelViewSet):
     """
@@ -109,7 +114,7 @@ class AppViewSet(viewsets.ModelViewSet):
     提供应用的完整 CRUD 操作，支持类型筛选和发布功能
     """
     queryset = App.objects.all()
-    
+
     def get_serializer_class(self):
         """根据不同的 action 返回不同的序列化器"""
         if self.action == 'list':
@@ -127,7 +132,7 @@ class AppViewSet(viewsets.ModelViewSet):
         - search: 搜索应用名称或描述
         """
         queryset = App.objects.select_related('category', 'app_type').all()
-        
+
         # 按分类筛选
         category = self.request.query_params.get('category')
         if category:
@@ -135,7 +140,7 @@ class AppViewSet(viewsets.ModelViewSet):
                 queryset = queryset.filter(category_id=category)
             else:
                 queryset = queryset.filter(category__name=category)
-        
+
         # 按应用类型筛选
         app_type = self.request.query_params.get('app_type')
         if app_type:
@@ -143,21 +148,21 @@ class AppViewSet(viewsets.ModelViewSet):
                 queryset = queryset.filter(app_type_id=app_type)
             else:
                 queryset = queryset.filter(app_type__code=app_type)
-        
+
         # 按精选状态筛选
         is_featured = self.request.query_params.get('is_featured')
         if is_featured:
             queryset = queryset.filter(is_featured=is_featured.lower() == 'true')
-        
+
         # 搜索
         search = self.request.query_params.get('search')
         if search:
             queryset = queryset.filter(
                 Q(name__icontains=search) | Q(description__icontains=search)
             )
-            
+
         return queryset
-    
+
     @action(detail=True, methods=['post'])
     def publish(self, request, pk=None):
         """
@@ -166,7 +171,7 @@ class AppViewSet(viewsets.ModelViewSet):
         """
         app = self.get_object()
         serializer = AppPublishSerializer(app, data=request.data, partial=False)
-        
+
         if serializer.is_valid():
             serializer.save()
             return Response({
@@ -174,13 +179,13 @@ class AppViewSet(viewsets.ModelViewSet):
                 "message": "应用发布成功",
                 "data": AppSerializer(app).data
             })
-        
+
         return Response({
             "status": "error",
             "message": "发布失败",
             "errors": serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
-    
+
     @action(detail=True, methods=['patch'])
     def auto_save_prompt(self, request, pk=None):
         """
@@ -189,7 +194,7 @@ class AppViewSet(viewsets.ModelViewSet):
         """
         app = self.get_object()
         system_prompt = request.data.get('system_prompt')
-        
+
         if system_prompt is not None:
             app.system_prompt = system_prompt
             app.save(update_fields=['system_prompt', 'updated_at'])
@@ -197,12 +202,12 @@ class AppViewSet(viewsets.ModelViewSet):
                 "status": "success",
                 "message": "提示词已自动保存"
             })
-        
+
         return Response({
             "status": "error",
             "message": "未提供 system_prompt"
         }, status=status.HTTP_400_BAD_REQUEST)
-    
+
     @action(detail=True, methods=['get'])
     def function_schema(self, request, pk=None):
         """
@@ -212,30 +217,30 @@ class AppViewSet(viewsets.ModelViewSet):
         app = self.get_object()
         schema = app.get_function_schema()
         return Response(schema)
-    
+
     # ============================
     # App 执行核心方法
     # ============================
-    
+
     def _execute_agent_1_0(self, app, user_message=None, context=None, parameters=None):
         """
         执行 Agent 1.0 类型的应用
-        
+
         支持两种执行模式：
         - chat: 对话聊天式，system_prompt 作为 system 消息，支持上下文
         - task: 任务执行式，prompt_template 替换参数后作为 user 消息，无上下文
-        
+
         Args:
             app: App 模型实例
             user_message: 用户输入的消息
             context: 可选的历史消息上下文（仅 chat 模式有效）
             parameters: 可选的参数（用于替换提示词中的变量）
-            
+
         Returns:
             dict: 包含 content, usage, error 的结果字典
         """
         start_time = time.time()
-        
+
         try:
             # 1. 获取 Provider
             if not app.provider_id:
@@ -245,7 +250,7 @@ class AppViewSet(viewsets.ModelViewSet):
                     "error": "应用未配置 Provider",
                     "usage": None
                 }
-            
+
             try:
                 provider = Provider.objects.get(id=app.provider_id)
             except Provider.DoesNotExist:
@@ -255,7 +260,7 @@ class AppViewSet(viewsets.ModelViewSet):
                     "error": f"Provider {app.provider_id} 不存在",
                     "usage": None
                 }
-            
+
             # 2. 验证模型配置
             if not app.model_name:
                 return {
@@ -264,16 +269,16 @@ class AppViewSet(viewsets.ModelViewSet):
                     "error": "应用未配置模型",
                     "usage": None
                 }
-            
+
             # 3. 构建消息列表 - 根据执行模式采用不同策略
             messages_payload = []
             execution_mode = getattr(app, 'execution_mode', 'chat')
-            
+
             if execution_mode == 'task':
                 # ========== 任务执行式 (Task Mode) ==========
                 # 将 system_prompt（任务模板）替换参数后作为 user 消息
                 # 每次执行独立，不保留上下文历史
-                
+
                 # 参数替换：使用 Jinja2 渲染模板
                 try:
                     prompt_template = Template(app.system_prompt or "").render(**(parameters or {}))
@@ -281,36 +286,36 @@ class AppViewSet(viewsets.ModelViewSet):
                     # 如果渲染失败，回退到原始 prompt，记录日志（此处暂略），或者直接报错
                     # 为保证鲁棒性，先回退，但通常 Jinja2 很宽容
                     prompt_template = app.system_prompt or ""
-                
+
                 # 最终消息：模板 + 用户输入（如有）
                 final_message = prompt_template
                 if user_message and user_message.strip():
                     # 如果有额外的用户输入，追加到模板后面
                     final_message = f"{prompt_template}\n\n{user_message}"
-                
+
                 # Task 模式：只有一条 user 消息
                 messages_payload.append({
                     "role": "user",
                     "content": final_message
                 })
-                
+
             else:
                 # ========== 对话聊天式 (Chat Mode, 默认) ==========
                 # system_prompt 作为 system 消息，支持多轮上下文
-                
+
                 # 参数替换：使用 Jinja2 渲染模板
                 try:
                     system_prompt = Template(app.system_prompt or "").render(**(parameters or {}))
                 except Exception:
                     system_prompt = app.system_prompt or ""
-                
+
                 # 添加系统提示词
                 if system_prompt:
                     messages_payload.append({
                         "role": "system",
                         "content": system_prompt
                     })
-                
+
                 # 添加上下文消息（历史对话）
                 if context and isinstance(context, list):
                     for msg in context:
@@ -325,46 +330,46 @@ class AppViewSet(viewsets.ModelViewSet):
                         "role": "user",
                         "content": user_message
                     })
-            
+
             # 4. 构建请求 payload
             headers = {
                 "Authorization": f"Bearer {provider.api_key}",
                 "Content-Type": "application/json"
             }
-            
+
             payload = {
                 "model": app.model_name,
                 "messages": messages_payload,
                 "stream": False
             }
-            
+
             # 添加配置参数（temperature, max_tokens 等）
             configuration = app.configuration or {}
             if 'temperature' in configuration:
                 payload['temperature'] = float(configuration['temperature'])
             if 'max_tokens' in configuration:
                 payload['max_tokens'] = int(configuration['max_tokens'])
-            
+
             # 5. 调用大模型 API
-            response = requests.post(
-                f"{provider.base_url}/chat/completions",
-                headers=headers,
-                json=payload,
-                timeout=60
-            )
-            response.raise_for_status()
-            
-            result = response.json()
-            
+            with httpx.Client() as client:
+                response = client.post(
+                    f"{provider.base_url}/chat/completions",
+                    headers=headers,
+                    json=payload,
+                    timeout=60.0
+                )
+                response.raise_for_status()
+                result = response.json()
+
             # 6. 解析响应
             content = ""
             if 'choices' in result and len(result['choices']) > 0:
                 content = result['choices'][0].get('message', {}).get('content', '')
-            
+
             usage = result.get('usage', None)
-            
+
             latency_ms = int((time.time() - start_time) * 1000)
-            
+
             return {
                 "status": "success",
                 "content": content,
@@ -373,12 +378,20 @@ class AppViewSet(viewsets.ModelViewSet):
                 "latency_ms": latency_ms,
                 "execution_mode": execution_mode  # 返回执行模式供调用方参考
             }
-            
-        except requests.RequestException as e:
+
+        except httpx.HTTPStatusError as e:
             return {
                 "status": "error",
                 "content": "",
                 "error": f"调用大模型失败: {str(e)}",
+                "usage": None,
+                "latency_ms": int((time.time() - start_time) * 1000)
+            }
+        except httpx.RequestError as e:
+            return {
+                "status": "error",
+                "content": "",
+                "error": f"请求错误: {str(e)}",
                 "usage": None,
                 "latency_ms": int((time.time() - start_time) * 1000)
             }
@@ -390,24 +403,24 @@ class AppViewSet(viewsets.ModelViewSet):
                 "usage": None,
                 "latency_ms": int((time.time() - start_time) * 1000)
             }
-    
+
     def _execute_agent_asr(self, app, user_message=None, context=None, parameters=None):
         """
         执行 Agent ASR 类型的应用
         专门处理语音识别任务
-        
+
         Args:
             app: App 模型实例
             user_message: 用户输入的消息（可能包含音频数据）
             context: 可选的历史消息上下文
             parameters: 可选的参数（包含音频数据等）
-            
+
         Returns:
             dict: 包含 content, usage, error 的结果字典
         """
         start_time = time.time()
         # print(json.dumps(parameters, ensure_ascii=False))
-        
+
         try:
             # 1. 获取 Provider
             if not app.provider_id:
@@ -418,7 +431,7 @@ class AppViewSet(viewsets.ModelViewSet):
                     "usage": None,
                     "latency_ms": int((time.time() - start_time) * 1000)
                 }
-            
+
             try:
                 provider = Provider.objects.get(id=app.provider_id)
             except Provider.DoesNotExist:
@@ -429,7 +442,7 @@ class AppViewSet(viewsets.ModelViewSet):
                     "usage": None,
                     "latency_ms": int((time.time() - start_time) * 1000)
                 }
-            
+
             # 2. 验证模型配置
             if not app.model_name:
                 return {
@@ -439,19 +452,19 @@ class AppViewSet(viewsets.ModelViewSet):
                     "usage": None,
                     "latency_ms": int((time.time() - start_time) * 1000)
                 }
-            
+
             # 3. 从参数中获取音频数据
             audio_data = None
             audio_format = "wav"
             language = "zh-CN"
             asr_context = None
-            
+
             if parameters:
                 audio_data = parameters.get('audio_data')
                 audio_format = parameters.get('audio_format', 'wav')
                 language = parameters.get('language', 'zh-CN')
                 asr_context = parameters.get('context')
-            
+
             # 如果没有音频数据，返回错误
             if not audio_data:
                 return {
@@ -461,81 +474,97 @@ class AppViewSet(viewsets.ModelViewSet):
                     "usage": None,
                     "latency_ms": int((time.time() - start_time) * 1000)
                 }
-            
+
             # 4. 构建消息列表
             messages_payload = []
-            
+
             # 添加系统提示词（如果有）
             if app.system_prompt:
                 messages_payload.append({
                     "role": "system",
                     "content": app.system_prompt
                 })
-            
+
             # 构建用户消息
             user_content = []
-            
+
             # 添加文本前缀
             if asr_context:
                 text_prefix = f"Previous assistant reply: {asr_context}\n\nUser input: "
             else:
                 text_prefix = "User input: "
-            
+
             user_content.append({
                 "type": "text",
                 "text": text_prefix
             })
-            
+
             # 添加音频数据
             user_content.append({
                 "type": "input_audio",
                 "input_audio": {
                     "format": audio_format,
-                    "data": audio_data
+                    # "data": audio_data
+                    "data": "data:;base64," + audio_data
                 }
             })
-            
+
             messages_payload.append({
                 "role": "user",
                 "content": user_content
             })
-            
+
             # 5. 构建请求 payload
             headers = {
                 "Authorization": f"Bearer {provider.api_key}",
                 "Content-Type": "application/json"
             }
-            
+
             payload = {
                 "model": app.model_name,
                 "messages": messages_payload,
-                "stream": False
+                "modalities": ["text"],
+                "stream": True,
+                "stream_options": {"include_usage": True}
             }
-            
+
             # 添加配置参数（temperature, max_tokens 等）
             configuration = app.configuration or {}
             if 'temperature' in configuration:
                 payload['temperature'] = float(configuration['temperature'])
             if 'max_tokens' in configuration:
                 payload['max_tokens'] = int(configuration['max_tokens'])
-            
-            # 6. 调用大模型 API
-            response = requests.post(
-                f"{provider.base_url}/chat/completions",
-                headers=headers,
-                json=payload,
-                timeout=60
-            )
-            response.raise_for_status()
-            
-            result = response.json()
-            
-            # 7. 解析响应
+
+            # 6. 调用大模型 API (流式)
             recognized_text = ""
-            if 'choices' in result and len(result['choices']) > 0:
-                recognized_text = result['choices'][0].get('message', {}).get('content', '')
-            
-            usage = result.get('usage', None)
+            usage = None
+
+            with httpx.stream(
+                    "POST",
+                    f"{provider.base_url}/chat/completions",
+                    headers=headers,
+                    json=payload,
+                    timeout=60.0
+            ) as response:
+                for line in response.iter_lines():
+                    if line.startswith("data: "):
+                        data_str = line[6:]  # Remove "data: " prefix
+                        if data_str == "[DONE]":
+                            break
+                        try:
+                            data = json.loads(data_str)
+                            choices = data.get("choices", [])
+                            if choices:
+                                delta = choices[0].get("delta", {})
+                                content = delta.get("content", "")
+                                if content:
+                                    recognized_text += content
+                            # 获取 usage 信息
+                            if "usage" in data:
+                                usage = data["usage"]
+                        except json.JSONDecodeError:
+                            pass  # 忽略解析错误
+
             latency_ms = int((time.time() - start_time) * 1000)
 
             return {
@@ -546,12 +575,20 @@ class AppViewSet(viewsets.ModelViewSet):
                 "latency_ms": latency_ms,
                 "execution_mode": "asr"
             }
-            
-        except requests.RequestException as e:
+
+        except httpx.HTTPStatusError as e:
             return {
                 "status": "error",
                 "content": "",
                 "error": f"调用大模型失败: {str(e)}",
+                "usage": None,
+                "latency_ms": int((time.time() - start_time) * 1000)
+            }
+        except httpx.RequestError as e:
+            return {
+                "status": "error",
+                "content": "",
+                "error": f"请求错误: {str(e)}",
                 "usage": None,
                 "latency_ms": int((time.time() - start_time) * 1000)
             }
@@ -563,23 +600,23 @@ class AppViewSet(viewsets.ModelViewSet):
                 "usage": None,
                 "latency_ms": int((time.time() - start_time) * 1000)
             }
-    
+
     def _execute_app(self, app, user_message=None, context=None, parameters=None):
         """
         App 执行调度器
         根据 app_type 调用对应的执行方法
-        
+
         Args:
             app: App 模型实例
             user_message: 用户输入的消息
             context: 可选的历史消息上下文
             parameters: 可选的参数
-            
+
         Returns:
             dict: 执行结果
         """
         app_type_code = app.app_type.code if app.app_type else None
-        
+
         if app_type_code == 'agent_1_0':
             return self._execute_agent_1_0(app, user_message, context, parameters)
         elif app_type_code == 'agent_asr':
@@ -593,11 +630,11 @@ class AppViewSet(viewsets.ModelViewSet):
                 "usage": None,
                 "latency_ms": 0
             }
-    
+
     # ============================
     # 1. API 直接调用接口
     # ============================
-    
+
     @action(detail=True, methods=['get'], url_path='invoke')
     def invoke_info(self, request, pk=None):
         """
@@ -606,7 +643,7 @@ class AppViewSet(viewsets.ModelViewSet):
         返回应用的基本信息和调用说明
         """
         app = self.get_object()
-        
+
         return Response({
             "app_id": app.id,
             "app_name": app.name,
@@ -630,17 +667,17 @@ class AppViewSet(viewsets.ModelViewSet):
                 "latency_ms": "integer - 执行耗时（毫秒）"
             }
         })
-    
+
     @action(detail=True, methods=['post'], url_path='invoke')
     def invoke_execute(self, request, pk=None):
         """
         [POST] API 直接调用执行接口
-        
+
         执行 App 并返回结果
         """
         app = self.get_object()
         request_id = uuid.uuid4().hex
-        
+
         # 验证请求数据
         serializer = AppInvokeRequestSerializer(data=request.data)
         if not serializer.is_valid():
@@ -652,9 +689,9 @@ class AppViewSet(viewsets.ModelViewSet):
                 "content": "",
                 "error": serializer.errors
             }, status=status.HTTP_400_BAD_REQUEST)
-        
+
         data = serializer.validated_data
-        
+
         # 执行 App
         result = self._execute_app(
             app=app,
@@ -662,7 +699,7 @@ class AppViewSet(viewsets.ModelViewSet):
             context=data.get('context'),
             parameters=data.get('parameters')
         )
-        
+
         # 构建响应
         response_data = {
             "request_id": request_id,
@@ -671,21 +708,21 @@ class AppViewSet(viewsets.ModelViewSet):
             "status": result['status'],
             "content": result['content'],
         }
-        
+
         if result.get('error'):
             response_data['error'] = result['error']
         if result.get('usage'):
             response_data['usage'] = result['usage']
         if result.get('latency_ms'):
             response_data['latency_ms'] = result['latency_ms']
-        
+
         status_code = status.HTTP_200_OK if result['status'] == 'success' else status.HTTP_500_INTERNAL_SERVER_ERROR
         return Response(response_data, status=status_code)
-    
+
     # ============================
     # 2. Function Calling 调用接口
     # ============================
-    
+
     @action(detail=True, methods=['get'], url_path='function')
     def function_info(self, request, pk=None):
         """
@@ -695,7 +732,7 @@ class AppViewSet(viewsets.ModelViewSet):
         """
         app = self.get_object()
         schema = app.get_function_schema()
-        
+
         return Response({
             "app_id": app.id,
             "app_name": app.name,
@@ -713,17 +750,17 @@ class AppViewSet(viewsets.ModelViewSet):
                 "status": "string - 执行状态"
             }
         })
-    
+
     @action(detail=True, methods=['post'], url_path='function')
     def function_execute(self, request, pk=None):
         """
         [POST] Function Calling 执行接口
-        
+
         按照 OpenAI Function Calling 格式执行函数并返回结果
         """
         app = self.get_object()
         request_id = uuid.uuid4().hex
-        
+
         # 验证请求数据
         serializer = AppFunctionCallingRequestSerializer(data=request.data)
         if not serializer.is_valid():
@@ -734,9 +771,9 @@ class AppViewSet(viewsets.ModelViewSet):
                 "content": "",
                 "error": serializer.errors
             }, status=status.HTTP_400_BAD_REQUEST)
-        
+
         data = serializer.validated_data
-        
+
         # 验证函数名是否匹配
         if data['name'] != app.name:
             return Response({
@@ -746,7 +783,7 @@ class AppViewSet(viewsets.ModelViewSet):
                 "content": "",
                 "error": f"函数名 '{data['name']}' 与应用名 '{app.name}' 不匹配"
             }, status=status.HTTP_400_BAD_REQUEST)
-        
+
         # 解析 arguments
         arguments = data['arguments']
         if isinstance(arguments, str):
@@ -760,17 +797,18 @@ class AppViewSet(viewsets.ModelViewSet):
                     "content": "",
                     "error": "arguments 必须是有效的 JSON 格式"
                 }, status=status.HTTP_400_BAD_REQUEST)
-        
+
         # 从 arguments 中提取 message（如果有），否则将 arguments 作为参数传入
-        user_message = arguments.pop('message', None) or arguments.pop('query', None) or json.dumps(arguments, ensure_ascii=False)
-        
+        user_message = arguments.pop('message', None) or arguments.pop('query', None) or json.dumps(arguments,
+                                                                                                    ensure_ascii=False)
+
         # 执行 App
         result = self._execute_app(
             app=app,
             user_message=user_message,
             parameters=arguments
         )
-        
+
         # 构建 Function Calling 格式的响应
         response_data = {
             "request_id": request_id,
@@ -778,21 +816,21 @@ class AppViewSet(viewsets.ModelViewSet):
             "status": result['status'],
             "content": result['content'],
         }
-        
+
         if result.get('error'):
             response_data['error'] = result['error']
         if result.get('usage'):
             response_data['usage'] = result['usage']
         if result.get('latency_ms'):
             response_data['latency_ms'] = result['latency_ms']
-        
+
         status_code = status.HTTP_200_OK if result['status'] == 'success' else status.HTTP_500_INTERNAL_SERVER_ERROR
         return Response(response_data, status=status_code)
-    
+
     # ============================
     # 3. MCP 调用接口
     # ============================
-    
+
     @action(detail=True, methods=['get'], url_path='mcp')
     def mcp_info(self, request, pk=None):
         """
@@ -801,7 +839,7 @@ class AppViewSet(viewsets.ModelViewSet):
         返回符合 MCP 协议格式的工具定义
         """
         app = self.get_object()
-        
+
         # 构建 MCP 格式的工具定义
         mcp_tool_definition = {
             "name": app.name,
@@ -812,7 +850,7 @@ class AppViewSet(viewsets.ModelViewSet):
                 "required": []
             }
         }
-        
+
         return Response({
             "app_id": app.id,
             "app_name": app.name,
@@ -832,16 +870,16 @@ class AppViewSet(viewsets.ModelViewSet):
                 "isError": "boolean - 是否发生错误"
             }
         })
-    
+
     @action(detail=True, methods=['post'], url_path='mcp')
     def mcp_execute(self, request, pk=None):
         """
         [POST] MCP (Model Context Protocol) 执行接口
-        
+
         按照 MCP 协议格式执行工具并返回结果
         """
         app = self.get_object()
-        
+
         # 验证请求数据
         serializer = AppMCPRequestSerializer(data=request.data)
         if not serializer.is_valid():
@@ -853,10 +891,10 @@ class AppViewSet(viewsets.ModelViewSet):
                 "isError": True,
                 "error": serializer.errors
             }, status=status.HTTP_400_BAD_REQUEST)
-        
+
         data = serializer.validated_data
         call_id = data.get('call_id') or uuid.uuid4().hex
-        
+
         # 验证工具名是否匹配
         if data['tool_name'] != app.name:
             return Response({
@@ -867,20 +905,21 @@ class AppViewSet(viewsets.ModelViewSet):
                 "isError": True,
                 "error": f"工具名 '{data['tool_name']}' 与应用名 '{app.name}' 不匹配"
             }, status=status.HTTP_400_BAD_REQUEST)
-        
+
         # 获取输入参数
         tool_input = data.get('input', {})
-        
+
         # 从 input 中提取 message（如果有），否则将 input 作为参数传入
-        user_message = tool_input.pop('message', None) or tool_input.pop('query', None) or json.dumps(tool_input, ensure_ascii=False)
-        
+        user_message = tool_input.pop('message', None) or tool_input.pop('query', None) or json.dumps(tool_input,
+                                                                                                      ensure_ascii=False)
+
         # 执行 App
         result = self._execute_app(
             app=app,
             user_message=user_message,
             parameters=tool_input
         )
-        
+
         # 构建 MCP 格式的响应
         response_data = {
             "call_id": call_id,
@@ -889,17 +928,17 @@ class AppViewSet(viewsets.ModelViewSet):
             "content": result['content'],
             "isError": result['status'] != 'success'
         }
-        
+
         if result.get('error'):
             response_data['error'] = result['error']
         if result.get('usage'):
             response_data['usage'] = result['usage']
         if result.get('latency_ms'):
             response_data['latency_ms'] = result['latency_ms']
-        
+
         status_code = status.HTTP_200_OK if result['status'] == 'success' else status.HTTP_500_INTERNAL_SERVER_ERROR
         return Response(response_data, status=status_code)
-    
+
     @action(detail=True, methods=['post'], url_path='toggle-featured')
     def toggle_featured(self, request, pk=None):
         """
@@ -908,17 +947,19 @@ class AppViewSet(viewsets.ModelViewSet):
         app = self.get_object()
         app.is_featured = not app.is_featured
         app.save(update_fields=['is_featured', 'updated_at'])
-        
+
         return Response({
             "status": "success",
             "message": f"应用已{'设为精选' if app.is_featured else '取消精选'}",
             "is_featured": app.is_featured
         })
 
+
 class ConversationPagination(PageNumberPagination):
     page_size = 15
     page_size_query_param = 'page_size'
     max_page_size = 100
+
 
 class ConversationViewSet(viewsets.ModelViewSet):
     queryset = Conversation.objects.all().order_by('-updated_at')
@@ -931,7 +972,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
         messages = conversation.messages.all()
         serializer = MessageSerializer(messages, many=True)
         return Response(serializer.data)
-    
+
     @action(detail=True, methods=['patch'], url_path='messages/(?P<message_id>[^/.]+)/retry')
     def retry_message(self, request, pk=None, message_id=None):
         """
@@ -939,20 +980,20 @@ class ConversationViewSet(viewsets.ModelViewSet):
         清空 assistant 消息的 content 和 reasoning_content，然后重新请求
         """
         conversation = self.get_object()
-        
+
         try:
             message = Message.objects.get(id=message_id, conversation=conversation)
         except Message.DoesNotExist:
             return Response({"error": "消息不存在"}, status=status.HTTP_404_NOT_FOUND)
-        
+
         if message.role != 'assistant':
             return Response({"error": "只能重试 assistant 消息"}, status=status.HTTP_400_BAD_REQUEST)
-        
+
         # 获取该消息之前的所有消息作为上下文
         previous_messages = conversation.messages.filter(
             created_at__lt=message.created_at
         ).order_by('created_at')
-        
+
         # 构建消息列表
         messages_payload = []
         for msg in previous_messages:
@@ -960,28 +1001,27 @@ class ConversationViewSet(viewsets.ModelViewSet):
                 "role": msg.role,
                 "content": msg.content
             })
-        
+
         # 获取重试参数
         enable_thinking = request.data.get('enable_thinking', False)
         model_name = request.data.get('model')
         temperature = request.data.get('temperature')
         max_tokens = request.data.get('max_tokens')
-        
+
         if not model_name:
             return Response({"error": "必须提供 model 参数"}, status=status.HTTP_400_BAD_REQUEST)
-        
+
         # 获取 Provider 和 Model（需要同时匹配 provider_id 和 model_name）
+        provider_id = request.data.get('provider_id')
+        if not provider_id:
+            return Response({"error": "必须提供 provider_id 参数"}, status=status.HTTP_400_BAD_REQUEST)
+
         try:
-            # 从之前的消息中获取 provider_id，或从请求参数中获取
-            provider_id = request.data.get('provider_id')
-            if not provider_id:
-                return Response({"error": "必须提供 provider_id 参数"}, status=status.HTTP_400_BAD_REQUEST)
-            
             llm_model = LLMModel.objects.get(name=model_name, provider_id=provider_id)
             provider = llm_model.provider
         except LLMModel.DoesNotExist:
             return Response({"error": "模型不存在"}, status=status.HTTP_400_BAD_REQUEST)
-        
+
         # 构建请求 payload
         headers = {
             "Authorization": f"Bearer {provider.api_key}",
@@ -992,72 +1032,63 @@ class ConversationViewSet(viewsets.ModelViewSet):
             "messages": messages_payload,
             "stream": True
         }
-        
+
         if temperature is not None:
             payload['temperature'] = float(temperature)
         if max_tokens is not None:
             payload['max_tokens'] = int(max_tokens)
         if enable_thinking:
             payload['extra_body'] = {"enable_thinking": True}
-        
-        # 调用上游 API
-        try:
-            response = requests.post(
-                f"{provider.base_url}/chat/completions",
-                headers=headers,
-                json=payload,
-                stream=True,
-                timeout=60
-            )
-            response.raise_for_status()
-        except requests.RequestException as e:
-            return Response({"error": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
-        
+
         # 流式响应生成器
         def retry_stream_generator():
             assistant_content = ""
             reasoning_content = ""
             token_usage_data = None
             buffer = ""
-            
-            for chunk in response.iter_content(chunk_size=1024):
-                if chunk:
-                    text_chunk = chunk.decode('utf-8')
-                    yield text_chunk
-                    buffer += text_chunk
-                    
-                    while '\n' in buffer:
-                        line, buffer = buffer.split('\n', 1)
-                        line = line.strip()
-                        if line.startswith("data: "):
-                            json_str = line[6:]
-                            if json_str == "[DONE]":
-                                continue
-                            try:
-                                data = json.loads(json_str)
-                                
-                                if 'choices' in data and len(data['choices']) > 0:
-                                    delta = data['choices'][0].get('delta', {})
-                                    
-                                    if 'reasoning_content' in delta:
-                                        reasoning_content += delta['reasoning_content']
-                                    
-                                    if 'content' in delta:
-                                        assistant_content += delta['content']
-                                
-                                if 'usage' in data:
-                                    token_usage_data = data['usage']
-                                    
-                            except (json.JSONDecodeError, KeyError, IndexError):
-                                continue
-            
+
+            with httpx.stream(
+                    "POST",
+                    f"{provider.base_url}/chat/completions",
+                    headers=headers,
+                    json=payload,
+                    timeout=60.0
+            ) as response:
+                response.raise_for_status()
+                for line in response.iter_lines():
+                    if line.startswith("data: "):
+                        data_str = line[6:]
+                        if data_str == "[DONE]":
+                            continue
+                        try:
+                            data = json.loads(data_str)
+
+                            if 'choices' in data and len(data['choices']) > 0:
+                                delta = data['choices'][0].get('delta', {})
+
+                                if 'reasoning_content' in delta:
+                                    reasoning_content += delta['reasoning_content']
+
+                                if 'content' in delta:
+                                    assistant_content += delta['content']
+
+                            if 'usage' in data:
+                                token_usage_data = data['usage']
+
+                        except (json.JSONDecodeError, KeyError, IndexError):
+                            continue
+
+                    # 直接 yield 原始行
+                    if line:
+                        yield line + '\n'
+
             # 更新数据库中的消息
             message.content = assistant_content
             message.reasoning_content = reasoning_content if reasoning_content else None
             message.token_usage = token_usage_data
             message.save()
             conversation.save()
-        
+
         response_stream = StreamingHttpResponse(
             retry_stream_generator(),
             content_type='text/event-stream'
@@ -1065,6 +1096,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
         response_stream['Cache-Control'] = 'no-cache'
         response_stream['X-Accel-Buffering'] = 'no'
         return response_stream
+
 
 class ChatCompletionView(APIView):
     def post(self, request):
@@ -1076,7 +1108,7 @@ class ChatCompletionView(APIView):
         messages = request.data.get('messages')
         system_prompt = request.data.get('system_prompt')
         extra_body = request.data.get('extra_body', {})  # 获取 extra_body 参数
-        
+
         # 1. Get or Create Conversation
         if conversation_id:
             conversation = get_object_or_404(Conversation, id=conversation_id)
@@ -1128,7 +1160,7 @@ class ChatCompletionView(APIView):
         # 4. Get Provider and Model Config（必须同时匹配 provider_id 和 model_name）
         if not provider_id:
             return Response({"error": "provider_id is required"}, status=400)
-        
+
         try:
             llm_model = LLMModel.objects.get(name=model_name, provider_id=provider_id)
             provider = llm_model.provider
@@ -1157,64 +1189,60 @@ class ChatCompletionView(APIView):
                 pass
         if system_prompt:
             payload['messages'].insert(0, {"role": "system", "content": system_prompt})
-        
+
         # 添加 extra_body 支持（深度思考等）
         if extra_body and isinstance(extra_body, dict):
             # 验证 enable_thinking 参数
             enable_thinking = extra_body.get('enable_thinking', False)
             if "gpt" not in model_name.lower():
                 payload['extra_body'] = {"enable_thinking": enable_thinking}
-        
-        try:
-            response = requests.post(
-                f"{provider.base_url}/chat/completions",
-                headers=headers,
-                json=payload,
-                stream=True
-            )
-            response.raise_for_status()
-        except requests.RequestException as e:
-            return Response({"error": str(e)}, status=502)
 
+        # 流式响应生成器
         def stream_generator():
             assistant_content = ""
             reasoning_content = ""  # 存储思考内容
             token_usage_data = None  # 存储 token 统计
-            buffer = ""
-            for chunk in response.iter_content(chunk_size=1024):
-                if chunk:
-                    text_chunk = chunk.decode('utf-8')
-                    yield text_chunk
-                    buffer += text_chunk
-                    while '\n' in buffer:
-                        line, buffer = buffer.split('\n', 1)
-                        line = line.strip()
-                        if line.startswith("data: "):
-                            json_str = line[6:]
-                            if json_str == "[DONE]":
-                                continue
-                            try:
-                                data = json.loads(json_str)
-                                
-                                # 解析 delta 内容
-                                if 'choices' in data and len(data['choices']) > 0:
-                                    delta = data['choices'][0].get('delta', {})
-                                    
-                                    # 获取思考内容
-                                    if 'reasoning_content' in delta:
-                                        reasoning_content += delta['reasoning_content'] if delta['reasoning_content'] else ''
-                                    
-                                    # 获取最终回答
-                                    if 'content' in delta:
-                                        assistant_content += delta['content'] if delta['content'] else ''
-                                
-                                # 解析 token 使用量
-                                if 'usage' in data:
-                                    token_usage_data = data['usage']
-                                    
-                            except (json.JSONDecodeError, KeyError, IndexError):
-                                continue
-            
+
+            with httpx.stream(
+                    "POST",
+                    f"{provider.base_url}/chat/completions",
+                    headers=headers,
+                    json=payload,
+                    timeout=60.0
+            ) as response:
+                response.raise_for_status()
+                for line in response.iter_lines():
+                    if line.startswith("data: "):
+                        data_str = line[6:]
+                        if data_str == "[DONE]":
+                            continue
+                        try:
+                            data = json.loads(data_str)
+
+                            # 解析 delta 内容
+                            if 'choices' in data and len(data['choices']) > 0:
+                                delta = data['choices'][0].get('delta', {})
+
+                                # 获取思考内容
+                                if 'reasoning_content' in delta:
+                                    reasoning_content += delta['reasoning_content'] if delta[
+                                        'reasoning_content'] else ''
+
+                                # 获取最终回答
+                                if 'content' in delta:
+                                    assistant_content += delta['content'] if delta['content'] else ''
+
+                            # 解析 token 使用量
+                            if 'usage' in data:
+                                token_usage_data = data['usage']
+
+                        except (json.JSONDecodeError, KeyError, IndexError):
+                            continue
+
+                    # 直接 yield 原始行
+                    if line:
+                        yield line + '\n'
+
             # Save full message after stream ends
             if assistant_content or reasoning_content:
                 Message.objects.create(
@@ -1226,7 +1254,10 @@ class ChatCompletionView(APIView):
                 )
                 conversation.save()
 
-        response_stream = StreamingHttpResponse(stream_generator(), content_type='text/event-stream')
+        response_stream = StreamingHttpResponse(
+            stream_generator(),
+            content_type='text/event-stream'
+        )
         response_stream['Cache-Control'] = 'no-cache'
         response_stream['X-Accel-Buffering'] = 'no'
         return response_stream
@@ -1239,7 +1270,7 @@ class AppScenarioViewSet(viewsets.ModelViewSet):
     """
     queryset = AppScenario.objects.all().order_by('-updated_at')
     serializer_class = AppScenarioSerializer
-    
+
     def get_queryset(self):
         """
         支持按 app_id 筛选
@@ -1258,24 +1289,24 @@ class TTSSynthesisViewSet(viewsets.ModelViewSet):
     """
     queryset = TTSVoice.objects.all()
     serializer_class = TTSVoiceSerializer
-    
+
     class TTSSynthesisRequestSerializer(serializers.Serializer):
         """
         TTS 合成请求序列化器
         """
         text = serializers.CharField(required=True, help_text="要转换的文本")
         sample_rate = serializers.IntegerField(default=24000, help_text="音频采样率")
-    
+
     @action(detail=True, methods=['post'], url_path='invoke')
     def invoke_execute(self, request, pk=None):
         """
         [POST] API 直接调用执行接口
-        
+
         执行 TTS 语音合成并返回结果
         speaker 通过 pk 传入
         """
         voice = self.get_object()
-        
+
         # 验证请求数据
         serializer = self.TTSSynthesisRequestSerializer(data=request.data)
         if not serializer.is_valid():
@@ -1283,11 +1314,11 @@ class TTSSynthesisViewSet(viewsets.ModelViewSet):
                 "status": "error",
                 "error": serializer.errors
             }, status=status.HTTP_400_BAD_REQUEST)
-        
+
         data = serializer.validated_data
         text = data['text']
         sample_rate = data['sample_rate']
-        
+
         try:
             # 构建请求头和 payload
             headers = {
@@ -1296,7 +1327,7 @@ class TTSSynthesisViewSet(viewsets.ModelViewSet):
                 "X-Api-Access-Key": voice.access_key,
                 "X-Api-Resource-Id": voice.resource_id,
             }
-            
+
             payload = {
                 "req_params": {
                     "speaker": voice.speaker,
@@ -1307,49 +1338,53 @@ class TTSSynthesisViewSet(viewsets.ModelViewSet):
                     }
                 }
             }
-            
+
             # 调用 TTS 服务
-            response = requests.post(
-                voice.base_url,
-                headers=headers,
-                json=payload,
-                timeout=30
-            )
-            response.raise_for_status()
-            
-            # 处理响应
             audio_base64_list = []
-            for line in response.iter_lines():
-                if line:
-                    try:
-                        chunk_data = json.loads(line)
-                        if "data" in chunk_data:
-                            data = chunk_data["data"]
-                            if data:
-                                audio_base64_list.append(data)
-                    except json.JSONDecodeError:
-                        continue
-            
+            with httpx.stream(
+                    "POST",
+                    voice.base_url,
+                    headers=headers,
+                    json=payload,
+                    timeout=30.0
+            ) as response:
+                response.raise_for_status()
+                for line in response.iter_lines():
+                    if line:
+                        try:
+                            chunk_data = json.loads(line)
+                            if "data" in chunk_data:
+                                audio_data = chunk_data["data"]
+                                if audio_data:
+                                    audio_base64_list.append(audio_data)
+                        except json.JSONDecodeError:
+                            continue
+
             # 合并音频数据
             if not audio_base64_list:
                 return Response({
                     "status": "error",
                     "error": "TTS 服务返回空数据"
                 }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-            
-            audio_bytes = b"" .join([base64.b64decode(chunk) for chunk in audio_base64_list])
+
+            audio_bytes = b"".join([base64.b64decode(chunk) for chunk in audio_base64_list])
             audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
-            
+
             return Response({
                 "status": "success",
                 "audio": audio_b64,
                 "speaker": voice.speaker
             })
-            
-        except requests.RequestException as e:
+
+        except httpx.HTTPStatusError as e:
             return Response({
                 "status": "error",
                 "error": f"调用 TTS 服务失败: {str(e)}"
+            }, status=status.HTTP_502_BAD_GATEWAY)
+        except httpx.RequestError as e:
+            return Response({
+                "status": "error",
+                "error": f"请求错误: {str(e)}"
             }, status=status.HTTP_502_BAD_GATEWAY)
         except Exception as e:
             return Response({
