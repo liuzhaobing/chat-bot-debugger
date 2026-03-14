@@ -12,6 +12,11 @@ from typing import Optional, Dict, Any, List, Callable
 from datetime import datetime
 
 from app.config import settings
+from app.services.app_ids import (
+    JUDGE_APP_ID,
+    QUERY_GENERATOR_APP_ID,
+    TEST_POINT_EXTRACTOR_APP_ID,
+)
 
 from .tester.models import (
     # 数据类
@@ -67,12 +72,12 @@ class TesterService:
     测试流程：
     1. 先提取测试点（extract_test_points）
     2. 再针对每个测试点设计测试用例（design_test_case_for_point 或 design_all_test_cases_from_points）
-    3. 执行测试用例（get_next_test_query -> process_execution_result）
+    3. 执行测试用例（generate_test_query -> evaluate_round_result）
     4. 生成测试报告（finalize）
 
     从 agent_service.py 剥离的功能：
     - 测试用例管理（test_cases, current_case_index, current_case）
-    - 测试查询生成（generate_next_query, call_query_generator_app）
+    - 测试查询生成（produce_query_content, call_query_generator_app）
     - 测试结果评判（call_judge_app）
     - 任务推进逻辑（noise_retry_count, current_case_index 推进）
     - 对话历史管理（conversation_history）
@@ -93,17 +98,17 @@ class TesterService:
             if result.completed:
                 break
 
-            query = await tester.get_next_test_query()
+            query = await tester.generate_test_query()
             # 执行测试...
-            progress = await tester.process_execution_result(asr_text, before_status, after_status)
+            progress = await tester.evaluate_round_result(asr_text, before_status, after_status)
 
         report = await tester.finalize()
     """
 
-    # App IDs - 从 agent_service.py 迁移
-    JUDGE_APP_ID = "e4d13f457f7f486c99ca11b39a7b8347"
-    QUERY_GENERATOR_APP_ID = "c7a27bd4e3cf49008ae99fc69817f155"
-    TEST_POINT_EXTRACTOR_APP_ID = "test_point_extractor"  # 测试点提取App ID
+    # App IDs - 从 app_ids.py 导入
+    JUDGE_APP_ID = JUDGE_APP_ID
+    QUERY_GENERATOR_APP_ID = QUERY_GENERATOR_APP_ID
+    TEST_POINT_EXTRACTOR_APP_ID = TEST_POINT_EXTRACTOR_APP_ID
 
     def __init__(
         self,
@@ -485,28 +490,52 @@ class TesterService:
     # 2. 测试用例执行
     # ========================================================================
 
-    async def get_next_test_query(self) -> Optional[str]:
-        """获取下一个测试查询语句
+    async def generate_test_query(self) -> Optional[str]:
+        """生成测试查询语句
+
+        职责：
+        1. 定位当前用例（如果需要）
+        2. 在当前用例内生成测试查询
+
+        多轮对话说明：
+        - 一个测试用例可能需要多轮对话才能完成
+        - 每次调用此方法都会调用 _produce_query_content 来生成查询
+        - _produce_query_content 内部会调用 QueryGenerator App，由 App 决定是否继续生成查询
+        - 当 App 返回 should_continue=False 时，_produce_query_content 返回空字符串
+        - evaluate_round_result 根据评判结果更新用例状态并决定是否推进
 
         Returns:
-            测试查询语句，如果没有更多用例则返回None
+            测试查询语句，如果没有更多用例或当前用例已完成则返回None
         """
-        # 获取下一个未执行的用例索引
-        next_index = self.get_next_case_index()
-        if next_index is None:
-            logger.info("No more test cases to execute")
-            return None
-
-        # 设置当前用例
-        self.case_manager.current_index = next_index
         current_case = self.case_manager.get_current_case()
 
-        if not current_case:
-            logger.info("No more test cases to execute")
-            return None
+        # 判断是否需要定位新用例：
+        # 1. 没有当前用例（current_index == -1）
+        # 2. 当前用例已完成（test_result != NOT_RUN）
+        need_locate_new_case = (
+            not current_case or
+            current_case.test_result != TestResultStatus.NOT_RUN
+        )
 
-        # 生成测试查询
-        query = await self._generate_next_query({'should_continue': True}, "")
+        if need_locate_new_case:
+            # 定位到第一个未执行的用例
+            next_index = self.get_next_case_index()
+            if next_index is None:
+                logger.info("No more test cases to execute")
+                return None
+
+            # 设置当前用例
+            self.case_manager.current_index = next_index
+            current_case = self.case_manager.get_current_case()
+            if not current_case:
+                logger.info("No more test cases to execute")
+                return None
+
+            logger.info(f"开始执行测试用例 {next_index + 1}/{len(self.case_manager.test_cases)}: {current_case.title}")
+            await self._send_callback('log', f'开始执行测试用例 {next_index + 1}.{current_case.title}')
+
+        # 在当前用例内生成测试查询
+        query = await self._produce_query_content({'should_continue': True}, "")
 
         if query:
             self.total_queries_generated += 1
@@ -520,24 +549,27 @@ class TesterService:
                 'case_id': current_case.id,
                 'query': query,
             })
+        else:
+            # 当前用例已完成（should_continue=False），但没有生成查询
+            logger.info(f"Current case {current_case.id} completed, no more queries")
 
         return query
 
-    async def _generate_next_query(
+    async def _produce_query_content(
         self,
         judge_result: Dict[str, Any],
         asr_text: str
     ) -> str:
-        """根据判断结果生成下一个查询
+        """生成测试查询内容
 
-        从 agent_service.py 的 generate_next_query 迁移
+        职责：调用 QueryGenerator App 生成下一轮测试查询
 
         Args:
-            judge_result: 判断结果
+            judge_result: 判断结果（包含 should_continue 等信息）
             asr_text: ASR识别文本
 
         Returns:
-            生成的查询语句
+            生成的查询语句，如果当前用例已完成则返回空字符串
         """
         current_case = self.case_manager.get_current_case()
         if not current_case:
@@ -575,19 +607,19 @@ class TesterService:
 
             await self._send_callback('query_generated', query_result)
 
+            # 检查是否应该继续
             if not query_result.get('should_continue', True):
-                # 推进到下一个用例
-                advanced = self.case_manager.advance_to_next_case()
-                if advanced:
-                    next_case = self.case_manager.get_current_case()
-                    await self._send_callback('log', f'准备加载下一条测试用例：{self.case_manager.current_index + 1}.{next_case.title if next_case else ""}')
+                # 当前用例已完成，返回空字符串
+                # 推进到下一个用例的逻辑由 evaluate_round_result 处理
+                logger.info(f"Query generator indicates should_continue=False, current case completed")
+                return ""
 
             next_query = query_result.get('user_input', '')
 
             return next_query
 
         except Exception as e:
-            logger.error(f"Error generating next query: {e}")
+            logger.error(f"Error producing query content: {e}")
             return "让我继续为您检查设备状态"
 
     async def _call_query_generator_app(self, message: Any) -> Dict[str, Any]:
@@ -769,18 +801,26 @@ class TesterService:
         }
 
     # ========================================================================
-    # 4. 测试任务推进
+    # 4. 测试执行评估与推进
     # ========================================================================
 
-    async def process_execution_result(
+    async def evaluate_round_result(
         self,
         asr_text: str,
         device_status_before: Optional[Dict] = None,
         device_status_after: Optional[Dict] = None
     ) -> TaskProgress:
-        """处理执行结果并推进任务
+        """评估本轮执行结果并推进任务
 
-        这是核心方法，完成：评判 -> 记录 -> 推进
+        职责：
+        1. 评判本轮执行结果
+        2. 记录结果到用例
+        3. 决定并执行推进动作
+
+        多轮对话说明：
+        - 一个测试用例可能需要多轮对话才能完成
+        - 每轮执行后，中间结果追加到 actual_results，但不更新 test_result
+        - 只有当 should_continue=False 时，才更新 test_result 为最终状态
 
         Args:
             asr_text: ASR识别文本
@@ -800,21 +840,20 @@ class TesterService:
         # 更新用例状态
         current_case = self.case_manager.get_current_case()
         if current_case:
-            # 确定实际结果
-            actual_results = []
-            if judge_result.is_pass:
-                actual_results = [f"测试通过: {judge_result.analysis}"]
-            else:
-                actual_results = [f"测试失败: {judge_result.analysis}"]
+            # 记录本轮执行结果（追加到 actual_results）
+            round_result = f"[轮次{len(current_case.actual_results) + 1}] {'通过' if judge_result.is_pass else '失败'}: {judge_result.analysis}"
+            current_case.actual_results.append(round_result)
 
-            # 更新用例结果
-            test_status = self.judge.determine_test_status(judge_result)
-            self.case_manager.update_case_result(
-                current_case.id,
-                test_status,
-                actual_results,
-                judge_result.analysis if not judge_result.is_pass else None
-            )
+            # 只有当用例完成时才更新 test_result
+            if not judge_result.should_continue:
+                test_status = self.judge.determine_test_status(judge_result)
+                self.case_manager.update_case_result(
+                    current_case.id,
+                    test_status,
+                    current_case.actual_results,  # 使用累积的结果
+                    judge_result.analysis if not judge_result.is_pass else None
+                )
+                logger.info(f"用例 {current_case.id} 完成，最终状态: {test_status.value}")
 
             # 如果失败，记录缺陷
             if not judge_result.is_pass:
@@ -836,7 +875,9 @@ class TesterService:
         # 执行推进
         progress = self._execute_progression(action, judge_result)
 
-        self.total_cases_executed += 1
+        # 只有当用例完成时才增加计数
+        if not judge_result.should_continue:
+            self.total_cases_executed += 1
 
         await self._send_callback('task_progress', progress.to_dict())
         return progress
@@ -857,17 +898,26 @@ class TesterService:
         action: NextAction,
         judge_result: JudgeResult
     ) -> TaskProgress:
-        """执行推进"""
+        """执行推进
+
+        推进策略：
+        - NEXT_CASE: 当前用例完成，将 current_index 设为 -1，下次 generate_test_query 时定位新用例
+        - STOP: 所有用例完成，停止任务
+        - RETRY: 重试当前步骤
+        - WAIT: 等待下一步操作
+        """
         current_index = self.case_manager.current_index
         total_cases = len(self.case_manager.test_cases)
 
         if action == NextAction.NEXT_CASE:
-            self.case_manager.advance_to_next_case()
+            # 不再简单地递增 current_index，而是设置为 -1
+            # 让 generate_test_query 来定位下一个未执行的用例
+            self.case_manager.current_index = -1
             self.progressor.advance_to_next_case()
-            current_index = self.case_manager.current_index
-            message = f"推进到下一个测试用例 ({current_index + 1}/{total_cases})"
+            message = f"当前用例已完成，准备推进到下一个测试用例"
 
         elif action == NextAction.STOP:
+            self.case_manager.current_index = -1
             self.progressor.stop()
             message = "所有测试用例已完成"
 

@@ -473,16 +473,16 @@ class TesterService:
     async def initialize(self, session_id: str, iot_config: Dict) -> None:
         """初始化测试服务"""
 
-    async def get_next_test_query(self) -> Optional[str]:
-        """获取下一个测试查询语句"""
+    async def generate_test_query(self) -> Optional[str]:
+        """生成测试查询语句（定位用例 + 生成查询）"""
 
-    async def process_execution_result(
+    async def evaluate_round_result(
         self,
         asr_text: str,
         device_status_before: Dict,
         device_status_after: Dict
     ) -> TaskProgress:
-        """处理执行结果并推进任务"""
+        """评估本轮执行结果并推进任务"""
 
     def is_testing_completed(self) -> bool:
         """判断测试是否全部完成"""
@@ -524,15 +524,15 @@ class AgenticTestAgent:
         # 初始化测试服务
         await self.tester_service.initialize(self.session_id, iot_config)
 
-        # 获取第一个测试查询
-        next_query = await self.tester_service.get_next_test_query()
+        # 生成第一个测试查询
+        next_query = await self.tester_service.generate_test_query()
 
         while self.is_running:
             # 执行测试...
             asr_text = await self.execute_query(next_query)
 
-            # 处理结果
-            progress = await self.tester_service.process_execution_result(
+            # 评估结果并推进任务
+            progress = await self.tester_service.evaluate_round_result(
                 asr_text=asr_text,
                 device_status_before=before_status,
                 device_status_after=after_status
@@ -542,7 +542,7 @@ class AgenticTestAgent:
             if self.tester_service.is_testing_completed():
                 break
 
-            next_query = await self.tester_service.get_next_test_query()
+            next_query = await self.tester_service.generate_test_query()
 
         # 生成报告
         report = await self.tester_service.finalize()
@@ -623,6 +623,7 @@ worker/app/services/
 |------|------|------|------|
 | v1.0 | 2026-03-12 | Claude | 初始版本 |
 | v1.1 | 2026-03-12 | Claude | 完成重构，将测试功能从 agent_service.py 剥离到 tester_service.py |
+| v1.2 | 2026-03-14 | Claude | 新增 App 调用架构章节，详细梳理 5 个 App 的入参、出参和调用方式 |
 
 ## 9. 重构实施记录
 
@@ -665,7 +666,7 @@ worker/app/services/
 
 - `self.tester_service = TesterService(...)` 初始化
 - 使用 `self.tester_service.on_noise_detected()` 处理噪音重试
-- 使用 `self.tester_service.get_next_test_query()` 获取测试查询
+- 使用 `self.tester_service.generate_test_query()` 生成测试查询
 - 使用 `self.tester_service.add_to_conversation_history()` 管理对话历史
 - 使用 `self.tester_service.is_testing_completed()` 判断测试完成
 
@@ -692,7 +693,7 @@ print('All imports successful!')
 # 验证方法存在
 python -c "
 from app.services.tester_service import TesterService
-methods = ['initialize', 'get_next_test_query', 'process_execution_result',
+methods = ['initialize', 'generate_test_query', 'evaluate_round_result',
            'is_testing_completed', 'on_noise_detected', 'add_to_conversation_history',
            'call_judge_app', 'get_statistics', 'finalize', 'stop']
 for m in methods:

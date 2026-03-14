@@ -9,6 +9,8 @@ from datetime import datetime
 from typing import Optional, Dict, Any, List, Tuple
 from enum import Enum
 
+from app.services.app_ids import JUDGE_APP_ID, QUERY_GENERATOR_APP_ID
+
 
 # ============================================================================
 # 枚举类型定义
@@ -87,9 +89,9 @@ class TesterConfig:
     # IOT 协议配置
     iot_protocol_id: str = ""           # IOT设备协议ID
 
-    # App IDs
-    judge_app_id: str = "e4d13f457f7f486c99ca11b39a7b8347"
-    query_generator_app_id: str = "c7a27bd4e3cf49008ae99fc69817f155"
+    # App IDs - 使用从 app_ids 导入的常量
+    judge_app_id: str = JUDGE_APP_ID
+    query_generator_app_id: str = QUERY_GENERATOR_APP_ID
 
     # 重试配置
     max_noise_retry: int = 2           # 最大噪音重试次数

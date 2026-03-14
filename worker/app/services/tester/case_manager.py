@@ -18,6 +18,7 @@ from .models import (
     TesterConfig,
 )
 from app.services.backend_service import BackendService
+from app.services.app_ids import TEST_CASE_DESIGNER_APP_ID
 
 logger = logging.getLogger(__name__)
 
@@ -197,10 +198,7 @@ class TestCaseManager:
         """
         logger.info(f"Designing test cases from PRD, length: {len(prd)}")
 
-        # APP ID for test case design
-        TEST_CASE_DESIGNER_APP_ID = "43281a11ed734cbc9ed7d1e1f18a1f99"
-
-        # 使用传入的 backend_service 或创建新实例
+        # 使用从 app_ids 导入的常量
         service = backend_service or BackendService()
 
         try:

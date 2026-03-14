@@ -182,10 +182,14 @@ class AgenticTestAgent:
             f"fixed_duration={self.fixed_duration}s"
         )
 
-    async def start_loop(self, initial_query: str, iot_config: Optional[Dict[str, str]] = None):
-        """启动智能体循环"""
+    async def start_loop(self, initial_query: str = None, iot_config: Optional[Dict[str, str]] = None):
+        """启动智能体循环
+
+        Args:
+            initial_query: 初始查询（可选，如果不提供则从测试用例生成）
+            iot_config: IOT 配置
+        """
         self.is_running = True
-        self.current_query = initial_query
         self.loop_step = 0
 
         if iot_config:
@@ -198,20 +202,30 @@ class AgenticTestAgent:
             tester_config=self.tester_config
         )
 
-        # 记录初始用户查询
-        self.tester_service.add_to_conversation_history('user', initial_query)
-
-        await self.log_event('user_query', initial_query)
-        await self.send_callback('ai_response', initial_query)
-        await self.send_callback('log', f'开始处理查询: {initial_query}')
-        await self.send_callback('status', '智能体循环已启动')
-
         try:
             # 初始化设备状态
             await self.initialize_device_status()
 
             # 设置测试工程师服务的家庭设备
             self.tester_service.set_family_devices(self.family_devices)
+
+            # 获取初始查询：优先使用外部传入的，否则从测试用例生成
+            if initial_query:
+                self.current_query = initial_query
+            else:
+                self.current_query = await self.tester_service.generate_test_query() or ""
+
+            if not self.current_query:
+                await self.send_callback('status', '没有可执行的测试用例')
+                return
+
+            # 记录初始用户查询
+            self.tester_service.add_to_conversation_history('user', self.current_query)
+
+            await self.log_event('user_query', self.current_query)
+            await self.send_callback('ai_response', self.current_query)
+            await self.send_callback('log', f'开始执行测试查询: {self.current_query}')
+            await self.send_callback('status', '智能体循环已启动')
 
             # 固定时长模式：先播放初始 TTS，然后开始积累音频
             if self.audio_mode == self.AUDIO_MODE_FIXED_DURATION:
@@ -448,7 +462,22 @@ class AgenticTestAgent:
             asr_text: str,
             context: Optional[Dict[str, Any]] = None
     ) -> BrainProcessResult:
-        """云端大脑处理核心函数"""
+        """云端大脑处理核心函数
+
+        完整流程：
+        1. 处理特殊情况（noise、skip 等）
+        2. 记录用户输入到对话历史
+        3. 更新设备状态（获取执行后的状态）
+        4. 调用 evaluate_round_result 进行评判和推进
+        5. 生成下一个测试查询
+
+        Args:
+            asr_text: ASR 识别的文本
+            context: 上下文信息
+
+        Returns:
+            BrainProcessResult: 处理结果
+        """
         try:
             context = context or {}
             await self.send_callback('status', '云端大脑正在处理...')
@@ -459,7 +488,7 @@ class AgenticTestAgent:
 
             if asr_text == SKIP_TO_NEXT_QUERY:
                 await self.send_callback('status', '噪音重试耗尽，生成下一个测试...')
-                next_query = await self.tester_service.get_next_test_query()
+                next_query = await self.tester_service.generate_test_query()
                 if next_query and next_query.strip():
                     self.current_query = next_query
                     self.tester_service.add_to_conversation_history('user', next_query)
@@ -486,11 +515,35 @@ class AgenticTestAgent:
                     ai_response="检测到噪音或空输入，请重新说话"
                 )
 
-            # 记录用户输入
+            # 1. 记录用户输入到对话历史
             self.tester_service.add_to_conversation_history('assistant', asr_text)
 
-            # 使用测试工程师服务生成下一个查询
-            next_query = await self.tester_service.get_next_test_query()
+            # 2. 保存执行前的设备状态，并更新获取执行后的设备状态
+            device_status_before = self.previous_device_status.copy()
+            await self.update_device_status()
+            device_status_after = self.current_device_status.copy()
+
+            # 3. 调用 evaluate_round_result 进行评判和推进
+            progress = await self.tester_service.evaluate_round_result(
+                asr_text=asr_text,
+                device_status_before=device_status_before,
+                device_status_after=device_status_after
+            )
+
+            await self.send_callback('log', f'评判结果: action={progress.action.value}, message={progress.message}')
+
+            # 4. 检查是否需要停止
+            if progress.action == NextAction.STOP:
+                await self.send_callback('status', '所有测试用例已完成')
+                return BrainProcessResult(
+                    success=True,
+                    next_query="",
+                    should_continue=False,
+                    ai_response="测试完成"
+                )
+
+            # 5. 生成下一个测试查询
+            next_query = await self.tester_service.generate_test_query()
 
             if next_query and next_query.strip():
                 self.current_query = next_query
@@ -515,13 +568,27 @@ class AgenticTestAgent:
                     ai_response=next_query
                 )
             else:
-                await self.send_callback('status', '对话完成，等待新的音频输入...')
-                await self.send_callback('ai_response', '好的，我已经了解了当前情况。')
+                # 当前用例已完成或没有更多用例
+                await self.send_callback('status', '当前用例已完成，等待下一个用例...')
+
+                # 再次尝试获取下一个用例的查询
+                next_query = await self.tester_service.generate_test_query()
+                if next_query and next_query.strip():
+                    self.current_query = next_query
+                    self.tester_service.add_to_conversation_history('user', next_query)
+                    await self.send_callback('ai_response', next_query)
+                    return BrainProcessResult(
+                        success=True,
+                        next_query=next_query,
+                        should_continue=True,
+                        ai_response=next_query
+                    )
+
                 return BrainProcessResult(
                     success=True,
                     next_query="",
                     should_continue=False,
-                    ai_response='好的，我已经了解了当前情况。'
+                    ai_response='所有测试已完成'
                 )
 
         except Exception as e:

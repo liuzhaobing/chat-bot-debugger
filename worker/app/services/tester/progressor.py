@@ -20,6 +20,7 @@ from .models import (
     TestResultStatus,
     CompletionCheckResult,
 )
+from app.services.app_ids import COMPLETION_VERIFIER_APP_ID
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +36,8 @@ class TaskProgressor:
     - 大模型验证完成状态
     """
 
-    # 用例完成验证 App ID
-    COMPLETION_VERIFIER_APP_ID = "completion_verifier_app"
+    # 使用从 app_ids 导入的常量
+    COMPLETION_VERIFIER_APP_ID = COMPLETION_VERIFIER_APP_ID
 
     def __init__(self, config: Optional[TesterConfig] = None, backend_service=None):
         """初始化推进器
@@ -68,6 +69,11 @@ class TaskProgressor:
         根据当前上下文决定下一步应该做什么。
         注意：noise 重试由 on_noise_detected 方法单独处理，不在此方法中判断。
 
+        推进策略：
+        - 如果 should_continue=True，返回 WAIT 表示继续当前用例的执行
+        - 如果 should_continue=False 且还有未执行的用例，返回 NEXT_CASE
+        - 如果 should_continue=False 且没有更多用例，返回 STOP
+
         Args:
             context: 推进上下文
 
@@ -80,24 +86,25 @@ class TaskProgressor:
 
         # 检查评判结果
         if context.last_result:
+            # 如果建议结束对话
             if context.last_result.suggested_action == 'end_conversation':
                 if context.current_case_index < context.total_cases - 1:
                     return NextAction.NEXT_CASE
                 else:
                     return NextAction.STOP
 
+            # 如果不应该继续（当前用例完成）
             if not context.last_result.should_continue:
                 if context.current_case_index < context.total_cases - 1:
                     return NextAction.NEXT_CASE
                 else:
                     return NextAction.STOP
 
-        # 检查是否全部完成
-        if context.current_case_index >= context.total_cases - 1:
-            return NextAction.STOP
+            # should_continue=True，继续当前用例的执行
+            return NextAction.WAIT
 
-        # 默认推进到下一个用例
-        return NextAction.NEXT_CASE
+        # 没有评判结果，默认等待
+        return NextAction.WAIT
 
     def _handle_error(self, error: Exception) -> NextAction:
         """处理错误
