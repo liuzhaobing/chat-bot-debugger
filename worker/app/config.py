@@ -3,6 +3,7 @@
 使用 Pydantic Settings 管理环境变量
 """
 import os
+import json
 from pathlib import Path
 from typing import List, Optional
 from pydantic import Field, field_validator
@@ -11,6 +12,25 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # 获取 worker 目录的绝对路径
 WORKER_DIR = Path(__file__).parent.parent.resolve()
 ENV_FILE_PATH = WORKER_DIR / ".env"
+
+
+def _parse_list_value(v: str) -> List[str]:
+    """解析逗号分隔的字符串或JSON数组为列表"""
+    if isinstance(v, list):
+        return v
+    if isinstance(v, str):
+        v = v.strip()
+        if not v:
+            return []
+        # 如果是JSON数组格式，尝试解析
+        if v.startswith("[") and v.endswith("]"):
+            try:
+                return json.loads(v)
+            except json.JSONDecodeError:
+                pass
+        # 否则按逗号分隔处理
+        return [item.strip() for item in v.split(",") if item.strip()]
+    return []
 
 
 class Settings(BaseSettings):
@@ -66,13 +86,14 @@ class Settings(BaseSettings):
     ws_message_queue_size: int = Field(default=100, description="消息队列大小")
     
     # ==================== CORS 配置 ====================
-    cors_origins: List[str] = Field(
-        default=["http://localhost:8080", "http://localhost:3000"],
-        description="允许的CORS源"
+    # 使用 str 类型避免 pydantic-settings 自动 JSON 解析问题
+    cors_origins: str = Field(
+        default="http://localhost:8080,http://localhost:3000",
+        description="允许的CORS源（逗号分隔）"
     )
     cors_allow_credentials: bool = Field(default=True, description="允许携带凭证")
-    cors_allow_methods: List[str] = Field(default=["*"], description="允许的HTTP方法")
-    cors_allow_headers: List[str] = Field(default=["*"], description="允许的HTTP头")
+    cors_allow_methods: str = Field(default="*", description="允许的HTTP方法（逗号分隔）")
+    cors_allow_headers: str = Field(default="*", description="允许的HTTP头（逗号分隔）")
     
     # ==================== 外部服务配置 ====================
     # TTS
@@ -134,9 +155,10 @@ class Settings(BaseSettings):
     gunicorn_keepalive: int = Field(default=5, description="Gunicorn保持连接")
     
     # ==================== 安全配置 ====================
-    allowed_ws_origins: List[str] = Field(
-        default=["http://localhost:8080", "http://localhost:3000"],
-        description="允许的WebSocket源"
+    # 使用 str 类型避免 pydantic-settings 自动 JSON 解析问题
+    allowed_ws_origins: str = Field(
+        default="http://localhost:8080,http://localhost:3000",
+        description="允许的WebSocket源（逗号分隔）"
     )
     rate_limit_enabled: bool = Field(default=True, description="启用速率限制")
     rate_limit_per_minute: int = Field(default=60, description="每分钟速率限制")
@@ -148,13 +170,34 @@ class Settings(BaseSettings):
     )
     dev_skip_auth: bool = Field(default=False, description="开发模式下跳过认证")
     
-    @field_validator("cors_origins", "allowed_ws_origins", mode="before")
+    @field_validator("cors_origins", "cors_allow_methods", "cors_allow_headers", "allowed_ws_origins", mode="before")
     @classmethod
-    def parse_cors_origins(cls, v):
-        """解析CORS源配置"""
-        if isinstance(v, str):
-            return [origin.strip() for origin in v.split(",")]
-        return v
+    def parse_cors_list(cls, v):
+        """解析CORS相关配置，确保返回字符串"""
+        if isinstance(v, list):
+            return ",".join(v)
+        return v if isinstance(v, str) else str(v)
+
+    # ========== 列表属性访问器 ==========
+    @property
+    def cors_origins_list(self) -> List[str]:
+        """获取CORS源列表"""
+        return _parse_list_value(self.cors_origins)
+
+    @property
+    def cors_allow_methods_list(self) -> List[str]:
+        """获取允许的HTTP方法列表"""
+        return _parse_list_value(self.cors_allow_methods)
+
+    @property
+    def cors_allow_headers_list(self) -> List[str]:
+        """获取允许的HTTP头列表"""
+        return _parse_list_value(self.cors_allow_headers)
+
+    @property
+    def allowed_ws_origins_list(self) -> List[str]:
+        """获取允许的WebSocket源列表"""
+        return _parse_list_value(self.allowed_ws_origins)
     
     @property
     def is_production(self) -> bool:
