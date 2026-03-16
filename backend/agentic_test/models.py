@@ -3,6 +3,47 @@ from django.db import models
 from chat.models import App
 
 
+class DigitalEmployee(models.Model):
+    """数字员工模型 - 关联TTS音色和3D角色"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=100, help_text="数字员工名称")
+
+    # 关联TTS音色
+    tts_voice = models.ForeignKey(
+        'chat.TTSVoice',
+        on_delete=models.PROTECT,
+        related_name='digital_employees',
+        help_text="关联的TTS音色"
+    )
+
+    # 3D角色配置
+    AVATAR_CHOICES = [
+        (0, '橙色半圆'),
+        (1, '紫色方块'),
+        (2, '黑色方块'),
+        (3, '黄色圆角'),
+    ]
+    avatar_index = models.IntegerField(
+        choices=AVATAR_CHOICES,
+        default=0,
+        help_text="3D角色索引 (0-3)"
+    )
+
+    # 元数据
+    is_active = models.BooleanField(default=True, help_text="是否启用")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'digital_employee'
+        ordering = ['name']
+        verbose_name = '数字员工'
+        verbose_name_plural = '数字员工'
+
+    def __str__(self):
+        return self.name
+
+
 class AgenticTestSession(models.Model):
     """Agentic Test 会话模型"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -76,19 +117,29 @@ class TestTask(models.Model):
         ('completed', '已完成'),
         ('failed', '失败'),
     ]
-    
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=200, help_text="任务名称")
     prd_content = models.TextField(blank=True, null=True, help_text="产品PRD或需求描述")
-    
-    # TTS配置
+
+    # 数字员工配置（新版）
+    employee = models.ForeignKey(
+        DigitalEmployee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='tasks',
+        help_text="执行任务的数字员工"
+    )
+
+    # TTS配置（保留用于数据迁移兼容，后续可移除）
     tts_voice = models.ForeignKey(
         'chat.TTSVoice',
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name='test_tasks',
-        help_text="TTS音色配置"
+        help_text="TTS音色配置（已弃用，请使用employee）"
     )
     
     # IOT协议配置

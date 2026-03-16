@@ -5,6 +5,7 @@ from .views import (
     DeviceStatusViewSet,
     DeviceProtocolViewSet,
     TestTaskViewSet,
+    DigitalEmployeeViewSet,
     test_iot_connection,
     get_family_devices,
     get_device_status
@@ -14,6 +15,7 @@ router = DefaultRouter()
 router.register(r'sessions', AgenticTestSessionViewSet)
 router.register(r'devices', DeviceStatusViewSet)
 router.register(r'device-protocols', DeviceProtocolViewSet)
+router.register(r'digital-employees', DigitalEmployeeViewSet)
 router.register(r'test-tasks', TestTaskViewSet)
 
 urlpatterns = [

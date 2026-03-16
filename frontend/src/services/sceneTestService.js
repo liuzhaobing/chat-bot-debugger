@@ -7,6 +7,108 @@ const API_BASE_URL = process.env.VUE_APP_API_BASE_URL || 'http://localhost:8000'
 
 class SceneTestService {
   /**
+   * ==================== 数字员工相关 ====================
+   */
+
+  /**
+   * 获取数字员工列表
+   */
+  async getDigitalEmployees() {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/agentic-test/digital-employees/`)
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      return await response.json()
+    } catch (error) {
+      console.error('Failed to fetch digital employees:', error)
+      throw error
+    }
+  }
+
+  /**
+   * 创建数字员工
+   */
+  async createDigitalEmployee(data) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/agentic-test/digital-employees/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data)
+      })
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      return await response.json()
+    } catch (error) {
+      console.error('Failed to create digital employee:', error)
+      throw error
+    }
+  }
+
+  /**
+   * 更新数字员工
+   */
+  async updateDigitalEmployee(id, data) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/agentic-test/digital-employees/${id}/`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data)
+      })
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      return await response.json()
+    } catch (error) {
+      console.error('Failed to update digital employee:', error)
+      throw error
+    }
+  }
+
+  /**
+   * 删除数字员工
+   */
+  async deleteDigitalEmployee(id) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/agentic-test/digital-employees/${id}/`, {
+        method: 'DELETE'
+      })
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      return true
+    } catch (error) {
+      console.error('Failed to delete digital employee:', error)
+      throw error
+    }
+  }
+
+  /**
+   * 获取员工的任务历史
+   */
+  async getEmployeeTasks(employeeId) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/agentic-test/digital-employees/${employeeId}/tasks/`)
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      return await response.json()
+    } catch (error) {
+      console.error('Failed to fetch employee tasks:', error)
+      throw error
+    }
+  }
+
+  /**
+   * ==================== 测试任务相关 ====================
+   */
+
+  /**
    * 获取测试任务列表
    */
   async getTestTasks() {

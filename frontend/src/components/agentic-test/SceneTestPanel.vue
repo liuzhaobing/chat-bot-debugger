@@ -1,312 +1,278 @@
 <template>
   <div class="scene-test-panel">
-    <div class="test-section">
-      <!-- 顶部工具栏 -->
-      <div class="stats-filter-bar">
-        <div class="stats-tags">
-          <div class="stat-item" :class="{ active: filterStatus === 'all' }" @click="filterStatus = 'all'">
-            <span class="stat-label">全部任务</span>
-            <span class="stat-value">{{ testTasks.length }}</span>
-          </div>
-          <div class="stat-item stat-running" :class="{ active: filterStatus === 'running' }" @click="filterStatus = 'running'">
-            <span class="stat-label">运行中</span>
-            <span class="stat-value">{{ runningCount }}</span>
-          </div>
-          <div class="stat-item stat-completed" :class="{ active: filterStatus === 'completed' }" @click="filterStatus = 'completed'">
-            <span class="stat-label">已完成</span>
-            <span class="stat-value">{{ completedCount }}</span>
-          </div>
-          <div class="stat-item stat-failed" :class="{ active: filterStatus === 'failed' }" @click="filterStatus = 'failed'">
-            <span class="stat-label">失败</span>
-            <span class="stat-value">{{ failedCount }}</span>
-          </div>
-        </div>
-        <div class="header-actions">
-          <button 
-            class="btn btn-primary"
-            @click="showCreateModal = true"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="12" y1="5" x2="12" y2="19"></line>
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-            </svg>
-            创建测试任务
-          </button>
-        </div>
-      </div>
-
-      <!-- 测试任务列表 -->
-      <div class="tasks-content">
-        <div v-if="isLoading" class="loading-state">
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
-            <path d="M21 12a9 9 0 11-6.219-8.56"/>
-          </svg>
-          <p>加载中...</p>
-        </div>
-
-        <div v-else-if="filteredTasks.length === 0" class="empty-state">
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path d="M9 11l3 3L22 4"></path>
-            <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"></path>
-          </svg>
-          <p>{{ filterStatus === 'all' ? '暂无测试任务，点击上方按钮创建' : '没有符合条件的任务' }}</p>
-        </div>
-
-        <div v-else class="tasks-table">
-          <div class="table-header">
-            <div class="th th-name">任务名称</div>
-            <div class="th th-status">状态</div>
-            <div class="th th-prd">PRD/需求</div>
-            <div class="th th-tts">TTS音色</div>
-            <div class="th th-iot">IOT协议</div>
-            <div class="th th-time">创建时间</div>
-            <div class="th th-actions">操作</div>
-          </div>
-          
-          <div class="table-body">
-            <div 
-              v-for="task in filteredTasks" 
-              :key="task.id"
-              class="task-row"
-              :class="{ 
-                running: task.status === 'running',
-                completed: task.status === 'completed',
-                failed: task.status === 'failed'
-              }"
-            >
-              <div class="td td-name">
-                <div class="task-name">{{ task.name }}</div>
-                <div class="task-id">ID: {{ task.id.slice(0, 8) }}</div>
-              </div>
-              <div class="td td-status">
-                <span class="status-badge" :class="task.status">
-                  <span class="status-dot"></span>
-                  {{ getStatusText(task.status) }}
-                </span>
-              </div>
-              <div class="td td-prd">
-                <div class="prd-preview" :title="task.prd_content">
-                  {{ task.prd_content ? task.prd_content.slice(0, 30) + '...' : '未配置' }}
-                </div>
-              </div>
-              <div class="td td-tts">
-                <span v-if="task.tts_voice" class="tag tag-tts">
-                  {{ task.tts_voice.display_name || task.tts_voice.speaker }}
-                </span>
-                <span v-else class="tag tag-empty">未配置</span>
-              </div>
-              <div class="td td-iot">
-                <span v-if="task.iot_protocol" class="tag tag-iot">
-                  {{ task.iot_protocol.category }}
-                </span>
-                <span v-else class="tag tag-empty">未配置</span>
-              </div>
-              <div class="td td-time">
-                {{ formatTime(task.created_at) }}
-              </div>
-              <div class="td td-actions">
-                <button
-                  class="action-btn action-btn-execute"
-                  @click="executeTask(task)"
-                  title="执行任务"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
-                  </svg>
-                </button>
-                <button
-                  v-if="task.status === 'completed' && task.report_url"
-                  class="action-btn"
-                  @click="downloadReport(task)"
-                  title="下载测试报告"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                    <polyline points="7 10 12 15 17 10"></polyline>
-                    <line x1="12" y1="15" x2="12" y2="3"></line>
-                  </svg>
-                </button>
-                <button
-                  class="action-btn"
-                  @click="viewTaskDetail(task)"
-                  title="查看详情"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                    <circle cx="12" cy="12" r="3"></circle>
-                  </svg>
-                </button>
-                <button
-                  class="action-btn action-btn-danger"
-                  @click="deleteTask(task)"
-                  title="删除任务"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polyline points="3 6 5 6 21 6"></polyline>
-                    <path d="m19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                  </svg>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 创建测试任务弹窗 -->
-    <div v-if="showCreateModal" class="modal-overlay" @click="showCreateModal = false">
-      <div class="modal-content create-task-modal" @click.stop>
-        <div class="modal-header">
-          <h3>创建测试任务</h3>
-          <button class="close-btn" @click="showCreateModal = false">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </button>
-        </div>
-        
-        <div class="modal-body">
-          <!-- 任务名称 -->
-          <div class="form-group">
-            <label>任务名称 <span class="required">*</span></label>
-            <input 
-              v-model="newTask.name"
-              type="text"
-              placeholder="请输入测试任务名称..."
-            />
-          </div>
-
-          <!-- PRD/需求输入 -->
-          <div class="form-group">
-            <label>产品PRD或需求描述</label>
-            <textarea 
-              v-model="newTask.prd_content"
-              rows="4"
-              placeholder="请输入产品PRD文档内容或一句话需求描述..."
-            ></textarea>
-          </div>
-
-          <!-- TTS音色选择 -->
-          <div class="form-group">
-            <label>TTS音色选择</label>
-            <div class="tts-selector">
-              <select v-model="newTask.tts_voice_id" class="tts-select">
-                <option value="">请选择TTS音色</option>
-                <option v-for="voice in ttsVoices" :key="voice.speaker" :value="voice.speaker">
-                  {{ voice.name || voice.speaker }}
-                </option>
-              </select>
-              <button 
-                class="btn btn-outline btn-sm"
-                @click="previewTTS"
-                :disabled="!newTask.tts_voice_id || isPreviewing"
-              >
-                <svg v-if="isPreviewing" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
-                  <path d="M21 12a9 9 0 11-6.219-8.56"/>
-                </svg>
-                <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <polygon points="5 3 19 12 5 21 5 3"></polygon>
-                </svg>
-                {{ isPreviewing ? '试听中...' : '试听' }}
-              </button>
-            </div>
-            <p class="form-hint">试听文本："你好，我是你的AI烹饪伙伴食神"</p>
-          </div>
-
-          <!-- IOT设备协议选择 -->
-          <div class="form-group">
-            <label>IOT设备协议</label>
-            <select v-model="newTask.iot_protocol_id" class="protocol-select">
-              <option value="">请选择设备协议</option>
-              <option v-for="protocol in deviceProtocols" :key="protocol.id" :value="protocol.id">
-                {{ protocol.category }} - {{ protocol.id }}
-              </option>
-            </select>
-          </div>
-        </div>
-        
-        <div class="modal-footer">
-          <button class="btn btn-outline" @click="showCreateModal = false">取消</button>
-          <button 
-            class="btn btn-primary"
-            @click="createTask"
-            :disabled="!canCreate || isCreating"
-          >
-            <svg v-if="isCreating" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
+    <!-- 主内容区域 - 使用过渡动画 -->
+    <transition name="fade" mode="out-in">
+      <!-- 聚合主页 - 4个角色合照 -->
+      <div v-if="viewMode === 'group'" key="group" class="group-view">
+        <div class="hero-showcase">
+          <!-- 加载状态 -->
+          <div v-if="isLoading" class="loading-state">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
               <path d="M21 12a9 9 0 11-6.219-8.56"/>
             </svg>
-            {{ isCreating ? '创建中...' : '创建任务' }}
-          </button>
+            <p>加载中...</p>
+          </div>
+
+          <!-- 空状态 -->
+          <div v-else-if="employees.length === 0" class="empty-state">
+            <div class="empty-avatar">
+              <Avatar3D animation-state="idle" size="hero" />
+            </div>
+            <p class="empty-title">还没有雇佣数字员工</p>
+            <p class="empty-hint">点击下方按钮雇佣数字员工</p>
+          </div>
+
+          <!-- 4个角色合照 -->
+          <EmployeeGroup
+            v-else
+            @select="handleSelectEmployee"
+          />
+        </div>
+
+        <!-- 底部操作栏 -->
+        <div v-if="!isLoading" class="bottom-info-bar group-info-bar">
+          <!-- 操作按钮组 -->
+          <div class="action-buttons">
+            <!-- 雇佣数字员工 -->
+            <button class="icon-btn" @click="showHireModal = true" title="雇佣数字员工">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                <circle cx="8.5" cy="7" r="4"></circle>
+                <line x1="20" y1="8" x2="20" y2="14"></line>
+                <line x1="23" y1="11" x2="17" y2="11"></line>
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
-    </div>
 
-    <!-- 任务详情弹窗 -->
-    <div v-if="showDetailModal" class="modal-overlay" @click="showDetailModal = false">
-      <div class="modal-content detail-modal" @click.stop>
-        <div class="modal-header">
+      <!-- 单个角色页面 -->
+      <div v-else key="single" class="single-view">
+        <div class="hero-showcase">
+          <!-- 返回按钮 -->
+          <button class="back-btn" @click="backToGroup" title="返回列表">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="19" y1="12" x2="5" y2="12"></line>
+              <polyline points="12 19 5 12 12 5"></polyline>
+            </svg>
+            <span>返回</span>
+          </button>
+
+          <!-- 角色展示 -->
+          <template v-if="currentEmployee">
+            <!-- 左切换按钮 -->
+            <button
+              class="nav-btn nav-prev"
+              :disabled="currentIndex === 0"
+              @click="prevEmployee"
+              title="上一个"
+            >
+              &lt;
+            </button>
+
+            <!-- 3D角色容器 -->
+            <div class="hero-container">
+              <transition :name="slideDirection" mode="out-in">
+                <div :key="currentEmployee.id" class="hero-wrapper">
+                  <Avatar3D
+                    :animation-state="getAvatarState(currentTask?.status)"
+                    :character-index="currentEmployee.avatar_index"
+                    size="hero"
+                  />
+                </div>
+              </transition>
+            </div>
+
+            <!-- 右切换按钮 -->
+            <button
+              class="nav-btn nav-next"
+              :disabled="currentIndex === employees.length - 1"
+              @click="nextEmployee"
+              title="下一个"
+            >
+              &gt;
+            </button>
+          </template>
+        </div>
+
+        <!-- 底部信息栏 -->
+        <div class="bottom-info-bar">
+          <!-- 员工信息 -->
+          <div v-if="currentEmployee" class="employee-info">
+            <span class="employee-name">{{ currentEmployee.name }}</span>
+            <span class="employee-voice">{{ currentEmployee.tts_voice?.name || '未配置音色' }}</span>
+          </div>
+
+          <!-- 操作按钮组 -->
+          <div class="action-buttons">
+            <!-- 派发任务 -->
+            <button
+              v-if="currentEmployee"
+              class="icon-btn"
+              @click="showDispatchModal = true"
+              title="派发任务"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="12" y1="18" x2="12" y2="12"></line>
+                <line x1="9" y1="15" x2="15" y2="15"></line>
+              </svg>
+            </button>
+
+            <!-- 启动/暂停 -->
+            <button
+              v-if="currentTask && currentTask.status === 'pending'"
+              class="icon-btn"
+              @click="startTask(currentTask)"
+              title="启动任务"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+              </svg>
+            </button>
+            <button
+              v-else-if="currentTask && currentTask.status === 'running'"
+              class="icon-btn icon-btn-warning"
+              @click="pauseTask(currentTask)"
+              title="暂停任务"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="6" y="4" width="4" height="16"></rect>
+                <rect x="14" y="4" width="4" height="16"></rect>
+              </svg>
+            </button>
+            <button
+              v-else-if="currentTask && currentTask.status === 'failed'"
+              class="icon-btn"
+              @click="retryTask(currentTask)"
+              title="重试任务"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="23 4 23 10 17 10"></polyline>
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+              </svg>
+            </button>
+
+            <!-- 查看任务 -->
+            <button class="icon-btn" @click="openTaskDrawer" title="查看任务">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+                <polyline points="10 9 9 9 8 9"></polyline>
+              </svg>
+            </button>
+
+            <!-- 试听音色 -->
+            <button
+              v-if="currentEmployee"
+              class="icon-btn"
+              :disabled="previewingVoiceId === currentEmployee?.tts_voice?.speaker"
+              @click="previewVoice"
+              title="试听音色"
+            >
+              <svg v-if="previewingVoiceId === currentEmployee?.tts_voice?.speaker" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
+                <path d="M21 12a9 9 0 11-6.219-8.56"/>
+              </svg>
+              <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </transition>
+
+    <!-- 雇佣数字员工弹窗 -->
+    <HireEmployeeModal
+      :visible="showHireModal"
+      :mode="'hire'"
+      @close="showHireModal = false"
+      @created="handleEmployeeCreated"
+    />
+
+    <!-- 派发任务弹窗 -->
+    <HireEmployeeModal
+      v-if="currentEmployee"
+      :visible="showDispatchModal"
+      :mode="'dispatch'"
+      :employee="currentEmployee"
+      @close="showDispatchModal = false"
+      @created="handleTaskCreated"
+    />
+
+    <!-- 任务详情抽屉 -->
+    <div v-if="showDrawer" class="drawer-overlay" @click="closeDrawer">
+      <div class="drawer-content" @click.stop>
+        <div class="drawer-header">
           <h3>任务详情</h3>
-          <button class="close-btn" @click="showDetailModal = false">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <button class="close-btn" @click="closeDrawer">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="18" y1="6" x2="6" y2="18"></line>
               <line x1="6" y1="6" x2="18" y2="18"></line>
             </svg>
           </button>
         </div>
-        
-        <div v-if="selectedTask" class="modal-body">
+
+        <div v-if="currentTask" class="drawer-body">
           <div class="detail-section">
             <div class="detail-row">
               <span class="detail-label">任务ID:</span>
-              <span class="detail-value">{{ selectedTask.id }}</span>
+              <span class="detail-value">{{ currentTask.id }}</span>
             </div>
             <div class="detail-row">
               <span class="detail-label">任务名称:</span>
-              <span class="detail-value">{{ selectedTask.name }}</span>
+              <span class="detail-value">{{ currentTask.name }}</span>
             </div>
             <div class="detail-row">
               <span class="detail-label">状态:</span>
               <span class="detail-value">
-                <span class="status-badge" :class="selectedTask.status">
-                  {{ getStatusText(selectedTask.status) }}
+                <span class="status-badge" :class="currentTask.status">
+                  {{ getStatusText(currentTask.status) }}
                 </span>
               </span>
             </div>
             <div class="detail-row">
               <span class="detail-label">创建时间:</span>
-              <span class="detail-value">{{ formatTime(selectedTask.created_at) }}</span>
+              <span class="detail-value">{{ formatTime(currentTask.created_at) }}</span>
             </div>
             <div class="detail-row">
               <span class="detail-label">更新时间:</span>
-              <span class="detail-value">{{ formatTime(selectedTask.updated_at) }}</span>
+              <span class="detail-value">{{ formatTime(currentTask.updated_at) }}</span>
             </div>
           </div>
 
           <div class="detail-section">
             <h4>配置信息</h4>
             <div class="detail-row">
+              <span class="detail-label">执行员工:</span>
+              <span class="detail-value">{{ currentTask.employee?.name || '未配置' }}</span>
+            </div>
+            <div class="detail-row">
               <span class="detail-label">TTS音色:</span>
-              <span class="detail-value">{{ selectedTask.tts_voice?.display_name || '未配置' }}</span>
+              <span class="detail-value">{{ currentTask.employee?.tts_voice?.name || currentTask.tts_voice?.display_name || '未配置' }}</span>
             </div>
             <div class="detail-row">
               <span class="detail-label">IOT协议:</span>
-              <span class="detail-value">{{ selectedTask.iot_protocol?.category || '未配置' }}</span>
+              <span class="detail-value">{{ currentTask.iot_protocol?.category || '未配置' }}</span>
             </div>
           </div>
 
-          <div class="detail-section" v-if="selectedTask.prd_content">
+          <div class="detail-section" v-if="currentTask.prd_content">
             <h4>PRD/需求描述</h4>
-            <div class="prd-content">{{ selectedTask.prd_content }}</div>
+            <div class="prd-content">{{ currentTask.prd_content }}</div>
           </div>
 
-          <div class="detail-section" v-if="selectedTask.report_url">
+          <div class="detail-section" v-if="currentTask.report_url">
             <h4>测试报告</h4>
             <div class="detail-row">
               <span class="detail-label">报告链接:</span>
-              <a :href="selectedTask.report_url" target="_blank" class="report-link">
+              <a :href="currentTask.report_url" target="_blank" class="report-link">
                 点击下载
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                   <polyline points="7 10 12 15 17 10"></polyline>
                   <line x1="12" y1="15" x2="12" y2="3"></line>
@@ -317,115 +283,188 @@
         </div>
       </div>
     </div>
+
   </div>
 </template>
 
 <script>
+import Avatar3D from './Avatar3D.vue'
+import EmployeeGroup from './EmployeeGroup.vue'
+import HireEmployeeModal from './HireEmployeeModal.vue'
 import sceneTestService from '@/services/sceneTestService'
 
 export default {
   name: 'SceneTestPanel',
+  components: {
+    Avatar3D,
+    EmployeeGroup,
+    HireEmployeeModal
+  },
   data() {
     return {
-      testTasks: [],
+      viewMode: 'group', // 'group' | 'single'
+      employees: [],
+      employeeTasks: {}, // 员工任务缓存
       isLoading: false,
-      filterStatus: 'all',
-      showCreateModal: false,
-      showDetailModal: false,
-      selectedTask: null,
-      isCreating: false,
-      isPreviewing: false,
-      ttsVoices: [],
-      deviceProtocols: [],
-      newTask: {
-        name: '',
-        prd_content: '',
-        tts_voice_id: '',
-        iot_protocol_id: ''
-      }
+      currentIndex: 0,
+      slideDirection: 'slide-left',
+      showHireModal: false,
+      showDispatchModal: false,
+      showDrawer: false,
+      previewingVoiceId: null
     }
   },
   computed: {
-    filteredTasks() {
-      if (this.filterStatus === 'all') {
-        return this.testTasks
+    currentEmployee() {
+      if (this.employees.length === 0) return null
+      return this.employees[this.currentIndex] || null
+    },
+    currentTask() {
+      if (!this.currentEmployee) return null
+      const tasks = this.employeeTasks[this.currentEmployee.id] || []
+      return tasks.length > 0 ? tasks[0] : null
+    },
+    pendingCount() {
+      let count = 0
+      for (const empId in this.employeeTasks) {
+        const tasks = this.employeeTasks[empId] || []
+        count += tasks.filter(t => t.status === 'pending').length
       }
-      return this.testTasks.filter(task => task.status === this.filterStatus)
-    },
-    runningCount() {
-      return this.testTasks.filter(t => t.status === 'running').length
-    },
-    completedCount() {
-      return this.testTasks.filter(t => t.status === 'completed').length
-    },
-    failedCount() {
-      return this.testTasks.filter(t => t.status === 'failed').length
-    },
-    canCreate() {
-      return this.newTask.name.trim().length > 0
+      return count
     }
   },
   mounted() {
-    this.loadTasks()
-    this.loadTTSVoices()
-    this.loadDeviceProtocols()
+    this.loadEmployees()
   },
   methods: {
-    async loadTasks() {
+    async loadEmployees() {
       this.isLoading = true
       try {
-        this.testTasks = await sceneTestService.getTestTasks()
+        this.employees = await sceneTestService.getDigitalEmployees()
+        // 加载每个员工的最近任务
+        for (const employee of this.employees) {
+          this.loadEmployeeTasks(employee.id)
+        }
       } catch (error) {
-        console.error('加载测试任务失败:', error)
-        window.$message?.error('加载测试任务失败')
+        console.error('加载数字员工失败:', error)
+        window.$message?.error('加载数字员工失败')
       } finally {
         this.isLoading = false
       }
     },
-    async loadTTSVoices() {
+    async loadEmployeeTasks(employeeId) {
       try {
-        this.ttsVoices = await sceneTestService.getTTSVoices()
+        const tasks = await sceneTestService.getEmployeeTasks(employeeId)
+        this.$set(this.employeeTasks, employeeId, tasks)
       } catch (error) {
-        console.error('加载TTS音色失败:', error)
+        console.error('加载员工任务失败:', error)
       }
     },
-    async loadDeviceProtocols() {
-      try {
-        this.deviceProtocols = await sceneTestService.getDeviceProtocols()
-      } catch (error) {
-        console.error('加载设备协议失败:', error)
+    handleSelectEmployee(avatarIndex) {
+      // 从合照点击进入单个角色页面
+      // 尝试找到匹配该 avatar_index 的员工
+      const matchingIndex = this.employees.findIndex(emp => emp.avatar_index === avatarIndex)
+      if (matchingIndex !== -1) {
+        this.currentIndex = matchingIndex
+      } else {
+        // 如果没有匹配的，默认显示第一个员工
+        this.currentIndex = 0
+      }
+      this.viewMode = 'single'
+    },
+    backToGroup() {
+      // 返回聚合主页
+      this.viewMode = 'group'
+    },
+    getAvatarState(status) {
+      if (status === 'running') return 'working'
+      if (status === 'failed') return 'error'
+      return 'idle'
+    },
+    getStatusText(status) {
+      const statusMap = {
+        'pending': '待命',
+        'running': '工作中',
+        'completed': '已完成',
+        'failed': '任务失败'
+      }
+      return statusMap[status] || status
+    },
+    formatTime(timeStr) {
+      if (!timeStr) return '-'
+      const date = new Date(timeStr)
+      return date.toLocaleString('zh-CN')
+    },
+    prevEmployee() {
+      if (this.currentIndex > 0) {
+        this.slideDirection = 'slide-right'
+        this.currentIndex--
       }
     },
-    async createTask() {
-      this.isCreating = true
-      try {
-        const task = await sceneTestService.createTestTask({
-          name: this.newTask.name,
-          prd_content: this.newTask.prd_content,
-          tts_voice_id: this.newTask.tts_voice_id || null,
-          iot_protocol_id: this.newTask.iot_protocol_id || null
-        })
-        this.testTasks.unshift(task)
-        this.showCreateModal = false
-        this.resetNewTask()
-        window.$message?.success('测试任务创建成功')
-      } catch (error) {
-        console.error('创建测试任务失败:', error)
-        window.$message?.error('创建测试任务失败')
-      } finally {
-        this.isCreating = false
+    nextEmployee() {
+      if (this.currentIndex < this.employees.length - 1) {
+        this.slideDirection = 'slide-left'
+        this.currentIndex++
       }
     },
-    async previewTTS() {
-      if (!this.newTask.tts_voice_id) return
+    handleEmployeeCreated(employee) {
+      this.employees.push(employee)
+      this.currentIndex = this.employees.length - 1
+      this.showHireModal = false
+      // 创建后自动进入单个角色页面
+      this.viewMode = 'single'
+      window.$message?.success('数字员工已雇佣')
+    },
+    handleTaskCreated(task) {
+      if (this.currentEmployee && task.employee?.id === this.currentEmployee.id) {
+        if (!this.employeeTasks[this.currentEmployee.id]) {
+          this.$set(this.employeeTasks, this.currentEmployee.id, [])
+        }
+        this.employeeTasks[this.currentEmployee.id].unshift(task)
+      }
+      this.showDispatchModal = false
+      window.$message?.success('任务已派发')
+    },
+    async startTask(task) {
+      try {
+        await sceneTestService.startTestTask(task.id)
+        // 更新本地任务状态
+        const tasks = this.employeeTasks[this.currentEmployee.id] || []
+        const index = tasks.findIndex(t => t.id === task.id)
+        if (index !== -1) {
+          tasks[index].status = 'running'
+        }
+        window.$message?.success('任务已启动')
+      } catch (error) {
+        console.error('启动任务失败:', error)
+        window.$message?.error('启动任务失败')
+      }
+    },
+    pauseTask(task) {
+      console.log('暂停任务:', task)
+      window.$message?.info('暂停功能开发中')
+    },
+    retryTask(task) {
+      console.log('重试任务:', task)
+      window.$message?.info('重试功能开发中')
+    },
+    openTaskDrawer() {
+      this.showDrawer = true
+    },
+    closeDrawer() {
+      this.showDrawer = false
+    },
+    async previewVoice() {
+      if (!this.currentEmployee?.tts_voice?.speaker) return
+      const speaker = this.currentEmployee.tts_voice.speaker
+      if (this.previewingVoiceId === speaker) return
 
-      this.isPreviewing = true
+      this.previewingVoiceId = speaker
       try {
         const audioBase64 = await sceneTestService.previewTTS(
-          this.newTask.tts_voice_id,
-          '你好，我是你的AI烹饪伙伴食神'
+          speaker,
+          '你好，我是你的AI助手'
         )
-        // 将 base64 音频数据转换为 Blob URL
         const audioBytes = atob(audioBase64)
         const audioArray = new Uint8Array(audioBytes.length)
         for (let i = 0; i < audioBytes.length; i++) {
@@ -435,594 +474,358 @@ export default {
         const audioUrl = URL.createObjectURL(audioBlob)
 
         const audio = new Audio(audioUrl)
-        audio.onended = () => URL.revokeObjectURL(audioUrl) // 播放完毕释放资源
-        audio.play()
+        audio.onended = () => {
+          URL.revokeObjectURL(audioUrl)
+          this.previewingVoiceId = null
+        }
+        audio.onerror = () => {
+          URL.revokeObjectURL(audioUrl)
+          this.previewingVoiceId = null
+        }
+        await audio.play()
       } catch (error) {
         console.error('TTS试听失败:', error)
         window.$message?.error('TTS试听失败')
-      } finally {
-        this.isPreviewing = false
+        this.previewingVoiceId = null
       }
-    },
-    async deleteTask(task) {
-      if (!confirm(`确定要删除任务 "${task.name}" 吗？`)) return
-      
-      try {
-        await sceneTestService.deleteTestTask(task.id)
-        this.testTasks = this.testTasks.filter(t => t.id !== task.id)
-        window.$message?.success('任务已删除')
-      } catch (error) {
-        console.error('删除任务失败:', error)
-        window.$message?.error('删除任务失败')
-      }
-    },
-    downloadReport(task) {
-      if (task.report_url) {
-        window.open(task.report_url, '_blank')
-      }
-    },
-    viewTaskDetail(task) {
-      this.selectedTask = task
-      this.showDetailModal = true
-    },
-    executeTask(task) {
-      // TODO: 后期实现执行逻辑
-      console.log(task)
-      window.$message?.info('敬请期待')
-    },
-    resetNewTask() {
-      this.newTask = {
-        name: '',
-        prd_content: '',
-        tts_voice_id: '',
-        iot_protocol_id: ''
-      }
-    },
-    getStatusText(status) {
-      const statusMap = {
-        'pending': '待执行',
-        'running': '运行中',
-        'completed': '已完成',
-        'failed': '失败'
-      }
-      return statusMap[status] || status
-    },
-    formatTime(timeStr) {
-      if (!timeStr) return '-'
-      const date = new Date(timeStr)
-      return date.toLocaleString('zh-CN')
     }
   }
 }
 </script>
 
 <style scoped>
-/* 主题变量 - 与IOTConfigPanel保持一致 */
-:root {
-  --bg-surface: #161b22;
-  --bg-primary: #0d1117;
-  --bg-secondary: #21262d;
-  --bg-hover: #30363d;
-  --border-color: #30363d;
-  --text-primary: #f0f6fc;
-  --text-secondary: #8b949e;
-  --text-tertiary: #6e7681;
-  --accent-blue: #58a6ff;
-  --accent-green: #3fb950;
-  --accent-red: #f85149;
-  --accent-yellow: #f59e0b;
-}
-
 .scene-test-panel {
   display: flex;
   flex-direction: column;
-  gap: 20px;
   height: calc(100vh - 48px);
   min-height: 0;
   overflow: hidden;
-  background: var(--bg-primary);
-  color: var(--text-secondary);
-  padding: 20px;
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 50%, #e8eef5 100%);
+  color: var(--text-secondary, #8b949e);
 }
 
-/* 测试区域 - 与IOTConfigPanel的devices-section保持一致 */
-.test-section {
-  background: var(--bg-surface);
-  border-radius: 12px;
-  border: 1px solid var(--border-color);
+/* 页面切换过渡动画 */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter,
+.fade-leave-to {
+  opacity: 0;
+}
+
+/* 3D角色展示主区域 */
+.hero-showcase {
   flex: 1;
   display: flex;
   flex-direction: column;
-  min-height: 300px;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  background: linear-gradient(180deg, rgba(59, 130, 246, 0.02) 0%, transparent 50%, rgba(59, 130, 246, 0.01) 100%);
+  min-height: 400px;
   overflow: hidden;
 }
 
-/* 统计和筛选栏 - 与IOTConfigPanel保持一致 */
-.stats-filter-bar {
+/* group view 填满整个区域 */
+.group-view {
+  flex: 1;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--border-color);
-  gap: 16px;
-  flex-wrap: wrap;
+  flex-direction: column;
 }
 
-.stats-tags {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
+.group-view .hero-showcase {
+  flex: 1;
 }
 
-.stat-item {
+/* 返回按钮 */
+.back-btn {
+  position: absolute;
+  top: 20px;
+  left: 24px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  background: var(--bg-primary);
+  gap: 6px;
+  padding: 8px 14px;
+  border: 1px solid var(--border-color, #30363d);
+  border-radius: 20px;
+  background: var(--bg-secondary, #21262d);
+  color: var(--text-secondary, #8b949e);
+  font-size: 13px;
   cursor: pointer;
   transition: all 0.2s ease;
-  font-size: 13px;
-  min-width: 80px;
+  z-index: 10;
 }
 
-.stat-item:hover {
-  background: var(--bg-hover);
-  border-color: var(--accent-blue);
+.back-btn:hover {
+  background: var(--bg-hover, #30363d);
+  color: var(--text-primary, #f0f6fc);
+  border-color: rgba(59, 130, 246, 0.3);
 }
 
-.stat-item.active {
-  background: var(--accent-blue);
-  border-color: var(--accent-blue);
-  color: white;
-}
-
-.stat-label {
-  font-weight: 500;
-  color: var(--text-secondary);
-}
-
-.stat-item.active .stat-label {
-  color: rgba(255, 255, 255, 0.9);
-}
-
-.stat-value {
-  font-weight: 700;
-  font-size: 16px;
-  color: var(--text-primary);
-}
-
-.stat-item.active .stat-value {
-  color: white;
-}
-
-.stat-running .stat-value {
-  color: var(--accent-green);
-}
-
-.stat-running.active .stat-value {
-  color: white;
-}
-
-.stat-completed .stat-value {
-  color: var(--accent-blue);
-}
-
-.stat-completed.active .stat-value {
-  color: white;
-}
-
-.stat-failed .stat-value {
-  color: var(--accent-red);
-}
-
-.stat-failed.active .stat-value {
-  color: white;
-}
-
-.header-actions {
+/* 切换按钮 - 纯文字样式 */
+.nav-btn {
+  position: absolute;
   display: flex;
-  gap: 8px;
   align-items: center;
-  flex-wrap: wrap;
+  justify-content: center;
+  cursor: pointer;
+  transition: color 0.2s ease;
+  color: #666666;
+  font-size: 26px;
+  font-weight: 300;
+  background: transparent;
+  border: none;
+  z-index: 10;
+  padding: 0;
 }
 
-/* 测试任务列表 */
-.tasks-content {
-  flex: 1;
-  overflow-y: auto;
-  padding: 16px;
-  min-height: 0;
-  max-height: none;
+.nav-btn:hover:not(:disabled) {
+  color: #333333;
 }
 
-/* 自定义滚动条样式 */
-.tasks-content::-webkit-scrollbar {
-  width: 8px;
+.nav-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
 }
 
-.tasks-content::-webkit-scrollbar-track {
-  background: var(--bg-secondary);
-  border-radius: 4px;
+.nav-prev {
+  left: 40px;
 }
 
-.tasks-content::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 4px;
+.nav-next {
+  right: 40px;
 }
 
-.tasks-content::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+/* 角色容器 */
+.hero-container {
+  width: 60%;
+  height: 90%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
+.hero-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 切换动画 */
+.slide-left-enter-active,
+.slide-left-leave-active,
+.slide-right-enter-active,
+.slide-right-leave-active {
+  transition: all 0.3s ease;
+}
+
+.slide-left-enter {
+  transform: translateX(100px);
+  opacity: 0;
+}
+
+.slide-left-leave-to {
+  transform: translateX(-100px);
+  opacity: 0;
+}
+
+.slide-right-enter {
+  transform: translateX(-100px);
+  opacity: 0;
+}
+
+.slide-right-leave-to {
+  transform: translateX(100px);
+  opacity: 0;
+}
+
+/* 加载和空状态 */
 .loading-state,
 .empty-state {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 200px;
-  color: var(--text-tertiary);
   gap: 16px;
   text-align: center;
 }
 
-.empty-state svg,
-.loading-state svg {
-  opacity: 0.5;
-  margin-bottom: 12px;
+.empty-avatar {
+  opacity: 0.3;
 }
 
-.empty-state p,
-.loading-state p {
+.empty-title {
   margin: 0;
-  font-size: 14px;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--text-secondary, #8b949e);
 }
 
-/* 任务表格 */
-.tasks-table {
-  background: var(--bg-primary);
-  border-radius: 12px;
-  overflow: hidden;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
+.empty-hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-tertiary, #6e7681);
 }
 
-.table-header {
-  display: grid;
-  grid-template-columns: 2fr 1fr 2fr 1fr 1fr 1.5fr 1fr;
-  gap: 12px;
-  padding: 12px 16px;
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-color);
-}
-
-.th {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.table-body {
-  flex: 1;
-  overflow-y: auto;
-  min-height: 0;
-}
-
-.task-row {
-  display: grid;
-  grid-template-columns: 2fr 1fr 2fr 1fr 1fr 1.5fr 1fr;
-  gap: 12px;
-  padding: 16px;
-  border-bottom: 1px solid var(--border-color);
-  transition: all 0.2s ease;
-  position: relative;
-}
-
-.task-row:hover {
-  background: rgba(88, 166, 255, 0.05);
-  border-left: 3px solid var(--accent-blue);
-}
-
-.task-row:last-child {
-  border-bottom: none;
-}
-
-.task-row.running {
-  border-left: 3px solid var(--accent-green);
-  background: rgba(63, 185, 80, 0.02);
-}
-
-.task-row.completed {
-  border-left: 3px solid var(--accent-blue);
-  background: rgba(88, 166, 255, 0.02);
-}
-
-.task-row.failed {
-  border-left: 3px solid var(--accent-red);
-  background: rgba(248, 81, 73, 0.02);
-}
-
-.td {
+/* 底部信息栏 */
+.bottom-info-bar {
   display: flex;
   align-items: center;
-  font-size: 13px;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px 24px;
+  background: transparent;
 }
 
-.td-name {
+.group-info-bar {
+  justify-content: center;
+}
+
+.employee-info {
+  display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
+  gap: 2px;
 }
 
-.task-name {
-  font-weight: 600;
-  color: var(--text-primary);
+.employee-name {
   font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary, #f0f6fc);
 }
 
-.task-id {
-  font-size: 11px;
-  color: var(--text-tertiary);
-  font-weight: 500;
+.employee-voice {
+  font-size: 12px;
+  color: var(--text-tertiary, #6e7681);
 }
 
+/* 状态标签 */
 .status-badge {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
+  gap: 4px;
+  padding: 4px 12px;
   border-radius: 12px;
   font-size: 12px;
-  font-weight: 600;
-  background: var(--bg-secondary);
-  color: var(--text-secondary);
-  transition: all 0.2s ease;
-}
-
-.status-badge .status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-  flex-shrink: 0;
+  font-weight: 500;
 }
 
 .status-badge.pending {
-  background: rgba(139, 148, 158, 0.15);
-  color: var(--text-secondary);
-  border: 1px solid rgba(139, 148, 158, 0.3);
+  background: rgba(156, 163, 175, 0.1);
+  color: #9ca3af;
 }
 
 .status-badge.running {
-  background: rgba(63, 185, 80, 0.15);
-  color: var(--accent-green);
-  border: 1px solid rgba(63, 185, 80, 0.3);
-}
-
-.status-badge.running .status-dot {
-  animation: pulse 1.5s infinite;
+  background: rgba(59, 130, 246, 0.1);
+  color: #3b82f6;
 }
 
 .status-badge.completed {
-  background: rgba(88, 166, 255, 0.15);
-  color: var(--accent-blue);
-  border: 1px solid rgba(88, 166, 255, 0.3);
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
 }
 
 .status-badge.failed {
-  background: rgba(248, 81, 73, 0.15);
-  color: var(--accent-red);
-  border: 1px solid rgba(248, 81, 73, 0.3);
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
 }
 
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
-
-.prd-preview {
-  color: var(--text-secondary);
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 13px;
-  line-height: 1.4;
-}
-
-.tag {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 10px;
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-  transition: all 0.2s ease;
-  border: 1px solid transparent;
-}
-
-.tag-tts {
-  background: rgba(155, 89, 182, 0.15);
-  color: #bb8fce;
-  border-color: rgba(155, 89, 182, 0.3);
-}
-
-.tag-iot {
-  background: rgba(52, 152, 219, 0.15);
-  color: #85c1e9;
-  border-color: rgba(52, 152, 219, 0.3);
-}
-
-.tag-empty {
-  background: var(--bg-secondary);
-  color: var(--text-tertiary);
-  border-color: var(--border-color);
-}
-
-.td-actions {
+/* 操作按钮组 */
+.action-buttons {
   display: flex;
-  gap: 8px;
-  align-items: center;
+  gap: 12px;
 }
 
-.action-btn {
+.icon-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  background: rgba(59, 130, 246, 0.08);
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  background: var(--bg-primary);
-  color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.2s ease;
-  flex-shrink: 0;
+  color: #60a5fa;
 }
 
-.action-btn:hover {
-  background: var(--bg-hover);
-  border-color: var(--accent-blue);
-  color: var(--text-primary);
-  transform: translateY(-1px);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+.icon-btn:hover:not(:disabled) {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: rgba(59, 130, 246, 0.5);
+  color: #93c5fd;
+  transform: translateY(-2px);
 }
 
-.action-btn-danger:hover {
-  background: rgba(248, 81, 73, 0.2);
-  border-color: var(--accent-red);
-  color: var(--accent-red);
-  box-shadow: 0 2px 4px rgba(248, 81, 73, 0.2);
-}
-
-.action-btn-execute {
-  background: rgba(63, 185, 80, 0.1);
-  border-color: rgba(63, 185, 80, 0.3);
-  color: var(--accent-green);
-}
-
-.action-btn-execute:hover {
-  background: rgba(63, 185, 80, 0.2);
-  border-color: var(--accent-green);
-  color: var(--accent-green);
-  box-shadow: 0 2px 4px rgba(63, 185, 80, 0.2);
-}
-
-.action-btn svg {
-  transition: transform 0.2s ease;
-}
-
-.action-btn:hover svg {
-  transform: scale(1.1);
-}
-
-/* 按钮样式 - 与IOTConfigPanel保持一致 */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  background: var(--bg-primary);
-  color: var(--text-primary);
-}
-
-.btn svg {
-  flex-shrink: 0;
-}
-
-.btn-primary {
-  background: #238636;
-  border-color: #238636;
-  color: #fff;
-}
-
-.btn-primary:hover:not(:disabled) {
-  background: #2ea043;
-  border-color: #2ea043;
-}
-
-.btn-outline {
-  background: transparent;
-  border-color: var(--border-color);
-  color: var(--text-secondary);
-}
-
-.btn-outline:hover:not(:disabled) {
-  border-color: var(--text-secondary);
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.btn:disabled {
-  opacity: 0.6;
+.icon-btn:disabled {
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
-.btn-sm {
-  padding: 6px 12px;
-  font-size: 12px;
+.icon-btn-warning {
+  border-color: rgba(245, 158, 11, 0.3);
+  background: rgba(245, 158, 11, 0.08);
+  color: #fbbf24;
 }
 
-/* 弹窗样式 - 与IOTConfigPanel保持一致 */
-.modal-overlay {
+.icon-btn-warning:hover:not(:disabled) {
+  background: rgba(245, 158, 11, 0.15);
+  border-color: rgba(245, 158, 11, 0.5);
+  color: #fcd34d;
+}
+
+/* 抽屉样式 */
+.drawer-overlay {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
   background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
   z-index: 1000;
-  padding: 20px;
+  display: flex;
+  justify-content: flex-end;
 }
 
-.modal-content {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
-  width: 90%;
-  max-width: 600px;
-  max-height: 90vh;
-  overflow: hidden;
+.drawer-content {
+  width: 400px;
+  max-width: 90vw;
+  height: 100%;
+  background: var(--bg-surface, #161b22);
+  border-left: 1px solid var(--border-color, #30363d);
   display: flex;
   flex-direction: column;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  animation: drawer-slide-in 0.2s ease;
 }
 
-.modal-header {
+@keyframes drawer-slide-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.drawer-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px;
-  border-bottom: 1px solid var(--border-color);
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-color, #30363d);
 }
 
-.modal-header h3 {
+.drawer-header h3 {
   margin: 0;
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--text-primary, #f0f6fc);
 }
 
 .close-btn {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   border: none;
   background: transparent;
   border-radius: 6px;
@@ -1030,105 +833,25 @@ export default {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  color: var(--text-secondary);
-  transition: all 0.2s ease;
+  color: var(--text-secondary, #8b949e);
+  transition: all 0.15s ease;
 }
 
 .close-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
+  background: var(--bg-hover, #30363d);
+  color: var(--text-primary, #f0f6fc);
 }
 
-.modal-body {
+.drawer-body {
   padding: 20px;
   overflow-y: auto;
   flex: 1;
 }
 
-.modal-footer {
-  display: flex;
-  gap: 8px;
-  padding: 16px 20px;
-  border-top: 1px solid var(--border-color);
-  justify-content: flex-end;
-  flex-wrap: wrap;
-}
-
-/* 表单样式 - 与IOTConfigPanel保持一致 */
-.form-group {
-  margin-bottom: 20px;
-  width: 100%;
-}
-
-.form-group label {
-  display: block;
-  margin-bottom: 8px;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text-primary);
-}
-
-.form-group label .required {
-  color: var(--accent-red);
-}
-
-.form-group input,
-.form-group textarea,
-.form-group select {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  font-size: 14px;
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  transition: border-color 0.2s ease;
-}
-
-.form-group input:focus,
-.form-group textarea:focus,
-.form-group select:focus {
-  outline: none;
-  border-color: var(--accent-blue);
-  box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.1);
-}
-
-.form-group input::placeholder,
-.form-group textarea::placeholder {
-  color: var(--text-tertiary);
-}
-
-.form-group textarea {
-  resize: vertical;
-  min-height: 80px;
-}
-
-.form-hint {
-  margin-top: 6px;
-  font-size: 11px;
-  color: var(--text-tertiary);
-}
-
-.tts-selector {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.tts-select {
-  flex: 1;
-  min-width: 200px;
-}
-
-/* 详情弹窗 */
-.detail-modal {
-  max-width: 500px;
-}
-
 .detail-section {
   margin-bottom: 20px;
-  padding-bottom: 20px;
-  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border-color, #30363d);
 }
 
 .detail-section:last-child {
@@ -1139,15 +862,14 @@ export default {
 
 .detail-section h4 {
   margin: 0 0 12px 0;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--text-primary, #f0f6fc);
 }
 
 .detail-row {
   display: flex;
   margin-bottom: 10px;
-  flex-wrap: wrap;
 }
 
 .detail-row:last-child {
@@ -1155,25 +877,25 @@ export default {
 }
 
 .detail-label {
-  width: 100px;
+  width: 80px;
   flex-shrink: 0;
-  font-size: 13px;
-  color: var(--text-secondary);
+  font-size: 12px;
+  color: var(--text-secondary, #8b949e);
 }
 
 .detail-value {
   flex: 1;
-  font-size: 13px;
-  color: var(--text-primary);
+  font-size: 12px;
+  color: var(--text-primary, #f0f6fc);
 }
 
 .prd-content {
   padding: 12px;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  font-size: 13px;
-  color: var(--text-primary);
+  background: var(--bg-primary, #0d1117);
+  border: 1px solid var(--border-color, #30363d);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-primary, #f0f6fc);
   line-height: 1.6;
   white-space: pre-wrap;
 }
@@ -1181,13 +903,15 @@ export default {
 .report-link {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  color: var(--accent-blue);
+  gap: 4px;
+  color: #3b82f6;
   text-decoration: none;
-  transition: text-decoration 0.2s ease;
+  font-size: 12px;
+  transition: color 0.15s ease;
 }
 
 .report-link:hover {
+  color: #60a5fa;
   text-decoration: underline;
 }
 
@@ -1199,5 +923,46 @@ export default {
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+/* 响应式布局 */
+@media (max-width: 900px) {
+  .nav-prev { left: 16px; }
+  .nav-next { right: 16px; }
+  .hero-container { width: 70%; }
+}
+
+@media (max-width: 600px) {
+  .nav-btn {
+    font-size: 24px;
+  }
+
+  .hero-container { width: 80%; }
+
+  .bottom-info-bar {
+    padding: 12px 16px 20px;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .employee-info {
+    text-align: center;
+  }
+
+  .action-buttons {
+    gap: 8px;
+  }
+
+  .icon-btn {
+    width: 40px;
+    height: 40px;
+  }
+
+  .back-btn {
+    top: 12px;
+    left: 12px;
+    padding: 6px 10px;
+    font-size: 12px;
+  }
 }
 </style>

@@ -4,8 +4,11 @@ from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from asgiref.sync import sync_to_async
 from django.utils import timezone
-from .models import AgenticTestSession, AgenticTestLog, DeviceStatus, DeviceProtocol, TestTask
-from .serializers import AgenticTestSessionSerializer, AgenticTestLogSerializer, DeviceStatusSerializer, DeviceProtocolSerializer, TestTaskSerializer
+from .models import AgenticTestSession, AgenticTestLog, DeviceStatus, DeviceProtocol, TestTask, DigitalEmployee
+from .serializers import (
+    AgenticTestSessionSerializer, AgenticTestLogSerializer, DeviceStatusSerializer,
+    DeviceProtocolSerializer, TestTaskSerializer, DigitalEmployeeSerializer
+)
 from .services import IOTService
 import logging
 import asyncio
@@ -185,6 +188,32 @@ class DeviceProtocolViewSet(viewsets.ModelViewSet):
     lookup_field = 'id'
 
 
+class DigitalEmployeeViewSet(viewsets.ModelViewSet):
+    """数字员工视图集
+
+    提供数字员工的完整CRUD操作，以及获取员工任务历史等功能
+    """
+    queryset = DigitalEmployee.objects.all()
+    serializer_class = DigitalEmployeeSerializer
+
+    def get_queryset(self):
+        """支持按 is_active 筛选"""
+        queryset = DigitalEmployee.objects.all()
+        is_active = self.request.query_params.get('is_active')
+        if is_active is not None:
+            is_active_bool = is_active.lower() in ('true', '1', 'yes')
+            queryset = queryset.filter(is_active=is_active_bool)
+        return queryset.select_related('tts_voice')
+
+    @action(detail=True, methods=['get'])
+    def tasks(self, request, pk=None):
+        """获取该员工的任务历史"""
+        employee = self.get_object()
+        tasks = employee.tasks.all()[:50]  # 最近50条任务
+        serializer = TestTaskSerializer(tasks, many=True)
+        return Response(serializer.data)
+
+
 class TestTaskViewSet(viewsets.ModelViewSet):
     """场景测试任务视图集
     
@@ -199,7 +228,7 @@ class TestTaskViewSet(viewsets.ModelViewSet):
         status_filter = self.request.query_params.get('status')
         if status_filter:
             queryset = queryset.filter(status=status_filter)
-        return queryset.select_related('tts_voice', 'iot_protocol')
+        return queryset.select_related('employee__tts_voice', 'iot_protocol')
     
     @action(detail=True, methods=['post'])
     def start(self, request, pk=None):

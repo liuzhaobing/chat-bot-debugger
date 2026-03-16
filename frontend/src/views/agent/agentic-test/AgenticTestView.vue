@@ -9,8 +9,21 @@
       
       <div class="toolbar-center">
         <div class="panel-tabs">
-          <button 
-            class="tab-btn" 
+          <button
+            class="tab-btn"
+            :class="{ active: activePanel === 'employee' }"
+            @click="switchPanel('employee')"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+              <circle cx="8.5" cy="7" r="4"></circle>
+              <path d="M20 8v6"></path>
+              <path d="M23 11h-6"></path>
+            </svg>
+            <span>数字员工</span>
+          </button>
+          <button
+            class="tab-btn"
             :class="{ active: activePanel === 'transcript' }"
             @click="switchPanel('transcript')"
           >
@@ -19,8 +32,8 @@
             </svg>
             <span>通话字幕</span>
           </button>
-          <button 
-            class="tab-btn" 
+          <button
+            class="tab-btn"
             :class="{ active: activePanel === 'devices' }"
             @click="switchPanel('devices')"
           >
@@ -30,17 +43,6 @@
               <path d="M2 12l10 5 10-5"></path>
             </svg>
             <span>智能设备</span>
-          </button>
-          <button 
-            class="tab-btn" 
-            :class="{ active: activePanel === 'scene' }"
-            @click="switchPanel('scene')"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M9 11l3 3L22 4"></path>
-              <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"></path>
-            </svg>
-            <span>场景测试</span>
           </button>
         </div>
       </div>
@@ -80,6 +82,11 @@
 
     <!-- 主内容区域 -->
     <div class="main-content">
+      <!-- 数字员工面板 -->
+      <div v-if="activePanel === 'employee'" class="employee-container">
+        <SceneTestPanel />
+      </div>
+
       <!-- 通话字幕面板 -->
       <div v-if="activePanel === 'transcript'" class="transcript-container">
         <TranscriptPanel
@@ -95,11 +102,6 @@
         <div class="devices-content">
           <IOTConfigPanel ref="iotPanel" :hide-config="true" />
         </div>
-      </div>
-
-      <!-- 场景测试面板 -->
-      <div v-if="activePanel === 'scene'" class="scene-container">
-        <SceneTestPanel />
       </div>
     </div>
 
@@ -173,7 +175,7 @@ export default {
   data() {
     return {
       // UI状态
-      activePanel: 'transcript', // 'transcript' | 'devices'
+      activePanel: 'employee', // 'transcript' | 'devices' | 'employee'
       showMainInterface: false,
       showVadAsrTest: false,
 
@@ -1393,7 +1395,8 @@ export default {
 }
 
 .transcript-container,
-.devices-container {
+.devices-container,
+.employee-container {
   height: 100%;
   display: flex;
   flex-direction: column;

@@ -1,0 +1,360 @@
+/**
+ * 数字员工卡通形象样式
+ * 统一管理四个角色的外观样式
+ *
+ * 角色索引:
+ * - 0: 橙色 (半圆顶+矩形底)
+ * - 1: 紫色方块 (最高)
+ * - 2: 黑色方块 (次高)
+ * - 3: 黄色 (半圆顶+矩形底)
+ */
+
+/* ========== 角色主体尺寸 ========== */
+
+/* 紫色 - 最高 */
+.character-purple .character-body,
+.character-index-1 .character-body {
+  width: 108px;
+  height: 280px;
+  background: #9B5DE5;
+  border-radius: 10px;
+}
+
+/* 黑色 - 次高 */
+.character-black .character-body,
+.character-index-2 .character-body {
+  width: 102px;
+  height: 240px;
+  background: #2D2D2D;
+  border-radius: 8px;
+}
+
+/* 黄色 - 半圆顶+矩形底 */
+.character-yellow .character-body,
+.character-index-3 .character-body {
+  width: 114px;
+  height: 120px; /* 矩形部分高度 */
+  background: #F8E759;
+  border-radius: 0;
+  position: relative;
+}
+
+/* 黄色顶部半圆 - 向下重叠2px消除分界线 */
+.character-yellow .character-body::before,
+.character-index-3 .character-body::before {
+  content: '';
+  position: absolute;
+  top: -55px; /* 半圆半径 - 2px重叠 */
+  left: 0;
+  width: 114px;
+  height: 59px; /* 半圆高度 + 2px重叠 */
+  background: #F8E759;
+  border-radius: 57px 57px 0 0;
+}
+
+/* 橙色 - 半圆顶+矩形底，宽度更宽 */
+.character-orange .character-body,
+.character-index-0 .character-body {
+  width: 170px;
+  height: 12px; /* 矩形部分高度很小 */
+  background: #FF9F5A;
+  border-radius: 0;
+  position: relative;
+}
+
+/* 橙色顶部半圆 - 向下重叠2px消除分界线 */
+.character-orange .character-body::before,
+.character-index-0 .character-body::before {
+  content: '';
+  position: absolute;
+  top: -83px; /* 半圆半径 - 2px重叠 */
+  left: 0;
+  width: 170px;
+  height: 87px; /* 半圆高度 + 2px重叠 */
+  background: #FF9F5A;
+  border-radius: 85px 85px 0 0;
+}
+
+/* 角色主体基础样式 */
+.character-body {
+  position: relative;
+  /* 扁平化：无阴影 */
+}
+
+/* ========== 圆形眼睛（紫色、黑色） ========== */
+.round-eyes {
+  position: absolute;
+  top: 12%;
+  left: 0;
+  right: 0;
+  height: 30px;
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  transition: transform 0.05s ease-out;
+}
+
+.round-eye {
+  width: 24px;
+  height: 24px;
+  background: #fff;
+  border-radius: 50%;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pupil {
+  width: 12px;
+  height: 12px;
+  background: #2D2D2D;
+  border-radius: 50%;
+  position: absolute;
+  transition: transform 0.05s ease-out;
+}
+
+.highlight {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  background: #fff;
+  border-radius: 50%;
+  top: 4px;
+  right: 4px;
+}
+
+/* 紫色眼睛稍大 */
+.character-purple .round-eyes,
+.character-index-1 .round-eyes {
+  top: 10%;
+}
+
+.character-purple .round-eye,
+.character-index-1 .round-eye {
+  width: 28px;
+  height: 28px;
+}
+
+.character-purple .pupil,
+.character-index-1 .pupil {
+  width: 14px;
+  height: 14px;
+}
+
+.character-purple .highlight,
+.character-index-1 .highlight {
+  width: 8px;
+  height: 8px;
+}
+
+/* ========== 圆点眼睛（橙色、黄色） ========== */
+.dot-eyes {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 20px;
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  transition: transform 0.05s ease-out;
+}
+
+.dot-eye {
+  width: 14px;
+  height: 14px;
+  background: #2D2D2D;
+  border-radius: 50%;
+}
+
+/* 橙色眼睛位置 - 在半圆区域内 */
+.character-orange .dot-eyes,
+.character-index-0 .dot-eyes {
+  top: -55px; /* 在半圆区域内 */
+  gap: 36px;
+}
+
+.character-orange .dot-eye,
+.character-index-0 .dot-eye {
+  width: 20px;
+  height: 20px;
+}
+
+/* 黄色眼睛位置 - 在半圆区域内 */
+.character-yellow .dot-eyes,
+.character-index-3 .dot-eyes {
+  top: -30px; /* 在半圆区域内，往下移 */
+}
+
+.character-yellow .dot-eye,
+.character-index-3 .dot-eye {
+  width: 14px;
+  height: 14px;
+}
+
+/* ========== 嘴巴（黄色专属） ========== */
+.mouth {
+  position: absolute;
+  bottom: 75%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 35%;
+  height: 4px;
+  background: #2D2D2D;
+  border-radius: 2px;
+}
+
+/* ========== Hero 尺寸变体（单个角色页面使用） ========== */
+
+/* Hero 紫色 */
+.size-hero.character-index-1 .character-body {
+  width: 130px;
+  height: 340px;
+  border-radius: 12px;
+}
+
+.size-hero.character-index-1 .round-eye {
+  width: 32px;
+  height: 32px;
+}
+
+.size-hero.character-index-1 .pupil {
+  width: 16px;
+  height: 16px;
+}
+
+.size-hero.character-index-1 .highlight {
+  width: 10px;
+  height: 10px;
+}
+
+/* Hero 黑色 */
+.size-hero.character-index-2 .character-body {
+  width: 122px;
+  height: 290px;
+  border-radius: 10px;
+}
+
+.size-hero.character-index-2 .round-eye {
+  width: 28px;
+  height: 28px;
+}
+
+.size-hero.character-index-2 .pupil {
+  width: 14px;
+  height: 14px;
+}
+
+.size-hero.character-index-2 .highlight {
+  width: 8px;
+  height: 8px;
+}
+
+/* Hero 黄色 */
+.size-hero.character-index-3 .character-body {
+  width: 136px;
+  height: 144px;
+}
+
+.size-hero.character-index-3 .character-body::before {
+  top: -66px;
+  width: 136px;
+  height: 70px;
+  border-radius: 68px 68px 0 0;
+}
+
+.size-hero.character-index-3 .dot-eye {
+  width: 18px;
+  height: 18px;
+}
+
+.size-hero.character-index-3 .mouth {
+  height: 5px;
+  width: 40%;
+}
+
+/* Hero 橙色 */
+.size-hero.character-index-0 .character-body {
+  width: 204px;
+  height: 14px;
+}
+
+.size-hero.character-index-0 .character-body::before {
+  top: -100px;
+  width: 204px;
+  height: 104px;
+  border-radius: 102px 102px 0 0;
+}
+
+.size-hero.character-index-0 .dot-eye {
+  width: 24px;
+  height: 24px;
+}
+
+/* ========== 闲置动画 ========== */
+@keyframes character-sway {
+  0%, 100% {
+    transform: rotate(-3deg) translateY(0);
+  }
+  50% {
+    transform: rotate(3deg) translateY(-6px);
+  }
+}
+
+@keyframes character-bounce {
+  0%, 100% {
+    transform: translateY(0) scaleY(1);
+  }
+  50% {
+    transform: translateY(-10px) scaleY(1.02);
+  }
+}
+
+@keyframes character-breathe {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.03);
+  }
+}
+
+@keyframes character-hop {
+  0%, 100% {
+    transform: translateY(0) scaleY(1);
+  }
+  30% {
+    transform: translateY(-8px) scaleY(1.05);
+  }
+  60% {
+    transform: translateY(0) scaleY(0.97);
+  }
+}
+
+/* ========== 错误状态 ========== */
+.character-error .character-body {
+  filter: brightness(0.6) grayscale(0.3);
+}
+
+.character-error .character-body::before {
+  filter: brightness(0.6) grayscale(0.3);
+}
+
+.character-error .round-eye,
+.character-error .dot-eye {
+  opacity: 0.7;
+}
+
+/* ========== 工作状态 ========== */
+.character-working .character-body {
+  animation: character-pulse 1s ease-in-out infinite;
+}
+
+@keyframes character-pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.02);
+  }
+}
