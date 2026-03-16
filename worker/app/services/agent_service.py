@@ -19,6 +19,7 @@ import json
 import logging
 import base64
 import time
+import uuid
 from typing import Optional, Callable, Dict, Any, List
 from dataclasses import dataclass
 from datetime import datetime
@@ -26,6 +27,7 @@ from datetime import datetime
 from sqlalchemy import select
 
 from app.core.database import get_db_context
+from app.core.logging import set_job_instance_id
 from app.models.session import AgenticTestSession
 from app.models.log import AgenticTestLog
 from app.models.chat import App
@@ -115,7 +117,9 @@ class AgenticTestAgent:
             iot_config: Optional[Dict[str, str]] = None,
             tester_config: Optional[Dict[str, Any]] = None,
             fixed_duration: float = None,
-            audio_mode: str = None
+            audio_mode: str = None,
+            job_instance_id: Optional[str] = None,
+            task_id: Optional[str] = None
     ):
         self.session_id = session_id
         self.send_callback = send_callback
@@ -123,6 +127,13 @@ class AgenticTestAgent:
         self.current_query = ""
         self.current_asr_result = ""
         self.real_voice_active_time = 0.0
+
+        # 任务标识（用于日志追踪和报告保存）
+        self.job_instance_id = job_instance_id or self._generate_job_instance_id()
+        self.task_id = task_id
+
+        # 设置日志上下文
+        set_job_instance_id(self.job_instance_id)
 
         # 音频处理模式（默认使用固定时长模式）
         self.audio_mode = audio_mode or self.AUDIO_MODE_FIXED_DURATION
@@ -142,6 +153,13 @@ class AgenticTestAgent:
 
         # 测试配置
         self.tester_config = tester_config or {}
+
+        # TTS音色（优先使用数字员工的音色，否则使用默认音色）
+        self.tts_voice_id = tester_config.get('tts_voice_id') if tester_config else None
+        if self.tts_voice_id:
+            logger.info(f"Using custom TTS voice: {self.tts_voice_id}")
+        else:
+            logger.info("Using default TTS voice")
 
         # 初始化服务
         self.tts_service = TTSService()
@@ -177,10 +195,24 @@ class AgenticTestAgent:
         self._audio_input_event = asyncio.Event()
 
         logger.info(
-            f"AgenticTestAgent initialized for session {session_id} with IOT config: "
-            f"env={self.iot_config.get('env')}, has_token={bool(self.iot_config.get('token'))}, "
+            f"AgenticTestAgent initialized for session {session_id}, "
+            f"job_instance_id={self.job_instance_id}, task_id={self.task_id}, "
+            f"IOT config: env={self.iot_config.get('env')}, has_token={bool(self.iot_config.get('token'))}, "
             f"fixed_duration={self.fixed_duration}s"
         )
+
+    @staticmethod
+    def _generate_job_instance_id() -> str:
+        """生成任务实例ID
+
+        格式: TEST_YYYYMMDDHHMMSS_RANDOM
+        用于日志追踪和报告关联
+        """
+        import os
+        import base64
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        random_suffix = base64.b32encode(os.urandom(5)).decode("ascii").lower()
+        return f"TEST_{timestamp}_{random_suffix}"
 
     async def start_loop(self, initial_query: str = None, iot_config: Optional[Dict[str, str]] = None):
         """启动智能体循环
@@ -201,6 +233,9 @@ class AgenticTestAgent:
             self.iot_config,
             tester_config=self.tester_config
         )
+
+        # 更新任务的 job_instance_id（如果有 task_id）
+        await self._update_task_job_info()
 
         try:
             # 初始化设备状态
@@ -542,6 +577,12 @@ class AgenticTestAgent:
                     ai_response="测试完成"
                 )
 
+            # 检查是否需要推进到下一个用例
+            if progress.action == NextAction.NEXT_CASE:
+                await self.send_callback('status', '当前用例已完成，推进到下一个测试用例...')
+                # current_index 已在 _execute_progression 中设为 -1
+                # generate_test_query 会定位到下一个未执行的用例
+
             # 5. 生成下一个测试查询
             next_query = await self.tester_service.generate_test_query()
 
@@ -568,21 +609,45 @@ class AgenticTestAgent:
                     ai_response=next_query
                 )
             else:
-                # 当前用例已完成或没有更多用例
-                await self.send_callback('status', '当前用例已完成，等待下一个用例...')
-
-                # 再次尝试获取下一个用例的查询
-                next_query = await self.tester_service.generate_test_query()
-                if next_query and next_query.strip():
-                    self.current_query = next_query
-                    self.tester_service.add_to_conversation_history('user', next_query)
-                    await self.send_callback('ai_response', next_query)
-                    return BrainProcessResult(
-                        success=True,
-                        next_query=next_query,
-                        should_continue=True,
-                        ai_response=next_query
-                    )
+                # QueryGenerator 没有生成查询，可能是当前用例已完成
+                # 检查评判结果：如果评判认为还需要继续，但查询生成器无法生成查询
+                # 这时应该强制将当前用例标记为完成，然后推进到下一个用例
+                if progress.action == NextAction.WAIT:
+                    # 评判认为需要继续，但查询生成器无法生成新查询
+                    # 强制标记当前用例为完成
+                    await self.send_callback('status', '查询生成器无法生成新查询，强制推进到下一个用例...')
+                    current_case = self.tester_service.case_manager.get_current_case()
+                    if current_case:
+                        from app.services.tester.models import TestResultStatus
+                        self.tester_service.case_manager.update_case_result(
+                            current_case.id,
+                            TestResultStatus.PASS,
+                            current_case.actual_results or ['自动标记为通过'],
+                            None
+                        )
+                    # 重置 current_index 以便定位下一个用例
+                    self.tester_service.case_manager.current_index = -1
+                    # 再次尝试获取下一个用例的查询
+                    next_query = await self.tester_service.generate_test_query()
+                    if next_query and next_query.strip():
+                        self.current_query = next_query
+                        self.tester_service.add_to_conversation_history('user', next_query)
+                        await self.send_callback('ai_response', next_query)
+                        return BrainProcessResult(
+                            success=True,
+                            next_query=next_query,
+                            should_continue=True,
+                            ai_response=next_query
+                        )
+                    else:
+                        # 没有更多用例，所有测试已完成
+                        await self.send_callback('status', '所有测试用例已完成')
+                        return BrainProcessResult(
+                            success=True,
+                            next_query="",
+                            should_continue=False,
+                            ai_response='所有测试用例已完成'
+                        )
 
                 return BrainProcessResult(
                     success=True,
@@ -624,7 +689,7 @@ class AgenticTestAgent:
                 return AudioOutputResult(success=True, text="")
 
             await self.send_callback('status', '正在生成语音...')
-            tts_result = await self.tts_service.generate_speech(text)
+            tts_result = await self.tts_service.generate_speech(text, speaker=self.tts_voice_id)
             self.real_voice_active_time = time.perf_counter()
 
             await self.log_event('tts_generated', text, {
@@ -789,7 +854,36 @@ class AgenticTestAgent:
                 if mode == self.AUDIO_MODE_FIXED_DURATION:
                     self._audio_input_event.set()
             else:
-                await self.send_callback('status', '对话完成，等待新的音频输入...')
+                # 测试完成或对话结束，检查是否所有测试都已完成
+                completion_result = await self.tester_service.check_testing_completion()
+                if completion_result.completed:
+                    # 所有测试完成，生成报告并退出
+                    await self.send_callback('status', '所有测试用例已完成')
+                    if completion_result.verified_by_llm:
+                        await self.send_callback('status', f'LLM验证完成: {completion_result.llm_analysis}')
+
+                    # 生成测试报告
+                    report = await self.tester_service.finalize()
+                    await self.send_callback('test_report', report.to_dict())
+                    await self.send_callback('log', f'测试报告已生成，共 {report.case_statistics.total} 个用例')
+
+                    # 保存报告到数据库
+                    await self._save_report_to_database(report)
+
+                    # 发送测试完成通知，前端收到后应关闭连接
+                    await self.send_callback('test_completed', {
+                        'session_id': self.session_id,
+                        'total_cases': report.case_statistics.total,
+                        'passed': report.case_statistics.passed,
+                        'failed': report.case_statistics.failed,
+                        'pass_rate': report.case_statistics.pass_rate
+                    })
+
+                    # 停止主循环
+                    self.is_running = False
+                    self._audio_input_event.set()  # 唤醒主循环以退出
+                else:
+                    await self.send_callback('status', '对话完成，等待新的音频输入...')
 
         except Exception as e:
             logger.error(f"Error processing audio: {e}", exc_info=True)
@@ -999,6 +1093,96 @@ class AgenticTestAgent:
         await self.tester_service.stop()
 
         logger.info(f"Agent stopped for session {self.session_id}")
+
+    async def _save_report_to_database(self, report) -> bool:
+        """保存测试报告到数据库
+
+        通过后端 API 更新 TestTask 的报告数据。
+
+        Args:
+            report: TestReport 对象
+
+        Returns:
+            是否保存成功
+        """
+        if not self.job_instance_id:
+            logger.warning("No job_instance_id, skip saving report to database")
+            return False
+
+        try:
+            # 调用后端 API 保存报告
+            url = f"{self.backend_service.backend_url}/api/test-tasks/complete-by-job-instance/"
+
+            # 生成报告摘要
+            summary_parts = []
+            stats = report.case_statistics
+            summary_parts.append(f"总用例数: {stats.total}")
+            summary_parts.append(f"通过: {stats.passed}")
+            summary_parts.append(f"失败: {stats.failed}")
+            summary_parts.append(f"通过率: {stats.pass_rate:.1f}%")
+            result_summary = ", ".join(summary_parts)
+
+            payload = {
+                "job_instance_id": self.job_instance_id,
+                "status": "completed",
+                "report_data": report.to_dict(),
+                "result_summary": result_summary
+            }
+
+            import httpx
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(url, json=payload)
+                response.raise_for_status()
+
+                data = response.json()
+                if data.get('status') == 'success':
+                    logger.info(f"Report saved to database for job_instance_id={self.job_instance_id}")
+                    return True
+                else:
+                    logger.error(f"Failed to save report: {data.get('message')}")
+                    return False
+
+        except Exception as e:
+            logger.error(f"Error saving report to database: {e}", exc_info=True)
+            return False
+
+    async def _update_task_job_info(self) -> bool:
+        """更新任务的 session_id 和 job_instance_id
+
+        在任务启动时调用，将 session_id 和 job_instance_id 关联到 TestTask。
+
+        Returns:
+            是否更新成功
+        """
+        if not self.task_id:
+            logger.debug("No task_id, skip updating job info")
+            return False
+
+        try:
+            url = f"{self.backend_service.backend_url}/api/test-tasks/update-job-info/"
+
+            payload = {
+                "task_id": self.task_id,
+                "session_id": self.session_id,
+                "job_instance_id": self.job_instance_id
+            }
+
+            import httpx
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(url, json=payload)
+                response.raise_for_status()
+
+                data = response.json()
+                if data.get('status') == 'success':
+                    logger.info(f"Job info updated for task_id={self.task_id}")
+                    return True
+                else:
+                    logger.warning(f"Failed to update job info: {data.get('message')}")
+                    return False
+
+        except Exception as e:
+            logger.error(f"Error updating job info: {e}", exc_info=True)
+            return False
 
     async def update_iot_config(self, config: Dict[str, str]):
         """更新IOT配置"""

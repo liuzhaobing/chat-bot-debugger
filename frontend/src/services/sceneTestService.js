@@ -281,6 +281,22 @@ class SceneTestService {
       throw error
     }
   }
+
+  /**
+   * 获取任务测试报告
+   */
+  async getTaskReport(taskId) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/agentic-test/test-tasks/${taskId}/download_report/`)
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      return await response.json()
+    } catch (error) {
+      console.error('Failed to fetch task report:', error)
+      throw error
+    }
+  }
 }
 
 export default new SceneTestService()

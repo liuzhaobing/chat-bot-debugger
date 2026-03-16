@@ -160,6 +160,12 @@ class TestTask(models.Model):
         help_text="任务状态"
     )
     
+    # WebSocket 会话ID
+    session_id = models.CharField(max_length=100, blank=True, null=True, help_text="WebSocket会话ID")
+
+    # 任务实例ID（用于日志追踪和报告关联）
+    job_instance_id = models.CharField(max_length=100, blank=True, null=True, unique=True, help_text="任务实例ID，用于日志追踪")
+
     # 测试报告
     report_url = models.URLField(blank=True, null=True, help_text="测试报告下载链接")
     report_data = models.JSONField(default=dict, blank=True, help_text="测试报告数据")

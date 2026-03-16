@@ -534,6 +534,36 @@ class TesterService:
             logger.info(f"开始执行测试用例 {next_index + 1}/{len(self.case_manager.test_cases)}: {current_case.title}")
             await self._send_callback('log', f'开始执行测试用例 {next_index + 1}.{current_case.title}')
 
+            # 新用例的第一个查询：从 steps 中提取，而不是调用 QueryGenerator App
+            # 这样可以确保新用例一定能开始执行
+            query = self._extract_first_query_from_case(current_case)
+
+            if query:
+                self.total_queries_generated += 1
+                if self.execution_context:
+                    self.execution_context.current_query = query
+                logger.info(f"Generated first query for new case {current_case.id}: {query}")
+                await self._send_callback('test_query', {
+                    'case_id': current_case.id,
+                    'query': query,
+                })
+                return query
+
+            # 如果 steps 中没有提取到，再尝试调用 QueryGenerator App
+            query = await self._produce_query_content({'should_continue': True}, "")
+
+            if query:
+                self.total_queries_generated += 1
+                if self.execution_context:
+                    self.execution_context.current_query = query
+                logger.info(f"Generated test query for case {current_case.id}: {query}")
+                await self._send_callback('test_query', {
+                    'case_id': current_case.id,
+                    'query': query,
+                })
+
+            return query
+
         # 在当前用例内生成测试查询
         query = await self._produce_query_content({'should_continue': True}, "")
 
@@ -554,6 +584,37 @@ class TesterService:
             logger.info(f"Current case {current_case.id} completed, no more queries")
 
         return query
+
+    def _extract_first_query_from_case(self, test_case: TestCase) -> Optional[str]:
+        """从测试用例的 steps 中提取第一个查询
+
+        Args:
+            test_case: 测试用例
+
+        Returns:
+            提取的查询语句，如果无法提取则返回 None
+        """
+        if not test_case.steps:
+            return None
+
+        # 从第一个步骤中提取语音指令
+        # 格式通常为：通过语音发出指令："打开一体机灯"
+        first_step = test_case.steps[0]
+
+        # 尝试提取引号中的内容
+        import re
+        # 匹配中文或英文引号
+        match = re.search(r'["""](.+?)["""]', first_step)
+        if match:
+            return match.group(1)
+
+        # 如果没有引号，尝试提取 "语音指令：" 后面的内容
+        match = re.search(r'语音指令[：:]\s*(.+)', first_step)
+        if match:
+            return match.group(1).strip()
+
+        # 如果都无法提取，返回整个步骤
+        return None
 
     async def _produce_query_content(
         self,

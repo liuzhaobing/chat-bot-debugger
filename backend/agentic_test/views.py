@@ -300,15 +300,111 @@ class TestTaskViewSet(viewsets.ModelViewSet):
     def download_report(self, request, pk=None):
         """下载测试报告"""
         task = self.get_object()
-        
-        if not task.report_url:
+
+        # 检查是否有报告数据（不再要求 report_url）
+        if not task.report_data:
             return Response({
                 'status': 'error',
                 'message': '报告尚未生成'
             }, status=status.HTTP_404_NOT_FOUND)
-        
+
         return Response({
             'status': 'success',
             'report_url': task.report_url,
             'report_data': task.report_data
+        })
+
+    @action(detail=False, methods=['post'], url_path='update-job-info')
+    def update_job_info(self, request):
+        """更新任务的 session_id 和 job_instance_id（内部API，由 Worker 启动时调用）
+
+        请求格式:
+        {
+            "task_id": "uuid",
+            "session_id": "xxx",
+            "job_instance_id": "xxx"
+        }
+        """
+        task_id = request.data.get('task_id')
+        session_id = request.data.get('session_id')
+        job_instance_id = request.data.get('job_instance_id')
+
+        if not task_id:
+            return Response({
+                'status': 'error',
+                'message': 'task_id 是必需的'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            task = TestTask.objects.get(id=task_id)
+        except TestTask.DoesNotExist:
+            return Response({
+                'status': 'error',
+                'message': f'找不到 task_id={task_id} 的任务'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        # 更新字段
+        if session_id:
+            task.session_id = session_id
+        if job_instance_id:
+            task.job_instance_id = job_instance_id
+
+        task.status = 'running'
+        task.started_at = timezone.now()
+        task.save()
+
+        return Response({
+            'status': 'success',
+            'message': '任务信息已更新',
+            'task': TestTaskSerializer(task).data
+        })
+
+    @action(detail=False, methods=['post'], url_path='complete-by-job-instance')
+    def complete_by_job_instance(self, request):
+        """通过 job_instance_id 完成任务（内部API，由 Worker 调用）
+
+        请求格式:
+        {
+            "job_instance_id": "xxx",
+            "status": "completed" | "failed",
+            "report_data": {...},
+            "result_summary": "..."
+        }
+        """
+        job_instance_id = request.data.get('job_instance_id')
+        if not job_instance_id:
+            return Response({
+                'status': 'error',
+                'message': 'job_instance_id 是必需的'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            task = TestTask.objects.get(job_instance_id=job_instance_id)
+        except TestTask.DoesNotExist:
+            return Response({
+                'status': 'error',
+                'message': f'找不到 job_instance_id={job_instance_id} 的任务'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        # 更新任务状态
+        new_status = request.data.get('status', 'completed')
+        if new_status == 'completed':
+            task.status = 'completed'
+            task.completed_at = timezone.now()
+            task.report_url = request.data.get('report_url')
+            task.report_data = request.data.get('report_data', {})
+            task.result_summary = request.data.get('result_summary', '')
+        elif new_status == 'failed':
+            task.status = 'failed'
+            task.completed_at = timezone.now()
+            task.error_message = request.data.get('error_message', '未知错误')
+        else:
+            task.status = new_status
+
+        task.save()
+
+        return Response({
+            'status': 'success',
+            'message': f'任务已更新为 {new_status}',
+            'task': TestTaskSerializer(task).data
         })

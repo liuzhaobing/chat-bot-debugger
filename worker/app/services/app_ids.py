@@ -21,7 +21,7 @@ TEST_POINT_EXTRACTOR_APP_ID = "test_point_extractor"
 TEST_CASE_DESIGNER_APP_ID = "43281a11ed734cbc9ed7d1e1f18a1f99"
 
 # 完成验证 App - 大模型验证是否所有测试用例都已完成执行
-COMPLETION_VERIFIER_APP_ID = "completion_verifier_app"
+COMPLETION_VERIFIER_APP_ID = "751fcb8cbfa64d19862f223e38406dc2"
 
 # ============================================================================
 # 其他服务 App IDs

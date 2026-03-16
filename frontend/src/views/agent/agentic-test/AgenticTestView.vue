@@ -84,7 +84,10 @@
     <div class="main-content">
       <!-- 数字员工面板 -->
       <div v-if="activePanel === 'employee'" class="employee-container">
-        <SceneTestPanel />
+        <SceneTestPanel
+          ref="sceneTestPanel"
+          @start-session-with-config="handleStartSessionWithConfig"
+        />
       </div>
 
       <!-- 通话字幕面板 -->
@@ -215,6 +218,9 @@ export default {
         iot_protocol_id: ''
       },
 
+      // 当前任务（用于关联测试报告）
+      currentTask: null,
+
       // WebSocket
       websocket: null,
       reconnectAttempts: 0,
@@ -314,6 +320,23 @@ export default {
         familyId: localStorage.getItem('family-id') || '',
         env: localStorage.getItem('iot-env') || 'test'
       }
+    },
+
+    /**
+     * 生成任务实例ID
+     * 格式: TEST_YYYYMMDDHHMMSS_RANDOM
+     * 用于日志追踪和报告关联
+     */
+    generateJobInstanceId() {
+      const now = new Date()
+      const timestamp = now.getFullYear().toString() +
+        String(now.getMonth() + 1).padStart(2, '0') +
+        String(now.getDate()).padStart(2, '0') +
+        String(now.getHours()).padStart(2, '0') +
+        String(now.getMinutes()).padStart(2, '0') +
+        String(now.getSeconds()).padStart(2, '0')
+      const random = Math.random().toString(36).substring(2, 10)
+      return `TEST_${timestamp}_${random}`
     },
 
     /**
@@ -504,39 +527,65 @@ export default {
      */
     async handleStartSession() {
       if (this.isConnecting || this.isSessionActive) return
-      
+
       this.isConnecting = true
       this.connectionStatus = 'connecting'
       this.addSystemLog('system', 'info', '正在启动会话...')
-      
+
       try {
         // 1. 建立WebSocket连接
         await this.connectToWebSocket()
-        
+
         // 2. 初始化并启动音频处理器
         await this.initializeAudioProcessor()
-        
+
         // 3. 启动会话计时器
         this.startSessionTimer()
-        
+
         // 4. 更新状态
         this.isSessionActive = true
         this.isConnecting = false
         this.connectionStatus = 'active'
         this.activePanel = 'transcript' // 自动切换到字幕面板
-        
+
         this.addSystemLog('system', 'success', '会话启动成功，麦克风已激活')
         this.addTranscriptMessage('system', '会话已开始，请开始说话...', false, true)
-        
+
       } catch (error) {
         console.error('启动会话失败:', error)
         this.isConnecting = false
         this.connectionStatus = 'disconnected'
         this.addSystemLog('system', 'error', `启动会话失败: ${error.message}`)
-        
+
         // 清理资源
         this.cleanup()
       }
+    },
+
+    /**
+     * 使用自定义配置启动会话（由 SceneTestPanel 派发任务时调用）
+     * @param {Object} payload - 包含 testerConfig 和可选的 task 信息
+     */
+    async handleStartSessionWithConfig(payload) {
+      if (this.isConnecting || this.isSessionActive) {
+        window.$message?.warning('已有会话在运行中，请先停止当前会话')
+        return
+      }
+
+      // 设置测试配置
+      if (payload.testerConfig) {
+        this.testerConfig = { ...this.testerConfig, ...payload.testerConfig }
+        this.addSystemLog('config', 'info', '已设置测试配置', payload.testerConfig)
+      }
+
+      // 保存任务信息（用于关联测试报告）
+      if (payload.task) {
+        this.currentTask = payload.task
+        this.addSystemLog('task', 'info', `关联任务: ${payload.task.name}`, { task_id: payload.task.id })
+      }
+
+      // 调用标准启动流程
+      await this.handleStartSession()
     },
 
     /**
@@ -621,14 +670,25 @@ export default {
 
           // 连接建立后先发送 init_config 消息
           const iotConfig = this.getIOTConfigFromStorage()
+
+          // 生成 job_instance_id（格式: TEST_YYYYMMDDHHMMSS_RANDOM）
+          const jobInstanceId = this.currentTask?.job_instance_id || this.generateJobInstanceId()
+
           const initConfigMessage = {
             type: 'init_config',
             tester_config: this.testerConfig,
             iot_config: iotConfig,
+            job_instance_id: jobInstanceId,
+            task_id: this.currentTask?.id || null,
             timestamp: Date.now()
           }
           this.websocket.send(JSON.stringify(initConfigMessage))
-          this.addSystemLog('config', 'info', '已发送 init_config 消息', { tester_config: this.testerConfig, iot_config: { env: iotConfig.env, has_token: !!iotConfig.token } })
+          this.addSystemLog('config', 'info', '已发送 init_config 消息', {
+            tester_config: this.testerConfig,
+            iot_config: { env: iotConfig.env, has_token: !!iotConfig.token },
+            job_instance_id: jobInstanceId,
+            task_id: this.currentTask?.id
+          })
 
           // 连接已建立，resolve Promise
           resolve()
@@ -696,6 +756,36 @@ export default {
     },
 
     /**
+     * 测试完成后关闭WebSocket连接
+     * 发送close_connection消息通知服务端，然后关闭连接
+     */
+    closeWebSocketAfterTest() {
+      if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
+        try {
+          // 发送关闭连接消息通知服务端
+          const closeMessage = {
+            type: 'close_connection',
+            timestamp: Date.now()
+          }
+          this.websocket.send(JSON.stringify(closeMessage))
+          this.addSystemLog('websocket', 'info', '已发送关闭连接消息')
+          // 关闭连接
+          this.websocket.close()
+        } catch (error) {
+          console.error('关闭WebSocket时出错:', error)
+        }
+        this.websocket = null
+      }
+      this.isSessionActive = false
+      this.isConfigInitialized = false
+
+      // 刷新 SceneTestPanel 的任务列表
+      if (this.$refs.sceneTestPanel && this.currentTask?.employee?.id) {
+        this.$refs.sceneTestPanel.loadEmployeeTasks(this.currentTask.employee.id)
+      }
+    },
+
+    /**
      * 处理WebSocket消息
      */
     handleWebSocketMessage(event) {
@@ -748,6 +838,23 @@ export default {
 
           case 'error':
             this.addSystemLog('error', 'error', data.content, data.metadata)
+            break
+
+          case 'test_completed':
+            // 测试完成，显示报告摘要并关闭连接
+            this.addSystemLog('system', 'success', `测试完成: 共${data.content?.total_cases || 0}个用例, 通过${data.content?.passed || 0}个, 失败${data.content?.failed || 0}个`, data.content)
+            // 延迟关闭连接，给日志渲染一点时间
+            setTimeout(() => {
+              this.closeWebSocketAfterTest()
+            }, 1000)
+            break
+
+          case 'connection_closing':
+            this.addSystemLog('websocket', 'info', '服务端确认关闭连接')
+            break
+
+          case 'server_close':
+            this.addSystemLog('websocket', 'warning', '服务端超时关闭连接')
             break
 
           default:

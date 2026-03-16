@@ -5,10 +5,40 @@
 import json
 import logging
 import sys
-from typing import Any, Dict
+from typing import Any, Dict, Optional
+from contextvars import ContextVar
+
 from pythonjsonlogger import jsonlogger
 
 from app.config import settings
+
+
+# 上下文变量，用于在整个请求生命周期中存储 job_instance_id
+_job_instance_id_ctx: ContextVar[Optional[str]] = ContextVar('job_instance_id', default=None)
+
+
+def set_job_instance_id(job_instance_id: Optional[str]) -> None:
+    """设置当前上下文的 job_instance_id
+
+    在请求开始时调用，后续所有日志都会自动包含此字段。
+
+    Args:
+        job_instance_id: 任务实例ID
+    """
+    _job_instance_id_ctx.set(job_instance_id)
+
+
+def get_job_instance_id() -> Optional[str]:
+    """获取当前上下文的 job_instance_id"""
+    return _job_instance_id_ctx.get()
+
+
+class JobInstanceIdFilter(logging.Filter):
+    """日志过滤器，自动添加 job_instance_id 到日志记录"""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.job_instance_id = get_job_instance_id() or ''
+        return True
 
 
 class CustomJsonFormatter(jsonlogger.JsonFormatter):
@@ -30,37 +60,45 @@ class CustomJsonFormatter(jsonlogger.JsonFormatter):
     ) -> None:
         """添加自定义字段"""
         super().add_fields(log_record, record, message_dict)
-        
+
         # 添加应用信息
         log_record['app'] = settings.app_name
         log_record['environment'] = settings.environment
-        
+
         # 添加日志级别
         log_record['level'] = record.levelname
-        
+
         # 添加模块信息
         log_record['module'] = record.module
         log_record['function'] = record.funcName
         log_record['line'] = record.lineno
-        
+
         # 添加 TraceID（如果存在）
         if hasattr(record, 'trace_id'):
             log_record['trace_id'] = record.trace_id
+
+        # 添加 job_instance_id（用于日志追踪和报告关联）
+        if hasattr(record, 'job_instance_id'):
+            log_record['job_instance_id'] = record.job_instance_id
 
 
 def setup_logging() -> None:
     """
     配置应用日志
-    
+
     根据配置选择 JSON 或文本格式
     """
     # 获取根日志记录器
     root_logger = logging.getLogger()
     root_logger.setLevel(getattr(logging, settings.log_level.upper()))
-    
+
     # 清除现有处理器
     root_logger.handlers.clear()
-    
+
+    # 添加 job_instance_id 过滤器（自动添加到所有日志记录）
+    job_instance_filter = JobInstanceIdFilter()
+    root_logger.addFilter(job_instance_filter)
+
     # 创建控制台处理器
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(getattr(logging, settings.log_level.upper()))
@@ -114,4 +152,4 @@ def setup_logging() -> None:
     )
 
 
-__all__ = ["setup_logging", "CustomJsonFormatter"]
+__all__ = ["setup_logging", "CustomJsonFormatter", "JobInstanceIdFilter", "set_job_instance_id", "get_job_instance_id"]

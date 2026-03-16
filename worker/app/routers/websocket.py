@@ -46,6 +46,27 @@ async def agentic_test_websocket(
     iot_config = {}
     tester_config = {}
     is_config_initialized = False
+    test_completed = False  # 测试完成标志
+    close_connection_task = None  # 兜底关闭定时器
+
+    async def schedule_close_connection():
+        """兜底方案：如果前端未主动关闭，30秒后服务端主动关闭"""
+        nonlocal test_completed
+        try:
+            await asyncio.sleep(30)  # 等待30秒
+            if test_completed:
+                logger.info(f"Frontend did not close connection in time, server closing: {session_id}")
+                try:
+                    await connection_manager.send_message(
+                        session_id,
+                        {"type": "server_close", "content": "服务端超时关闭连接", "metadata": {"reason": "timeout"}}
+                    )
+                except Exception:
+                    pass
+                # 通过发送异常来触发连接关闭
+                await websocket.close(code=1000, reason="Test completed, timeout close")
+        except asyncio.CancelledError:
+            logger.debug(f"Close connection task cancelled: {session_id}")
 
     try:
         # 注册连接
@@ -106,6 +127,8 @@ async def agentic_test_websocket(
                 elif message_type == "init_config":
                     new_tester_config = data.get("tester_config", {})
                     new_iot_config = data.get("iot_config", {})
+                    job_instance_id = data.get("job_instance_id")  # 前端传入的任务实例ID
+                    task_id = data.get("task_id")  # 前端传入的任务ID
 
                     # 更新配置
                     if new_iot_config:
@@ -117,11 +140,18 @@ async def agentic_test_websocket(
                         tester_config = new_tester_config
                         conn_info.metadata["tester_config"] = tester_config
 
+                    # 保存任务标识
+                    if job_instance_id:
+                        conn_info.metadata["job_instance_id"] = job_instance_id
+                    if task_id:
+                        conn_info.metadata["task_id"] = task_id
+
                     is_config_initialized = True
 
                     logger.info(
                         f"Config initialized for session {session_id}: "
-                        f"tester_config={bool(tester_config)}, iot_config={bool(iot_config)}"
+                        f"tester_config={bool(tester_config)}, iot_config={bool(iot_config)}, "
+                        f"job_instance_id={job_instance_id}, task_id={task_id}"
                     )
 
                     await connection_manager.send_message(
@@ -135,7 +165,9 @@ async def agentic_test_websocket(
                                     "env": iot_config.get("env"),
                                     "has_token": bool(iot_config.get("token")),
                                     "has_family_id": bool(iot_config.get("familyId"))
-                                }
+                                },
+                                "job_instance_id": conn_info.metadata.get("job_instance_id"),
+                                "task_id": conn_info.metadata.get("task_id")
                             }
                         }
                     )
@@ -159,6 +191,8 @@ async def agentic_test_websocket(
 
                     async def send_callback(msg_type: str, content, metadata=None):
                         """Agent 回调函数"""
+                        nonlocal test_completed, close_connection_task
+
                         await connection_manager.send_message(
                             session_id,
                             {
@@ -168,11 +202,19 @@ async def agentic_test_websocket(
                             }
                         )
 
+                        # 检测测试完成消息，启动兜底关闭定时器
+                        if msg_type == "test_completed":
+                            test_completed = True
+                            logger.info(f"Test completed, starting close timer for session {session_id}")
+                            close_connection_task = asyncio.create_task(schedule_close_connection())
+
                     agent = AgenticTestAgent(
                         session_id,
                         send_callback,
                         iot_config,
-                        tester_config=tester_config
+                        tester_config=tester_config,
+                        job_instance_id=conn_info.metadata.get("job_instance_id"),
+                        task_id=conn_info.metadata.get("task_id")
                     )
                     conn_info.metadata["agent"] = agent
 
@@ -190,6 +232,24 @@ async def agentic_test_websocket(
                             }
                         }
                     )
+
+                elif message_type == "close_connection":
+                    # 前端主动关闭连接
+                    logger.info(f"Frontend requested close connection: {session_id}")
+
+                    # 取消兜底定时器
+                    if close_connection_task:
+                        close_connection_task.cancel()
+                        try:
+                            await close_connection_task
+                        except asyncio.CancelledError:
+                            pass
+
+                    await connection_manager.send_message(
+                        session_id,
+                        {"type": "connection_closing", "content": "连接即将关闭"}
+                    )
+                    break  # 退出消息循环，触发finally中的清理
 
                 elif message_type == "stop_test":
                     if agent:
@@ -322,6 +382,14 @@ async def agentic_test_websocket(
         logger.error(f"WebSocket connection error: {e}", exc_info=True)
 
     finally:
+        # 取消兜底关闭定时器
+        if close_connection_task:
+            close_connection_task.cancel()
+            try:
+                await close_connection_task
+            except asyncio.CancelledError:
+                pass
+
         # 停止 agent
         if agent:
             try:

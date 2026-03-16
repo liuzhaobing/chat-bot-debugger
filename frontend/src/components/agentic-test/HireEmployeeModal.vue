@@ -141,51 +141,52 @@
 
       <!-- Dispatch Mode - 派发任务 -->
       <div v-if="mode === 'dispatch'" class="modal-body dispatch-body">
-        <div class="selected-employee">
-          <div class="employee-avatar">
+        <div class="dispatch-layout">
+          <!-- 左侧：数字员工形象 -->
+          <div class="dispatch-avatar">
             <Avatar3D
               animation-state="idle"
-              size="large"
+              size="normal"
               :character-index="employee?.avatar_index || 0"
             />
-          </div>
-          <div class="employee-info">
-            <span class="label">派发给</span>
-            <span class="name">{{ employee?.name }}</span>
-            <span class="voice">{{ employee?.tts_voice?.name || '未配置音色' }}</span>
-          </div>
-        </div>
-
-        <div class="task-form">
-          <div class="form-group">
-            <label>任务名称 <span class="required">*</span></label>
-            <input
-              v-model="taskForm.name"
-              type="text"
-              placeholder="请输入任务名称..."
-              maxlength="100"
-            />
+            <div class="dispatch-employee-info">
+              <span class="name">{{ employee?.name }}</span>
+              <span class="voice">{{ employee?.tts_voice?.name || '未配置音色' }}</span>
+            </div>
           </div>
 
-          <div class="form-group">
-            <label>PRD/需求描述</label>
-            <textarea
-              v-model="taskForm.prd_content"
-              rows="3"
-              placeholder="请输入产品PRD文档内容或一句话需求描述..."
-              maxlength="2000"
-            ></textarea>
-            <span class="char-count">{{ taskForm.prd_content.length }}/2000</span>
-          </div>
+          <!-- 右侧：表单 -->
+          <div class="dispatch-form">
+            <div class="form-group">
+              <label>任务名称 <span class="required">*</span></label>
+              <input
+                v-model="taskForm.name"
+                type="text"
+                placeholder="请输入任务名称..."
+                maxlength="100"
+              />
+            </div>
 
-          <div class="form-group">
-            <label>IOT设备协议</label>
-            <select v-model="taskForm.iot_protocol_id">
-              <option value="">请选择设备协议（可选）</option>
-              <option v-for="protocol in deviceProtocols" :key="protocol.id" :value="protocol.id">
-                {{ protocol.category }} - {{ protocol.id }}
-              </option>
-            </select>
+            <div class="form-group">
+              <label>PRD/需求描述</label>
+              <textarea
+                v-model="taskForm.prd_content"
+                rows="4"
+                placeholder="请输入产品PRD文档内容或一句话需求描述..."
+                maxlength="2000"
+              ></textarea>
+              <span class="char-count">{{ taskForm.prd_content.length }}/2000</span>
+            </div>
+
+            <div class="form-group">
+              <label>IOT设备协议</label>
+              <select v-model="taskForm.iot_protocol_id">
+                <option value="">请选择设备协议（可选）</option>
+                <option v-for="protocol in deviceProtocols" :key="protocol.id" :value="protocol.id">
+                  {{ protocol.category }} - {{ protocol.id }}
+                </option>
+              </select>
+            </div>
           </div>
         </div>
       </div>
@@ -406,9 +407,12 @@ export default {
           employee_id: employeeId,
           iot_protocol_id: this.taskForm.iot_protocol_id || null
         })
-        this.$emit('created', task)
+        // 通过事件通知父组件启动 WebSocket 并执行任务
+        this.$emit('task-created-and-start', {
+          task,
+          employee: this.mode === 'dispatch' ? this.employee : this.createdEmployee
+        })
         this.resetForm()
-        window.$message?.success('任务已派发')
       } catch (error) {
         console.error('创建任务失败:', error)
         window.$message?.error('创建任务失败')
@@ -768,55 +772,53 @@ export default {
 
 /* Dispatch Mode 样式 */
 .dispatch-body {
+  padding: 0;
+}
+
+.dispatch-layout {
+  display: flex;
+  min-height: 400px;
+}
+
+/* 左侧：数字员工形象 */
+.dispatch-avatar {
+  width: 200px;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-}
-
-.selected-employee {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 16px;
-  background: var(--bg-primary, #0d1117);
-  border-radius: 10px;
-  border: 1px solid var(--border-color, #30363d);
-}
-
-.employee-avatar {
-  width: 80px;
-  height: 80px;
-  display: flex;
   align-items: center;
   justify-content: center;
+  padding: 20px;
+  background: var(--bg-primary, #0d1117);
+  border-right: 1px solid var(--border-color, #30363d);
 }
 
-.employee-info {
+.dispatch-employee-info {
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 4px;
+  margin-top: 16px;
 }
 
-.employee-info .label {
-  font-size: 10px;
-  color: var(--text-tertiary, #6e7681);
-}
-
-.employee-info .name {
-  font-size: 16px;
+.dispatch-employee-info .name {
+  font-size: 14px;
   font-weight: 600;
   color: var(--text-primary, #f0f6fc);
 }
 
-.employee-info .voice {
-  font-size: 12px;
-  color: var(--text-secondary, #8b949e);
+.dispatch-employee-info .voice {
+  font-size: 11px;
+  color: var(--text-tertiary, #6e7681);
 }
 
-.task-form {
+/* 右侧：表单 */
+.dispatch-form {
+  flex: 1;
+  padding: 20px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
 
 /* 底部按钮 */
@@ -891,11 +893,6 @@ export default {
 
 /* 响应式 */
 @media (max-width: 600px) {
-  .selected-employee {
-    flex-direction: column;
-    text-align: center;
-  }
-
   .avatar-selector {
     flex-wrap: wrap;
     gap: 4px;
@@ -903,6 +900,17 @@ export default {
 
   .avatar-option {
     padding: 6px 2px;
+  }
+
+  .dispatch-layout {
+    flex-direction: column;
+  }
+
+  .dispatch-avatar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--border-color, #30363d);
+    padding: 16px;
   }
 }
 </style>

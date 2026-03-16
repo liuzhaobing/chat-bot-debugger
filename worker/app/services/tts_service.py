@@ -121,7 +121,7 @@ class TTSService:
         else:
             self._use_mock = False
     
-    async def generate_speech(self, text: str, sample_rate: int = 24000, use_cache: bool = True) -> str:
+    async def generate_speech(self, text: str, sample_rate: int = 24000, use_cache: bool = True, speaker: Optional[str] = None) -> str:
         """
         生成语音数据
 
@@ -129,13 +129,17 @@ class TTSService:
             text: 要转换的文本
             sample_rate: 采样率，默认24000
             use_cache: 是否使用缓存，默认True
+            speaker: 说话人ID，如果不指定则使用默认音色
 
         Returns:
             base64编码的音频数据
         """
+        # 使用传入的speaker或默认speaker
+        actual_speaker = speaker or self.speaker
+
         # 尝试从缓存获取
         if use_cache and TTSService._cache:
-            cached_audio = TTSService._cache.get(text, self.speaker, sample_rate)
+            cached_audio = TTSService._cache.get(text, actual_speaker, sample_rate)
             if cached_audio is not None:
                 return cached_audio
 
@@ -149,7 +153,7 @@ class TTSService:
 
             payload = {
                 "req_params": {
-                    "speaker": self.speaker,
+                    "speaker": actual_speaker,
                     "text": text,
                     "audio_params": {
                         "format": "wav",
@@ -188,7 +192,7 @@ class TTSService:
 
                     # 缓存结果
                     if use_cache and TTSService._cache:
-                        TTSService._cache.set(text, self.speaker, sample_rate, audio_b64)
+                        TTSService._cache.set(text, actual_speaker, sample_rate, audio_b64)
 
                     return audio_b64
 

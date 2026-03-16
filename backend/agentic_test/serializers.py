@@ -89,14 +89,14 @@ class TestTaskSerializer(serializers.ModelSerializer):
         model = TestTask
         fields = [
             'id', 'name', 'prd_content', 'status',
-            'employee', 'iot_protocol',
+            'employee', 'iot_protocol', 'session_id', 'job_instance_id',
             'employee_id', 'iot_protocol_id',
             'tts_voice',  # 向后兼容
             'report_url', 'report_data',
             'result_summary', 'error_message',
             'created_at', 'updated_at', 'started_at', 'completed_at'
         ]
-        read_only_fields = ['report_url', 'report_data', 'result_summary', 'error_message', 'started_at', 'completed_at']
+        read_only_fields = ['job_instance_id', 'report_url', 'report_data', 'result_summary', 'error_message', 'started_at', 'completed_at']
 
     def create(self, validated_data):
         employee_id = validated_data.pop('employee_id', None)
