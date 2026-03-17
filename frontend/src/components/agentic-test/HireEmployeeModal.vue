@@ -318,6 +318,12 @@ export default {
     }
   },
   methods: {
+    generateUUID() {
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+        const r = Math.random() * 16 | 0
+        return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16)
+      })
+    },
     async loadTTSVoices() {
       this.isLoadingVoices = true
       try {
@@ -401,15 +407,21 @@ export default {
 
       this.isCreatingTask = true
       try {
+        // 生成 job_instance_id（关键：前端生成并传递）
+        const jobInstanceId = this.generateUUID()
+
         const task = await sceneTestService.createTestTask({
           name: this.taskForm.name,
           prd_content: this.taskForm.prd_content,
           employee_id: employeeId,
-          iot_protocol_id: this.taskForm.iot_protocol_id || null
+          iot_protocol_id: this.taskForm.iot_protocol_id || null,
+          job_instance_id: jobInstanceId  // 传递 job_instance_id
         })
+
         // 通过事件通知父组件启动 WebSocket 并执行任务
+        // 确保 task 包含 job_instance_id（如果后端返回的不包含，使用前端生成的）
         this.$emit('task-created-and-start', {
-          task,
+          task: { ...task, job_instance_id: task.job_instance_id || jobInstanceId },
           employee: this.mode === 'dispatch' ? this.employee : this.createdEmployee
         })
         this.resetForm()

@@ -316,42 +316,37 @@ class TestTaskViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['post'], url_path='update-job-info')
     def update_job_info(self, request):
-        """更新任务的 session_id 和 job_instance_id（内部API，由 Worker 启动时调用）
+        """更新任务状态为 running（内部API，由 Worker 启动时调用）
 
         请求格式:
         {
-            "session_id": "xxx",
-            "job_instance_id": "xxx"  # 等于 session_id
+            "job_instance_id": "xxx"  # 必需，用于精确查找任务
         }
         """
-        session_id = request.data.get('session_id')
         job_instance_id = request.data.get('job_instance_id')
 
-        if not session_id:
+        if not job_instance_id:
             return Response({
                 'status': 'error',
-                'message': 'session_id 是必需的'
+                'message': 'job_instance_id 是必需的'
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # 查找最近的 pending 或 running 任务（避免覆盖已完成的任务）
-        task = TestTask.objects.filter(
-            status__in=['pending', 'running']
-        ).order_by('-created_at').first()
-
-        if not task:
+        # 精确查找任务
+        try:
+            task = TestTask.objects.get(job_instance_id=job_instance_id)
+        except TestTask.DoesNotExist:
             return Response({
                 'status': 'error',
-                'message': '找不到可更新的 pending 或 running 任务'
+                'message': f'找不到 job_instance_id={job_instance_id} 的任务'
             }, status=status.HTTP_404_NOT_FOUND)
 
         # 更新字段
-        task.session_id = session_id
-        task.job_instance_id = job_instance_id or session_id
         task.status = 'running'
+        task.session_id = job_instance_id  # session_id 也使用 job_instance_id
         task.started_at = timezone.now()
         task.save()
 
-        logger.info(f"Task {task.id} updated: status=running, session_id={session_id}, job_instance_id={task.job_instance_id}")
+        logger.info(f"Task {task.id} updated: status=running, session_id={job_instance_id}, job_instance_id={job_instance_id}")
 
         return Response({
             'status': 'success',

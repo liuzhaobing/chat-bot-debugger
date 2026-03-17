@@ -520,6 +520,7 @@ export default {
         prd_content: task.prd_content || '',
         tts_voice_id: employee?.tts_voice?.speaker || '',
         iot_protocol_id: task.iot_protocol?.id || '',
+        job_instance_id: task.job_instance_id  // 关键：传递 job_instance_id
       }
 
       this.$emit('start-session-with-config', {

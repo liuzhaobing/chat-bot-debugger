@@ -127,8 +127,13 @@ class AgenticTestAgent:
         self.current_asr_result = ""
         self.real_voice_active_time = 0.0
 
-        # 任务标识：job_instance_id 直接使用 session_id
-        self.job_instance_id = session_id
+        # 任务标识：优先使用传入的 job_instance_id，其次从 tester_config 获取，最后使用 session_id
+        if job_instance_id:
+            self.job_instance_id = job_instance_id
+        elif tester_config and tester_config.get('job_instance_id'):
+            self.job_instance_id = tester_config.get('job_instance_id')
+        else:
+            self.job_instance_id = session_id
 
         # 设置日志上下文
         set_job_instance_id(self.job_instance_id)
@@ -1101,7 +1106,7 @@ class AgenticTestAgent:
             return False
 
         try:
-            url = f"{self.backend_service.backend_url}/api/test-tasks/stop-by-job-instance/"
+            url = f"{self.backend_service.backend_url}/api/agentic-test/test-tasks/stop-by-job-instance/"
 
             payload = {"job_instance_id": self.job_instance_id}
 
@@ -1140,7 +1145,7 @@ class AgenticTestAgent:
 
         try:
             # 调用后端 API 保存报告
-            url = f"{self.backend_service.backend_url}/api/test-tasks/complete-by-job-instance/"
+            url = f"{self.backend_service.backend_url}/api/agentic-test/test-tasks/complete-by-job-instance/"
 
             # 生成报告摘要
             summary_parts = []
@@ -1178,23 +1183,21 @@ class AgenticTestAgent:
             return False
 
     async def _update_task_job_info(self) -> bool:
-        """更新任务的 session_id 和 job_instance_id
+        """更新任务状态为 running
 
-        在任务启动时调用，将 session_id 关联到 TestTask。
-        job_instance_id 等于 session_id。
+        在任务启动时调用，通过 job_instance_id 精确查找任务并更新状态。
 
         Returns:
             是否更新成功
         """
         try:
-            url = f"{self.backend_service.backend_url}/api/test-tasks/update-job-info/"
+            url = f"{self.backend_service.backend_url}/api/agentic-test/test-tasks/update-job-info/"
 
             payload = {
-                "session_id": self.session_id,
                 "job_instance_id": self.job_instance_id
             }
 
-            logger.info(f"Updating job info: session_id={self.session_id}, job_instance_id={self.job_instance_id}")
+            logger.info(f"Updating job info: job_instance_id={self.job_instance_id}")
 
             import httpx
             async with httpx.AsyncClient(timeout=10.0) as client:

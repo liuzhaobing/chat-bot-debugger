@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from .models import AgenticTestSession, AgenticTestLog, DeviceStatus, DeviceProtocol, TestTask, DigitalEmployee
+import uuid
 
 
 class AgenticTestSessionSerializer(serializers.ModelSerializer):
@@ -96,11 +97,16 @@ class TestTaskSerializer(serializers.ModelSerializer):
             'result_summary', 'error_message',
             'created_at', 'updated_at', 'started_at', 'completed_at'
         ]
-        read_only_fields = ['job_instance_id', 'report_url', 'report_data', 'result_summary', 'error_message', 'started_at', 'completed_at']
+        # job_instance_id 可以由前端传入，不再设为只读
+        read_only_fields = ['report_url', 'report_data', 'result_summary', 'error_message', 'started_at', 'completed_at']
 
     def create(self, validated_data):
         employee_id = validated_data.pop('employee_id', None)
         iot_protocol_id = validated_data.pop('iot_protocol_id', None)
+
+        # 如果没有提供 job_instance_id，自动生成
+        if not validated_data.get('job_instance_id'):
+            validated_data['job_instance_id'] = str(uuid.uuid4())
 
         # 设置外键关系
         if employee_id:

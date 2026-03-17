@@ -221,6 +221,9 @@ export default {
       // 当前任务（用于关联测试报告）
       currentTask: null,
 
+      // job_instance_id（用于 WebSocket session_id 和任务关联）
+      jobInstanceId: null,
+
       // WebSocket
       websocket: null,
       reconnectAttempts: 0,
@@ -564,7 +567,13 @@ export default {
       // 保存任务信息（用于关联测试报告）
       if (payload.task) {
         this.currentTask = payload.task
-        this.addSystemLog('task', 'info', `关联任务: ${payload.task.name}`, { task_id: payload.task.id })
+        this.addSystemLog('task', 'info', `关联任务: ${payload.task.name}`, { task_id: payload.task.id, job_instance_id: payload.task.job_instance_id })
+      }
+
+      // 关键：保存 job_instance_id（用于 WebSocket session_id）
+      if (payload.task?.job_instance_id) {
+        this.jobInstanceId = payload.task.job_instance_id
+        this.addSystemLog('session', 'info', `使用 job_instance_id 作为 session_id: ${this.jobInstanceId}`)
       }
 
       // 调用标准启动流程
@@ -643,8 +652,9 @@ export default {
         this.websocket = null
       }
 
-      // 确保有有效的 session，如果没有则创建新的
-      let sessionId = this.currentSession?.id
+      // 优先使用 jobInstanceId 作为 session_id（用于精确任务关联）
+      // 如果没有 jobInstanceId，则使用 currentSession.id 或创建新会话
+      let sessionId = this.jobInstanceId || this.currentSession?.id
       if (!sessionId) {
         this.addSystemLog('session', 'info', '正在创建新会话...')
         try {
@@ -677,13 +687,16 @@ export default {
 
           const initConfigMessage = {
             type: 'init_config',
-            tester_config: this.testerConfig,
+            tester_config: {
+              ...this.testerConfig,
+              job_instance_id: this.jobInstanceId  // 关键：在 init_config 中传递 job_instance_id
+            },
             iot_config: iotConfig,
             timestamp: Date.now()
           }
           this.websocket.send(JSON.stringify(initConfigMessage))
           this.addSystemLog('config', 'info', '已发送 init_config 消息', {
-            tester_config: this.testerConfig,
+            tester_config: { ...this.testerConfig, job_instance_id: this.jobInstanceId },
             iot_config: { env: iotConfig.env, has_token: !!iotConfig.token }
           })
 
@@ -756,7 +769,7 @@ export default {
      * 测试完成后关闭WebSocket连接
      * 发送close_connection消息通知服务端，然后关闭连接
      */
-    closeWebSocketAfterTest() {
+    async closeWebSocketAfterTest() {
       if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
         try {
           // 发送关闭连接消息通知服务端
@@ -776,10 +789,43 @@ export default {
       this.isSessionActive = false
       this.isConfigInitialized = false
 
+      // 关键：释放音频资源（麦克风和扬声器）
+      await this.cleanupAudioResources()
+
       // 刷新 SceneTestPanel 的任务列表
       if (this.$refs.sceneTestPanel && this.currentTask?.employee?.id) {
         this.$refs.sceneTestPanel.loadEmployeeTasks(this.currentTask.employee.id)
       }
+    },
+
+    /**
+     * 清理音频资源（麦克风和扬声器）
+     */
+    async cleanupAudioResources() {
+      console.log('开始清理音频资源...')
+
+      // 停止会话计时器
+      this.stopSessionTimer()
+
+      // 销毁音频处理器（释放麦克风）
+      if (this.audioProcessor) {
+        console.log('销毁音频处理器...')
+        this.audioProcessor.destroy()
+        this.audioProcessor = null
+        this.addSystemLog('audio', 'info', '麦克风已释放')
+      }
+
+      // 释放音频播放上下文（释放扬声器）
+      await this.releaseAudioPlaybackContext()
+
+      // 重置音频相关状态
+      this.hasAudioActivity = false
+      this.currentAudioLevel = 0
+      this.sessionDuration = 0
+      this.isConnecting = false
+      this.connectionStatus = 'disconnected'
+
+      console.log('音频资源清理完成')
     },
 
     /**
