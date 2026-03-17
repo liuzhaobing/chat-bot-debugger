@@ -194,6 +194,44 @@ class BackendService:
                 error=error_msg
             )
 
+    async def get_device_protocol(self, protocol_id: str) -> Optional[Dict[str, Any]]:
+        """
+        获取设备协议详情
+
+        API 端点: GET /api/agentic-test/device-protocols/{protocol_id}/
+
+        Args:
+            protocol_id: 设备协议 ID
+
+        Returns:
+            协议详情字典，如果失败返回 None
+        """
+        url = f"{self.backend_url}/api/agentic-test/device-protocols/{protocol_id}/"
+        request_timeout = self.default_timeout
+
+        try:
+            async with httpx.AsyncClient(timeout=request_timeout) as client:
+                logger.debug(f"Fetching device protocol: {protocol_id}")
+                logger.debug(f"URL: {url}")
+
+                response = await client.get(url)
+                response.raise_for_status()
+
+                data = response.json()
+                logger.info(f"Successfully fetched device protocol: {protocol_id}")
+                return data
+
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                logger.warning(f"Device protocol not found: {protocol_id}")
+            else:
+                logger.error(f"Failed to fetch device protocol: {e.response.status_code}")
+            return None
+
+        except Exception as e:
+            logger.error(f"Failed to fetch device protocol: {e}", exc_info=True)
+            return None
+
     def _parse_invoke_response(self, data: Dict[str, Any]) -> AppInvokeResult:
         """
         解析 invoke API 响应

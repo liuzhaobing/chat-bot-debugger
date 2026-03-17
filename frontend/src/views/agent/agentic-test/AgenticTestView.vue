@@ -883,9 +883,19 @@ export default {
             this.addSystemLog('error', 'error', data.content, data.metadata)
             break
 
+          case 'test_cases_ready':
+            // 测试用例准备就绪，即将开始执行
+            var readyCasesCount = (data.content && data.content.count) || 0
+            var readyTestCases = (data.content && data.content.test_cases) || []
+            this.addSystemLog('system', 'success', '测试用例准备就绪，共 ' + readyCasesCount + ' 个用例', readyTestCases)
+            // 可以在这里更新 UI 显示测试用例列表
+            this.$emit('test-cases-ready', readyTestCases)
+            break
+
           case 'test_completed':
             // 测试完成，显示报告摘要并关闭连接
-            this.addSystemLog('system', 'success', `测试完成: 共${data.content?.total_cases || 0}个用例, 通过${data.content?.passed || 0}个, 失败${data.content?.failed || 0}个`, data.content)
+            var content = data.content || {}
+            this.addSystemLog('system', 'success', '测试完成: 共' + (content.total_cases || 0) + '个用例, 通过' + (content.passed || 0) + '个, 失败' + (content.failed || 0) + '个', data.content)
             // 延迟关闭连接，给日志渲染一点时间
             setTimeout(() => {
               this.closeWebSocketAfterTest()

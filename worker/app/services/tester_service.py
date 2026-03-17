@@ -445,21 +445,80 @@ class TesterService:
     async def design_test_cases(
         self,
         prd: str,
+        functions_md: Optional[str] = None,
         backend_service=None
     ) -> List[TestCase]:
         """设计测试用例
 
-        根据PRD（产品需求文档）自动生成测试用例。
+        根据PRD（产品需求文档）和设备功能说明自动生成测试用例。
 
         Args:
             prd: 产品需求文档内容
+            functions_md: 设备功能说明（Markdown格式，可选）
             backend_service: BackendService 实例（可选）
 
         Returns:
             生成的测试用例列表
         """
-        cases = await self.case_manager.design_cases_from_prd(prd, backend_service)
+        cases = await self.case_manager.design_cases_from_prd(prd, functions_md, backend_service)
         await self._send_callback('log', f'根据PRD生成了 {len(cases)} 个测试用例')
+
+        return cases
+
+    async def generate_test_cases_from_config(self) -> List[TestCase]:
+        """根据配置生成测试用例
+
+        如果配置中有 prd_content，则根据 PRD 和设备功能说明生成测试用例。
+        生成成功后，清空默认用例，使用新生成的用例。
+
+        Returns:
+            生成的测试用例列表
+        """
+        if not self.config.prd_content:
+            logger.info("No PRD content provided, using default test cases")
+            return self.case_manager.get_all_cases()
+
+        logger.info("Generating test cases from PRD...")
+
+        # 获取设备功能说明
+        functions_md = None
+        if self.config.iot_protocol_id and self.backend_service:
+            await self._send_callback('status', '正在获取设备功能说明...')
+            protocol = await self.backend_service.get_device_protocol(
+                self.config.iot_protocol_id
+            )
+            if protocol:
+                functions_md = protocol.get('functions_md', '')
+                if functions_md:
+                    logger.info(f"Retrieved functions_md, length: {len(functions_md)}")
+                else:
+                    logger.warning(f"No functions_md in protocol: {self.config.iot_protocol_id}")
+            else:
+                logger.warning(f"Failed to retrieve protocol: {self.config.iot_protocol_id}")
+
+        # 生成测试用例
+        await self._send_callback('status', '正在生成测试用例...')
+        cases = await self.design_test_cases(
+            prd=self.config.prd_content,
+            functions_md=functions_md,
+            backend_service=self.backend_service
+        )
+
+        if cases:
+            # 清空默认用例，使用新生成的用例
+            self.case_manager.test_cases = []
+            self.case_manager._case_map = {}
+            self.case_manager.current_index = 0
+
+            for case in cases:
+                self.case_manager.add_case(case)
+
+            logger.info(f"Generated and loaded {len(cases)} test cases")
+            await self._send_callback('status', f'已生成 {len(cases)} 个测试用例')
+        else:
+            logger.warning("Failed to generate test cases, using default test cases")
+            await self._send_callback('log', '测试用例生成失败，使用默认测试用例')
+
         return cases
 
     def get_test_cases(self) -> List[TestCase]:

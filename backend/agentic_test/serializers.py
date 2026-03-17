@@ -24,7 +24,7 @@ class DeviceStatusSerializer(serializers.ModelSerializer):
 class DeviceProtocolSerializer(serializers.ModelSerializer):
     class Meta:
         model = DeviceProtocol
-        fields = ['id', 'protocol', 'category', 'created_at', 'updated_at']
+        fields = ['id', 'protocol', 'category', 'functions_md', 'created_at', 'updated_at']
 
 
 class TTSVoiceSimpleSerializer(serializers.Serializer):

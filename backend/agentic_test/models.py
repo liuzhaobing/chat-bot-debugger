@@ -101,6 +101,7 @@ class DeviceProtocol(models.Model):
     id = models.CharField(max_length=100, primary_key=True, help_text="设备标准名")
     protocol = models.JSONField(help_text="设备协议详情")
     category = models.CharField(max_length=100, help_text="设备品类")
+    functions_md = models.TextField(blank=True, default='', help_text="设备功能说明(Markdown格式)")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     

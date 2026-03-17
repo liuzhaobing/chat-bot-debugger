@@ -151,6 +151,37 @@ class TestCaseManager:
 
         logger.info(f"Loaded {len(self.test_cases)} default test cases")
 
+    def _build_test_case_prompt(
+        self,
+        prd: str,
+        functions_md: Optional[str] = None
+    ) -> str:
+        """构建测试用例设计的提示词
+
+        将 PRD 和设备功能说明整合成一个完整的提示词，用于测试用例设计 App。
+
+        Args:
+            prd: 产品需求文档内容
+            functions_md: 设备功能说明（Markdown格式）
+
+        Returns:
+            构建好的提示词
+        """
+        prompt_parts = []
+
+        # 添加设备功能说明
+        if functions_md:
+            prompt_parts.append("## IOT 设备功能说明 - 支持语音控制设备的能力列表\n")
+            prompt_parts.append(functions_md)
+
+        # 添加 PRD 部分
+        if functions_md:
+            prompt_parts.append("## 任务要求")
+            prompt_parts.append("请分析以下需求，生成完整的测试用例集，以 JSON 格式输出：")
+            prompt_parts.append(prd)
+
+        return "\n".join(prompt_parts)
+
     async def load_cases(self, source: str) -> int:
         """从文件加载测试用例
 
@@ -183,28 +214,35 @@ class TestCaseManager:
     async def design_cases_from_prd(
         self,
         prd: str,
+        functions_md: Optional[str] = None,
         backend_service: Optional[BackendService] = None
     ) -> List[TestCase]:
         """根据PRD（产品需求文档）自动设计测试用例
 
-        通过调用后端的测试用例设计 APP，根据 PRD 内容自动生成测试用例。
+        通过调用后端的测试用例设计 APP，根据 PRD 内容和设备功能说明自动生成测试用例。
 
         Args:
             prd: 产品需求文档内容
+            functions_md: 设备功能说明（Markdown格式）
             backend_service: BackendService 实例（可选，不传则自动创建）
 
         Returns:
             生成的测试用例列表
         """
         logger.info(f"Designing test cases from PRD, length: {len(prd)}")
+        if functions_md:
+            logger.info(f"Functions MD provided, length: {len(functions_md)}")
 
         # 使用从 app_ids 导入的常量
         service = backend_service or BackendService()
 
+        # 构建完整的提示词，包含 PRD 和设备功能说明
+        prompt = self._build_test_case_prompt(prd, functions_md)
+
         try:
             result = await service.invoke_app(
                 app_id=TEST_CASE_DESIGNER_APP_ID,
-                message=prd
+                message=prompt
             )
 
             if not result.success:
@@ -215,8 +253,7 @@ class TestCaseManager:
             content = result.content
             logger.info(f"Test case designer returned {len(content)} chars")
 
-            # TODO: 根据 APP 返回格式解析测试用例
-            # 这里需要根据实际的 APP 返回格式进行调整
+            # 解析 JSON 格式的用例
             import json
             try:
                 # 尝试解析 JSON 格式的用例
@@ -226,7 +263,7 @@ class TestCaseManager:
                     case = TestCase.from_dict(case_data)
                     test_cases.append(case)
                     self._case_map[case.id] = case
-                self.test_cases.extend(test_cases)
+                # 注意：不再自动添加到 self.test_cases，由调用方决定
                 logger.info(f"Generated {len(test_cases)} test cases from PRD")
                 return test_cases
             except json.JSONDecodeError:

@@ -140,7 +140,10 @@ class Settings(BaseSettings):
     
     # ==================== 日志配置 ====================
     log_format: str = Field(default="json", description="日志格式")
-    log_file_path: str = Field(default="./logs/worker.log", description="日志文件路径")
+    log_file_path: str = Field(
+        default="",  # 默认为空，通过 __init__ 设置绝对路径
+        description="日志文件路径"
+    )
     log_file_max_bytes: int = Field(default=10485760, description="日志文件最大字节")
     log_file_backup_count: int = Field(default=5, description="日志文件备份数量")
     
@@ -177,6 +180,14 @@ class Settings(BaseSettings):
         if isinstance(v, list):
             return ",".join(v)
         return v if isinstance(v, str) else str(v)
+
+    @field_validator("log_file_path", mode="after")
+    @classmethod
+    def set_default_log_path(cls, v: str) -> str:
+        """如果未设置日志路径，使用 WORKER_DIR 下的绝对路径"""
+        if not v:
+            return str(WORKER_DIR / "logs" / "worker.log")
+        return v
 
     # ========== 列表属性访问器 ==========
     @property

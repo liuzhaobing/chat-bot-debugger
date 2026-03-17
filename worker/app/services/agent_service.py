@@ -38,7 +38,7 @@ from app.services.iot_service import IOTService
 from app.services.audio_processor import AudioProcessingService
 from app.services.backend_service import BackendService
 from app.services.tester_service import TesterService
-from app.services.tester.models import NextAction
+from app.services.tester.models import NextAction, TestCase
 from app.utils.audio_utils import AudioConverter
 from app.config import settings
 
@@ -123,6 +123,7 @@ class AgenticTestAgent:
         self.session_id = session_id
         self.send_callback = send_callback
         self.is_running = False
+        self._test_completed = False  # 标记测试是否已正常完成
         self.current_query = ""
         self.current_asr_result = ""
         self.real_voice_active_time = 0.0
@@ -240,12 +241,30 @@ class AgenticTestAgent:
         # 更新任务的 job_instance_id（如果有 task_id）
         await self._update_task_job_info()
 
+        # 如果有 PRD 内容，生成测试用例
+        if self.tester_config and self.tester_config.get('prd_content'):
+            await self.send_callback('status', '正在根据PRD生成测试用例...')
+            cases = await self.tester_service.generate_test_cases_from_config()
+            if cases:
+                await self.send_callback('log', f'成功生成 {len(cases)} 个测试用例')
+                # 通知前端用例已准备就绪
+                await self.send_callback('test_cases_ready', {
+                    'count': len(cases),
+                    'test_cases': [tc.to_dict() for tc in cases]
+                })
+            else:
+                await self.send_callback('log', '使用默认测试用例')
+
         try:
             # 初始化设备状态
             await self.initialize_device_status()
 
             # 设置测试工程师服务的家庭设备
             self.tester_service.set_family_devices(self.family_devices)
+
+            # 通知前端测试用例准备就绪，即将开始执行
+            all_cases = self.tester_service.get_test_cases()
+            await self.send_callback('status', f'测试用例准备就绪，共 {len(all_cases)} 个用例')
 
             # 获取初始查询：优先使用外部传入的，否则从测试用例生成
             if initial_query:
@@ -873,6 +892,9 @@ class AgenticTestAgent:
                     # 保存报告到数据库
                     await self._save_report_to_database(report)
 
+                    # 标记测试已完成（避免 stop() 时覆盖状态）
+                    self._test_completed = True
+
                     # 发送测试完成通知，前端收到后应关闭连接
                     await self.send_callback('test_completed', {
                         'session_id': self.session_id,
@@ -1095,8 +1117,12 @@ class AgenticTestAgent:
         # 停止测试工程师服务
         await self.tester_service.stop()
 
-        # 更新数据库任务状态为 stopped
-        await self._update_task_status_stopped()
+        # 更新数据库任务状态为 stopped（仅当测试未正常完成时）
+        # 如果测试已正常完成（状态为 completed），不应覆盖为 stopped
+        if not self._test_completed:
+            await self._update_task_status_stopped()
+        else:
+            logger.info(f"Test already completed, skip updating status to stopped")
 
         logger.info(f"Agent stopped for session {self.session_id}")
 
