@@ -154,15 +154,17 @@ class TestCaseManager:
     def _build_test_case_prompt(
         self,
         prd: str,
-        functions_md: Optional[str] = None
+        functions_md: Optional[str] = None,
+        devices_md: Optional[str] = None
     ) -> str:
         """构建测试用例设计的提示词
 
-        将 PRD 和设备功能说明整合成一个完整的提示词，用于测试用例设计 App。
+        将 PRD、设备功能说明和家庭设备信息整合成一个完整的提示词，用于测试用例设计 App。
 
         Args:
             prd: 产品需求文档内容
             functions_md: 设备功能说明（Markdown格式）
+            devices_md: 家庭设备信息（Markdown格式）
 
         Returns:
             构建好的提示词
@@ -171,16 +173,21 @@ class TestCaseManager:
 
         # 添加设备功能说明
         if functions_md:
-            prompt_parts.append("## IOT 设备功能说明 - 支持语音控制设备的能力列表\n")
+            prompt_parts.append("## IOT 设备功能说明 - 支持语音控制设备的能力列表")
             prompt_parts.append(functions_md)
 
+        # 添加家庭设备信息
+        if devices_md:
+            prompt_parts.append("## 家庭设备列表 - 当前家庭中实际存在的设备")
+            prompt_parts.append(devices_md)
+
         # 添加 PRD 部分
-        if functions_md:
+        if prd:
             prompt_parts.append("## 任务要求")
             prompt_parts.append("请分析以下需求，生成完整的测试用例集，以 JSON 格式输出：")
             prompt_parts.append(prd)
 
-        return "\n".join(prompt_parts)
+        return "\n\n".join(prompt_parts)
 
     async def load_cases(self, source: str) -> int:
         """从文件加载测试用例
@@ -215,15 +222,17 @@ class TestCaseManager:
         self,
         prd: str,
         functions_md: Optional[str] = None,
+        devices_md: Optional[str] = None,
         backend_service: Optional[BackendService] = None
     ) -> List[TestCase]:
         """根据PRD（产品需求文档）自动设计测试用例
 
-        通过调用后端的测试用例设计 APP，根据 PRD 内容和设备功能说明自动生成测试用例。
+        通过调用后端的测试用例设计 APP，根据 PRD 内容、设备功能说明和家庭设备信息自动生成测试用例。
 
         Args:
             prd: 产品需求文档内容
             functions_md: 设备功能说明（Markdown格式）
+            devices_md: 家庭设备信息（Markdown格式）
             backend_service: BackendService 实例（可选，不传则自动创建）
 
         Returns:
@@ -232,17 +241,20 @@ class TestCaseManager:
         logger.info(f"Designing test cases from PRD, length: {len(prd)}")
         if functions_md:
             logger.info(f"Functions MD provided, length: {len(functions_md)}")
+        if devices_md:
+            logger.info(f"Devices MD provided, length: {len(devices_md)}")
 
         # 使用从 app_ids 导入的常量
         service = backend_service or BackendService()
 
-        # 构建完整的提示词，包含 PRD 和设备功能说明
-        prompt = self._build_test_case_prompt(prd, functions_md)
+        # 构建完整的提示词，包含 PRD、设备功能说明和家庭设备信息
+        prompt = self._build_test_case_prompt(prd, functions_md, devices_md)
 
         try:
             result = await service.invoke_app(
                 app_id=TEST_CASE_DESIGNER_APP_ID,
-                message=prompt
+                message=prompt,
+                timeout=600,
             )
 
             if not result.success:

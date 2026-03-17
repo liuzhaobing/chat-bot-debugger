@@ -241,26 +241,31 @@ class AgenticTestAgent:
         # 更新任务的 job_instance_id（如果有 task_id）
         await self._update_task_job_info()
 
-        # 如果有 PRD 内容，生成测试用例
-        if self.tester_config and self.tester_config.get('prd_content'):
-            await self.send_callback('status', '正在根据PRD生成测试用例...')
-            cases = await self.tester_service.generate_test_cases_from_config()
-            if cases:
-                await self.send_callback('log', f'成功生成 {len(cases)} 个测试用例')
-                # 通知前端用例已准备就绪
-                await self.send_callback('test_cases_ready', {
-                    'count': len(cases),
-                    'test_cases': [tc.to_dict() for tc in cases]
-                })
-            else:
-                await self.send_callback('log', '使用默认测试用例')
-
         try:
-            # 初始化设备状态
+            # 初始化设备状态 - 必须在生成测试用例之前执行
             await self.initialize_device_status()
 
             # 设置测试工程师服务的家庭设备
             self.tester_service.set_family_devices(self.family_devices)
+
+            # 如果有 PRD 内容，生成测试用例
+            prd_content = self.tester_config.get('prd_content') if self.tester_config else None
+            if prd_content and prd_content != '测试':
+                await self.send_callback('status', '正在根据PRD生成测试用例...')
+                devices_md = self._format_devices_to_markdown()  # 将家庭设备信息转换为 Markdown 格式，用于生成测试用例
+                cases = await self.tester_service.generate_test_cases_from_config(devices_md)
+                if cases:
+                    await self.send_callback('log', f'成功生成 {len(cases)} 个测试用例')
+                    # 通知前端用例已准备就绪
+                    await self.send_callback('test_cases_ready', {
+                        'count': len(cases),
+                        'test_cases': [tc.to_dict() for tc in cases]
+                    })
+                else:
+                    await self.send_callback('log', '生成测试用例为空，使用默认测试用例')
+            # 后门：当 prd_content == '测试' 时，跳过生成，直接使用默认用例
+            elif prd_content == '测试':
+                await self.send_callback('log', '检测到测试标记，使用默认测试用例')
 
             # 通知前端测试用例准备就绪，即将开始执行
             all_cases = self.tester_service.get_test_cases()
@@ -401,6 +406,29 @@ class AgenticTestAgent:
         except Exception as e:
             logger.error(f"Failed to initialize device status: {e}")
             await self.send_callback('warning', f'设备状态初始化失败: {str(e)}')
+
+    def _format_devices_to_markdown(self) -> Optional[str]:
+        """将家庭设备信息转换为 Markdown 格式
+
+        Returns:
+            设备信息的 Markdown 字符串，如果没有设备则返回 None
+        """
+        if not self.family_devices:
+            return None
+
+        md_lines = ["| 设备类型 | 设备型号| 设备昵称 | 设备GUID |",
+                    "|--------|--------|--------|--------|"]
+
+        for device_guid, device_info in self.family_devices.items():
+            nick_name = device_info.get('nick_name') or ' '
+            category_name = device_info.get('category_name')
+            display_type = device_info.get('display_type')
+
+            if category_name == 'AI智能眼镜':
+                continue
+            md_lines.append(f"| {category_name} | {display_type}| {nick_name}  | {device_guid} |")
+
+        return "\n".join(md_lines)
 
     # ========================================================================
     # 音频输入层 (Audio Input Layer)

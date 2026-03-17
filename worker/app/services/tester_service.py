@@ -446,30 +446,38 @@ class TesterService:
         self,
         prd: str,
         functions_md: Optional[str] = None,
+        devices_md: Optional[str] = None,
         backend_service=None
     ) -> List[TestCase]:
         """设计测试用例
 
-        根据PRD（产品需求文档）和设备功能说明自动生成测试用例。
+        根据PRD（产品需求文档）、设备功能说明和家庭设备信息自动生成测试用例。
 
         Args:
             prd: 产品需求文档内容
             functions_md: 设备功能说明（Markdown格式，可选）
+            devices_md: 家庭设备信息（Markdown格式，可选）
             backend_service: BackendService 实例（可选）
 
         Returns:
             生成的测试用例列表
         """
-        cases = await self.case_manager.design_cases_from_prd(prd, functions_md, backend_service)
+        cases = await self.case_manager.design_cases_from_prd(prd, functions_md, devices_md, backend_service)
         await self._send_callback('log', f'根据PRD生成了 {len(cases)} 个测试用例')
 
         return cases
 
-    async def generate_test_cases_from_config(self) -> List[TestCase]:
+    async def generate_test_cases_from_config(
+        self,
+        devices_md: Optional[str] = None
+    ) -> List[TestCase]:
         """根据配置生成测试用例
 
-        如果配置中有 prd_content，则根据 PRD 和设备功能说明生成测试用例。
+        如果配置中有 prd_content，则根据 PRD、设备功能说明和家庭设备信息生成测试用例。
         生成成功后，清空默认用例，使用新生成的用例。
+
+        Args:
+            devices_md: 家庭设备信息（Markdown格式，可选）
 
         Returns:
             生成的测试用例列表
@@ -501,6 +509,7 @@ class TesterService:
         cases = await self.design_test_cases(
             prd=self.config.prd_content,
             functions_md=functions_md,
+            devices_md=devices_md,
             backend_service=self.backend_service
         )
 
