@@ -116,6 +116,7 @@ class TestTask(models.Model):
         ('running', '运行中'),
         ('completed', '已完成'),
         ('failed', '失败'),
+        ('stopped', '已停止'),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

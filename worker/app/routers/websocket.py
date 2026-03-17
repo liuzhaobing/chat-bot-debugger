@@ -127,8 +127,6 @@ async def agentic_test_websocket(
                 elif message_type == "init_config":
                     new_tester_config = data.get("tester_config", {})
                     new_iot_config = data.get("iot_config", {})
-                    job_instance_id = data.get("job_instance_id")  # 前端传入的任务实例ID
-                    task_id = data.get("task_id")  # 前端传入的任务ID
 
                     # 更新配置
                     if new_iot_config:
@@ -140,18 +138,11 @@ async def agentic_test_websocket(
                         tester_config = new_tester_config
                         conn_info.metadata["tester_config"] = tester_config
 
-                    # 保存任务标识
-                    if job_instance_id:
-                        conn_info.metadata["job_instance_id"] = job_instance_id
-                    if task_id:
-                        conn_info.metadata["task_id"] = task_id
-
                     is_config_initialized = True
 
                     logger.info(
                         f"Config initialized for session {session_id}: "
-                        f"tester_config={bool(tester_config)}, iot_config={bool(iot_config)}, "
-                        f"job_instance_id={job_instance_id}, task_id={task_id}"
+                        f"tester_config={bool(tester_config)}, iot_config={bool(iot_config)}"
                     )
 
                     await connection_manager.send_message(
@@ -165,9 +156,7 @@ async def agentic_test_websocket(
                                     "env": iot_config.get("env"),
                                     "has_token": bool(iot_config.get("token")),
                                     "has_family_id": bool(iot_config.get("familyId"))
-                                },
-                                "job_instance_id": conn_info.metadata.get("job_instance_id"),
-                                "task_id": conn_info.metadata.get("task_id")
+                                }
                             }
                         }
                     )
@@ -212,9 +201,7 @@ async def agentic_test_websocket(
                         session_id,
                         send_callback,
                         iot_config,
-                        tester_config=tester_config,
-                        job_instance_id=conn_info.metadata.get("job_instance_id"),
-                        task_id=conn_info.metadata.get("task_id")
+                        tester_config=tester_config
                     )
                     conn_info.metadata["agent"] = agent
 
@@ -252,15 +239,24 @@ async def agentic_test_websocket(
                     break  # 退出消息循环，触发finally中的清理
 
                 elif message_type == "stop_test":
+                    # 停止测试任务
                     if agent:
                         await agent.stop()
 
                     # 清空音频缓冲区
                     audio_buffer.clear()
 
+                    # 发送停止确认消息，通知前端可以关闭连接
                     await connection_manager.send_message(
                         session_id,
-                        {"type": "status", "content": "测试已停止"}
+                        {
+                            "type": "test_stopped",
+                            "content": "测试已停止",
+                            "metadata": {
+                                "session_id": session_id,
+                                "status": "stopped"
+                            }
+                        }
                     )
 
                 elif message_type == "audio_data":

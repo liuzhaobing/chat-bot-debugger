@@ -63,17 +63,17 @@
           <span>VAD+ASR调试</span>
         </button>
         -->
-        <!-- 语音会话按钮 -->
-        <button 
-          class="session-status-btn" 
+        <!-- 语音会话按钮 - 仅在连接建立时显示 -->
+        <button
+          v-if="isConnecting || isSessionActive"
+          class="session-status-btn"
           @click="handleVoiceAgentClick"
-          :class="{ 
+          :class="{
             connected: isSessionActive,
             connecting: isConnecting
           }"
         >
           <div class="status-dot"></div>
-          <strong v-if="!isConnecting && !isSessionActive">对话调试</strong>
           <strong v-if="isConnecting">连线中...</strong>
           <strong v-if="isSessionActive" class="session-duration">{{ formattedSessionDuration }}</strong>
         </button>
@@ -320,23 +320,6 @@ export default {
         familyId: localStorage.getItem('family-id') || '',
         env: localStorage.getItem('iot-env') || 'test'
       }
-    },
-
-    /**
-     * 生成任务实例ID
-     * 格式: TEST_YYYYMMDDHHMMSS_RANDOM
-     * 用于日志追踪和报告关联
-     */
-    generateJobInstanceId() {
-      const now = new Date()
-      const timestamp = now.getFullYear().toString() +
-        String(now.getMonth() + 1).padStart(2, '0') +
-        String(now.getDate()).padStart(2, '0') +
-        String(now.getHours()).padStart(2, '0') +
-        String(now.getMinutes()).padStart(2, '0') +
-        String(now.getSeconds()).padStart(2, '0')
-      const random = Math.random().toString(36).substring(2, 10)
-      return `TEST_${timestamp}_${random}`
     },
 
     /**
@@ -593,32 +576,53 @@ export default {
      */
     async handleStopSession() {
       if (!this.isSessionActive) return
-      
+
       this.addSystemLog('system', 'info', '正在停止会话...')
-      
+
       try {
-        // 1. 断开WebSocket
-        this.disconnectFromWebSocket()
-        
-        // 2. 停止计时器
-        this.stopSessionTimer()
-        
-        // 3. 清理音频资源（包括释放麦克风）
-        this.cleanup()
-        
-        // 4. 更新状态
-        this.isSessionActive = false
-        this.connectionStatus = 'disconnected'
-        this.hasAudioActivity = false
-        this.currentAudioLevel = 0
-        
-        this.addSystemLog('system', 'success', '会话已停止，麦克风已释放')
-        this.addTranscriptMessage('system', '会话已结束', false, true)
-        
+        // 1. 发送停止测试消息到后端
+        if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
+          const stopTestMessage = {
+            type: 'stop_test',
+            timestamp: Date.now()
+          }
+          this.websocket.send(JSON.stringify(stopTestMessage))
+          this.addSystemLog('test', 'info', '已发送停止测试消息，等待后端处理...')
+          // 不立即关闭连接，等待后端返回 test_stopped 消息
+        } else {
+          // 如果WebSocket已断开，直接清理
+          this.cleanupAfterStop()
+        }
+
       } catch (error) {
         console.error('停止会话失败:', error)
         this.addSystemLog('system', 'error', `停止会话失败: ${error.message}`)
+        // 出错时也要清理
+        this.cleanupAfterStop()
       }
+    },
+
+    /**
+     * 停止后的清理工作
+     */
+    cleanupAfterStop() {
+      // 1. 断开WebSocket
+      this.disconnectFromWebSocket()
+
+      // 2. 停止计时器
+      this.stopSessionTimer()
+
+      // 3. 清理音频资源（包括释放麦克风）
+      this.cleanup()
+
+      // 4. 更新状态
+      this.isSessionActive = false
+      this.connectionStatus = 'disconnected'
+      this.hasAudioActivity = false
+      this.currentAudioLevel = 0
+
+      this.addSystemLog('system', 'success', '会话已停止，麦克风已释放')
+      this.addTranscriptMessage('system', '会话已结束', false, true)
     },
 
     /**
@@ -671,23 +675,16 @@ export default {
           // 连接建立后先发送 init_config 消息
           const iotConfig = this.getIOTConfigFromStorage()
 
-          // 生成 job_instance_id（格式: TEST_YYYYMMDDHHMMSS_RANDOM）
-          const jobInstanceId = this.currentTask?.job_instance_id || this.generateJobInstanceId()
-
           const initConfigMessage = {
             type: 'init_config',
             tester_config: this.testerConfig,
             iot_config: iotConfig,
-            job_instance_id: jobInstanceId,
-            task_id: this.currentTask?.id || null,
             timestamp: Date.now()
           }
           this.websocket.send(JSON.stringify(initConfigMessage))
           this.addSystemLog('config', 'info', '已发送 init_config 消息', {
             tester_config: this.testerConfig,
-            iot_config: { env: iotConfig.env, has_token: !!iotConfig.token },
-            job_instance_id: jobInstanceId,
-            task_id: this.currentTask?.id
+            iot_config: { env: iotConfig.env, has_token: !!iotConfig.token }
           })
 
           // 连接已建立，resolve Promise
@@ -847,6 +844,12 @@ export default {
             setTimeout(() => {
               this.closeWebSocketAfterTest()
             }, 1000)
+            break
+
+          case 'test_stopped':
+            // 后端确认停止测试，执行清理
+            this.addSystemLog('system', 'success', '后端确认停止，正在关闭连接...')
+            this.cleanupAfterStop()
             break
 
           case 'connection_closing':

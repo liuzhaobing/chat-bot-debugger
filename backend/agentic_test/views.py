@@ -320,38 +320,38 @@ class TestTaskViewSet(viewsets.ModelViewSet):
 
         请求格式:
         {
-            "task_id": "uuid",
             "session_id": "xxx",
-            "job_instance_id": "xxx"
+            "job_instance_id": "xxx"  # 等于 session_id
         }
         """
-        task_id = request.data.get('task_id')
         session_id = request.data.get('session_id')
         job_instance_id = request.data.get('job_instance_id')
 
-        if not task_id:
+        if not session_id:
             return Response({
                 'status': 'error',
-                'message': 'task_id 是必需的'
+                'message': 'session_id 是必需的'
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        try:
-            task = TestTask.objects.get(id=task_id)
-        except TestTask.DoesNotExist:
+        # 查找最近的 pending 或 running 任务（避免覆盖已完成的任务）
+        task = TestTask.objects.filter(
+            status__in=['pending', 'running']
+        ).order_by('-created_at').first()
+
+        if not task:
             return Response({
                 'status': 'error',
-                'message': f'找不到 task_id={task_id} 的任务'
+                'message': '找不到可更新的 pending 或 running 任务'
             }, status=status.HTTP_404_NOT_FOUND)
 
         # 更新字段
-        if session_id:
-            task.session_id = session_id
-        if job_instance_id:
-            task.job_instance_id = job_instance_id
-
+        task.session_id = session_id
+        task.job_instance_id = job_instance_id or session_id
         task.status = 'running'
         task.started_at = timezone.now()
         task.save()
+
+        logger.info(f"Task {task.id} updated: status=running, session_id={session_id}, job_instance_id={task.job_instance_id}")
 
         return Response({
             'status': 'success',
@@ -365,13 +365,14 @@ class TestTaskViewSet(viewsets.ModelViewSet):
 
         请求格式:
         {
-            "job_instance_id": "xxx",
+            "job_instance_id": "xxx",  # 等于 session_id
             "status": "completed" | "failed",
             "report_data": {...},
             "result_summary": "..."
         }
         """
         job_instance_id = request.data.get('job_instance_id')
+
         if not job_instance_id:
             return Response({
                 'status': 'error',
@@ -398,13 +399,57 @@ class TestTaskViewSet(viewsets.ModelViewSet):
             task.status = 'failed'
             task.completed_at = timezone.now()
             task.error_message = request.data.get('error_message', '未知错误')
+        elif new_status == 'stopped':
+            task.status = 'stopped'
+            task.completed_at = timezone.now()
+            task.result_summary = request.data.get('result_summary', '用户主动停止')
         else:
             task.status = new_status
 
         task.save()
 
+        logger.info(f"Task {task.id} completed with status={new_status}")
+
         return Response({
             'status': 'success',
             'message': f'任务已更新为 {new_status}',
+            'task': TestTaskSerializer(task).data
+        })
+
+    @action(detail=False, methods=['post'], url_path='stop-by-job-instance')
+    def stop_by_job_instance(self, request):
+        """停止任务（内部API，由 Worker 调用）
+
+        请求格式:
+        {
+            "job_instance_id": "xxx"
+        }
+        """
+        job_instance_id = request.data.get('job_instance_id')
+
+        if not job_instance_id:
+            return Response({
+                'status': 'error',
+                'message': 'job_instance_id 是必需的'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            task = TestTask.objects.get(job_instance_id=job_instance_id)
+        except TestTask.DoesNotExist:
+            return Response({
+                'status': 'error',
+                'message': f'找不到 job_instance_id={job_instance_id} 的任务'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        task.status = 'stopped'
+        task.completed_at = timezone.now()
+        task.result_summary = '用户主动停止'
+        task.save()
+
+        logger.info(f"Task {task.id} stopped by user")
+
+        return Response({
+            'status': 'success',
+            'message': '任务已停止',
             'task': TestTaskSerializer(task).data
         })

@@ -4,6 +4,16 @@
     <transition name="fade" mode="out-in">
       <!-- 聚合主页 - 4个角色合照 -->
       <div v-if="viewMode === 'group'" key="group" class="group-view">
+        <!-- 右上角新增按钮 -->
+        <button class="add-employee-btn" @click="showHireModal = true" title="雇佣数字员工">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+            <circle cx="8.5" cy="7" r="4"></circle>
+            <line x1="20" y1="8" x2="20" y2="14"></line>
+            <line x1="23" y1="11" x2="17" y2="11"></line>
+          </svg>
+        </button>
+
         <div class="hero-showcase">
           <!-- 加载状态 -->
           <div v-if="isLoading" class="loading-state">
@@ -19,7 +29,7 @@
               <Avatar3D animation-state="idle" size="hero" />
             </div>
             <p class="empty-title">还没有雇佣数字员工</p>
-            <p class="empty-hint">点击下方按钮雇佣数字员工</p>
+            <p class="empty-hint">点击右上角按钮雇佣数字员工</p>
           </div>
 
           <!-- 4个角色合照 -->
@@ -27,22 +37,6 @@
             v-else
             @select="handleSelectEmployee"
           />
-        </div>
-
-        <!-- 底部操作栏 -->
-        <div v-if="!isLoading" class="bottom-info-bar group-info-bar">
-          <!-- 操作按钮组 -->
-          <div class="action-buttons">
-            <!-- 雇佣数字员工 -->
-            <button class="icon-btn" @click="showHireModal = true" title="雇佣数字员工">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                <circle cx="8.5" cy="7" r="4"></circle>
-                <line x1="20" y1="8" x2="20" y2="14"></line>
-                <line x1="23" y1="11" x2="17" y2="11"></line>
-              </svg>
-            </button>
-          </div>
         </div>
       </div>
 
@@ -97,10 +91,21 @@
 
         <!-- 底部信息栏 -->
         <div class="bottom-info-bar">
-          <!-- 员工信息 -->
-          <div v-if="currentEmployee" class="employee-info">
-            <span class="employee-name">{{ currentEmployee.name }}</span>
-            <span class="employee-voice">{{ currentEmployee.tts_voice?.name || '未配置音色' }}</span>
+          <!-- 员工信息卡片 -->
+          <div v-if="currentEmployee" class="employee-card">
+            <div class="employee-avatar">
+              <span class="avatar-letter">{{ currentEmployee.name?.charAt(0) || 'D' }}</span>
+            </div>
+            <div class="employee-details">
+              <span class="employee-name">{{ currentEmployee.name }}</span>
+              <span class="employee-voice">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                  <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                </svg>
+                {{ currentEmployee.tts_voice?.name || '未配置音色' }}
+              </span>
+            </div>
           </div>
 
           <!-- 操作按钮组 -->
@@ -451,7 +456,8 @@ export default {
         'pending': '待命',
         'running': '工作中',
         'completed': '已完成',
-        'failed': '任务失败'
+        'failed': '任务失败',
+        'stopped': '已停止'
       }
       return statusMap[status] || status
     },
@@ -685,10 +691,49 @@ export default {
   flex: 1;
   display: flex;
   flex-direction: column;
+  position: relative;
 }
 
 .group-view .hero-showcase {
   flex: 1;
+}
+
+/* 单个角色详情页 */
+.single-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.single-view .hero-showcase {
+  flex: 1;
+  min-height: 0;
+}
+
+/* 右上角新增按钮 */
+.add-employee-btn {
+  position: absolute;
+  top: 20px;
+  right: 24px;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  border: none;
+  background: rgba(59, 130, 246, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 10;
+  color: #3b82f6;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.add-employee-btn:hover {
+  background: rgba(59, 130, 246, 0.15);
+  color: #2563eb;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
 }
 
 /* 返回按钮 */
@@ -698,22 +743,24 @@ export default {
   left: 24px;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  border: 1px solid var(--border-color, #30363d);
-  border-radius: 20px;
-  background: var(--bg-secondary, #21262d);
-  color: var(--text-secondary, #8b949e);
-  font-size: 13px;
+  gap: 4px;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  color: #666;
+  font-size: 14px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: color 0.2s ease;
   z-index: 10;
 }
 
 .back-btn:hover {
-  background: var(--bg-hover, #30363d);
-  color: var(--text-primary, #f0f6fc);
-  border-color: rgba(59, 130, 246, 0.3);
+  color: #333;
+}
+
+.back-btn svg {
+  width: 16px;
+  height: 16px;
 }
 
 /* 切换按钮 - 纯文字样式 */
@@ -723,7 +770,7 @@ export default {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: color 0.2s ease;
+  transition: opacity 0.2s ease, color 0.2s ease;
   color: #666666;
   font-size: 26px;
   font-weight: 300;
@@ -731,6 +778,11 @@ export default {
   border: none;
   z-index: 10;
   padding: 0;
+  opacity: 0;
+}
+
+.single-view:hover .nav-btn:not(:disabled) {
+  opacity: 1;
 }
 
 .nav-btn:hover:not(:disabled) {
@@ -738,7 +790,7 @@ export default {
 }
 
 .nav-btn:disabled {
-  opacity: 0.3;
+  opacity: 0;
   cursor: not-allowed;
 }
 
@@ -825,17 +877,51 @@ export default {
 .bottom-info-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 16px;
-  padding: 16px 20px 24px;
-  background: transparent;
+  padding: 12px 20px;
+  margin: 0 auto 16px;
+  width: fit-content;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.06),
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 
 .group-info-bar {
-  justify-content: center;
+  background: rgba(255, 255, 255, 0.7);
 }
 
-.employee-info {
+/* 员工信息卡片 */
+.employee-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.employee-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
+.avatar-letter {
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+  text-transform: uppercase;
+}
+
+.employee-details {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -844,12 +930,27 @@ export default {
 .employee-name {
   font-size: 14px;
   font-weight: 600;
-  color: var(--text-primary, #f0f6fc);
+  color: #1a1a2e;
+  letter-spacing: 0.01em;
 }
 
 .employee-voice {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   font-size: 12px;
-  color: var(--text-tertiary, #6e7681);
+  color: #6e7681;
+}
+
+.employee-voice svg {
+  opacity: 0.6;
+}
+
+/* 旧样式兼容 */
+.employee-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 /* 状态标签 */
@@ -883,31 +984,40 @@ export default {
   color: #ef4444;
 }
 
+.status-badge.stopped {
+  background: rgba(156, 163, 175, 0.1);
+  color: #6b7280;
+}
+
 /* 操作按钮组 */
 .action-buttons {
   display: flex;
-  gap: 12px;
+  gap: 8px;
 }
 
 .icon-btn {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  border: 1px solid rgba(59, 130, 246, 0.3);
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  border: none;
   background: rgba(59, 130, 246, 0.08);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.2s ease;
-  color: #60a5fa;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  color: #3b82f6;
 }
 
 .icon-btn:hover:not(:disabled) {
   background: rgba(59, 130, 246, 0.15);
-  border-color: rgba(59, 130, 246, 0.5);
-  color: #93c5fd;
-  transform: translateY(-2px);
+  color: #2563eb;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+}
+
+.icon-btn:active:not(:disabled) {
+  transform: translateY(0);
 }
 
 .icon-btn:disabled {
@@ -1136,6 +1246,11 @@ export default {
   color: #ef4444;
 }
 
+.task-status.stopped {
+  background: rgba(156, 163, 175, 0.1);
+  color: #6b7280;
+}
+
 .task-meta {
   font-size: 11px;
   color: var(--text-tertiary, #6e7681);
@@ -1294,29 +1409,44 @@ export default {
   .hero-container { width: 80%; }
 
   .bottom-info-bar {
-    padding: 12px 16px 20px;
+    margin: 0 auto 12px;
+    padding: 10px 14px;
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
+    width: auto;
   }
 
-  .employee-info {
-    text-align: center;
+  .employee-card {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .employee-avatar {
+    width: 36px;
+    height: 36px;
   }
 
   .action-buttons {
     gap: 8px;
+    justify-content: center;
   }
 
   .icon-btn {
-    width: 40px;
-    height: 40px;
+    width: 36px;
+    height: 36px;
   }
 
   .back-btn {
     top: 12px;
     left: 12px;
-    padding: 6px 10px;
-    font-size: 12px;
+    font-size: 13px;
+  }
+
+  .add-employee-btn {
+    top: 12px;
+    right: 12px;
+    width: 40px;
+    height: 40px;
   }
 }
 </style>

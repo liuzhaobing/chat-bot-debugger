@@ -118,8 +118,7 @@ class AgenticTestAgent:
             tester_config: Optional[Dict[str, Any]] = None,
             fixed_duration: float = None,
             audio_mode: str = None,
-            job_instance_id: Optional[str] = None,
-            task_id: Optional[str] = None
+            job_instance_id: Optional[str] = None
     ):
         self.session_id = session_id
         self.send_callback = send_callback
@@ -128,9 +127,8 @@ class AgenticTestAgent:
         self.current_asr_result = ""
         self.real_voice_active_time = 0.0
 
-        # 任务标识（用于日志追踪和报告保存）
-        self.job_instance_id = job_instance_id or self._generate_job_instance_id()
-        self.task_id = task_id
+        # 任务标识：job_instance_id 直接使用 session_id
+        self.job_instance_id = session_id
 
         # 设置日志上下文
         set_job_instance_id(self.job_instance_id)
@@ -196,7 +194,7 @@ class AgenticTestAgent:
 
         logger.info(
             f"AgenticTestAgent initialized for session {session_id}, "
-            f"job_instance_id={self.job_instance_id}, task_id={self.task_id}, "
+            f"job_instance_id={self.job_instance_id}, "
             f"IOT config: env={self.iot_config.get('env')}, has_token={bool(self.iot_config.get('token'))}, "
             f"fixed_duration={self.fixed_duration}s"
         )
@@ -1092,12 +1090,43 @@ class AgenticTestAgent:
         # 停止测试工程师服务
         await self.tester_service.stop()
 
+        # 更新数据库任务状态为 stopped
+        await self._update_task_status_stopped()
+
         logger.info(f"Agent stopped for session {self.session_id}")
+
+    async def _update_task_status_stopped(self) -> bool:
+        """更新任务状态为 stopped"""
+        if not self.job_instance_id:
+            return False
+
+        try:
+            url = f"{self.backend_service.backend_url}/api/test-tasks/stop-by-job-instance/"
+
+            payload = {"job_instance_id": self.job_instance_id}
+
+            import httpx
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(url, json=payload)
+                response.raise_for_status()
+
+                data = response.json()
+                if data.get('status') == 'success':
+                    logger.info(f"Task status updated to stopped")
+                    return True
+                else:
+                    logger.warning(f"Failed to update task status: {data.get('message')}")
+                    return False
+
+        except Exception as e:
+            logger.error(f"Error updating task status to stopped: {e}", exc_info=True)
+            return False
 
     async def _save_report_to_database(self, report) -> bool:
         """保存测试报告到数据库
 
         通过后端 API 更新 TestTask 的报告数据。
+        使用 job_instance_id（等于 session_id）查找任务。
 
         Args:
             report: TestReport 对象
@@ -1129,6 +1158,8 @@ class AgenticTestAgent:
                 "result_summary": result_summary
             }
 
+            logger.info(f"Saving report to database with job_instance_id={self.job_instance_id}")
+
             import httpx
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(url, json=payload)
@@ -1136,7 +1167,7 @@ class AgenticTestAgent:
 
                 data = response.json()
                 if data.get('status') == 'success':
-                    logger.info(f"Report saved to database for job_instance_id={self.job_instance_id}")
+                    logger.info(f"Report saved to database successfully")
                     return True
                 else:
                     logger.error(f"Failed to save report: {data.get('message')}")
@@ -1149,23 +1180,21 @@ class AgenticTestAgent:
     async def _update_task_job_info(self) -> bool:
         """更新任务的 session_id 和 job_instance_id
 
-        在任务启动时调用，将 session_id 和 job_instance_id 关联到 TestTask。
+        在任务启动时调用，将 session_id 关联到 TestTask。
+        job_instance_id 等于 session_id。
 
         Returns:
             是否更新成功
         """
-        if not self.task_id:
-            logger.debug("No task_id, skip updating job info")
-            return False
-
         try:
             url = f"{self.backend_service.backend_url}/api/test-tasks/update-job-info/"
 
             payload = {
-                "task_id": self.task_id,
                 "session_id": self.session_id,
                 "job_instance_id": self.job_instance_id
             }
+
+            logger.info(f"Updating job info: session_id={self.session_id}, job_instance_id={self.job_instance_id}")
 
             import httpx
             async with httpx.AsyncClient(timeout=10.0) as client:
@@ -1174,7 +1203,7 @@ class AgenticTestAgent:
 
                 data = response.json()
                 if data.get('status') == 'success':
-                    logger.info(f"Job info updated for task_id={self.task_id}")
+                    logger.info(f"Job info updated successfully")
                     return True
                 else:
                     logger.warning(f"Failed to update job info: {data.get('message')}")
