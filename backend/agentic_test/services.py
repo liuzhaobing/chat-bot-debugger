@@ -6,7 +6,6 @@ Agentic Test 服务模块（简化版）
 """
 import asyncio
 import logging
-import random
 import os
 from typing import Dict, Any, Optional, List
 import httpx
@@ -48,8 +47,10 @@ class IOTService:
         _iot_token = iot_token or self.token
 
         if not _family_id or not _iot_token:
-            logger.warning("Missing credentials, using mock data")
-            return await self._get_mock_family_devices()
+            raise RuntimeError(
+                f"[MOCK 已删除] 无法获取家庭设备：缺少 family_id 或 iot_token。"
+                f"family_id={'已设置' if _family_id else '未设置'}, iot_token={'已设置' if _iot_token else '未设置'}"
+            )
 
         try:
             async with httpx.AsyncClient(timeout=30) as client:
@@ -67,7 +68,10 @@ class IOTService:
 
         except Exception as e:
             logger.error(f"Failed to get family devices: {e}")
-            return await self._get_mock_family_devices()
+            raise RuntimeError(
+                f"[MOCK 已删除] 获取家庭设备失败: {e}。"
+                f"family_id={_family_id}"
+            )
 
     async def get_device_status(self, device_guids: List[str], iot_token: Optional[str] = None) -> Dict[str, Any]:
         """查询指定设备GUID列表的状态详情
@@ -83,7 +87,10 @@ class IOTService:
         device_ids_str = ",".join(device_guids)
 
         if not _iot_token:
-            return await self._get_mock_device_status(device_guids)
+            raise RuntimeError(
+                f"[MOCK 已删除] 无法获取设备状态：iot_token 为空。"
+                f"device_guids={device_guids}"
+            )
 
         try:
             async with httpx.AsyncClient(timeout=30) as client:
@@ -101,69 +108,10 @@ class IOTService:
 
         except Exception as e:
             logger.error(f"Failed to get device status: {e}")
-            return await self._get_mock_device_status(device_guids)
-
-    async def _get_mock_family_devices(self) -> Dict[str, Any]:
-        """返回模拟的家庭设备清单"""
-        await asyncio.sleep(0.3)
-
-        return {
-            "rc": 0,
-            "msg": "操作成功",
-            "success": True,
-            "data": [
-                {
-                    "familyId": "test_family_001",
-                    "familyName": "测试家庭",
-                    "deviceId": 10182044,
-                    "deviceGuid": "CQ928c0f535efd97f",
-                    "name": "CQ928蒸烤一体机",
-                    "dc": "RZKY",
-                    "categoryName": "一体机",
-                    "dt": "CQ928",
-                    "netState": 1,
-                    "status": 1,
-                    "platformCode": "ZKY02",
-                },
-                {
-                    "familyId": "test_family_001",
-                    "familyName": "测试家庭",
-                    "deviceId": 10182046,
-                    "deviceGuid": "YYJ001c0f535efd99f",
-                    "name": "智能油烟机",
-                    "dc": "RZKY",
-                    "categoryName": "油烟机",
-                    "dt": "YYJ001",
-                    "netState": 1,
-                    "status": 1,
-                    "platformCode": "YYJ01",
-                }
-            ]
-        }
-
-    async def _get_mock_device_status(self, device_guids: List[str]) -> Dict[str, Any]:
-        """返回模拟的设备状态"""
-        await asyncio.sleep(0.3)
-
-        data = []
-        for device_guid in device_guids:
-            data.append({
-                "deviceId": device_guid,
-                "status": 1,
-                "properties": {
-                    "powerState": random.choice([0, 1]),
-                    "workState": random.choice([0, 1, 2]),
-                    "faultCode": 0,
-                    "timestamp": int(asyncio.get_event_loop().time())
-                }
-            })
-
-        return {
-            "rc": 0,
-            "msg": "操作成功",
-            "success": True,
-            "data": data
-        }
+            raise RuntimeError(
+                f"[MOCK 已删除] 获取设备状态失败: {e}。"
+                f"device_guids={device_guids}"
+            )
 
 
 __all__ = ['IOTService']

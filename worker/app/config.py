@@ -165,12 +165,8 @@ class Settings(BaseSettings):
     )
     rate_limit_enabled: bool = Field(default=True, description="启用速率限制")
     rate_limit_per_minute: int = Field(default=60, description="每分钟速率限制")
-    
+
     # ==================== 开发配置 ====================
-    dev_mock_external_services: bool = Field(
-        default=False,
-        description="开发模式下模拟外部服务"
-    )
     dev_skip_auth: bool = Field(default=False, description="开发模式下跳过认证")
     
     @field_validator("cors_origins", "cors_allow_methods", "cors_allow_headers", "allowed_ws_origins", mode="before")

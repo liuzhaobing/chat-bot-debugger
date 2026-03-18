@@ -770,51 +770,42 @@ class TesterService:
         Returns:
             查询生成结果字典
         """
+        if not self.backend_service:
+            raise RuntimeError(
+                f"[MOCK 已删除] QueryGenerator App 调用失败：backend_service 未初始化。"
+                f"message={message}"
+            )
+
         try:
-            # 使用 BackendService 调用 QueryGenerator App
-            if self.backend_service:
-                result = await self.backend_service.invoke_app(
-                    app_id=self.QUERY_GENERATOR_APP_ID,
-                    message=message,
+            result = await self.backend_service.invoke_app(
+                app_id=self.QUERY_GENERATOR_APP_ID,
+                message=message,
+            )
+
+            if result.success and result.content:
+                try:
+                    parsed_result = json.loads(result.content)
+                    await self._log_event('app_call', json.dumps(parsed_result, ensure_ascii=False), {
+                        'app_id': self.QUERY_GENERATOR_APP_ID,
+                        'latency_ms': result.latency_ms
+                    })
+                    return parsed_result
+                except json.JSONDecodeError:
+                    raise RuntimeError(
+                        f"[MOCK 已删除] QueryGenerator App 返回非 JSON 内容: {result.content[:100]}"
+                    )
+            else:
+                raise RuntimeError(
+                    f"[MOCK 已删除] QueryGenerator App 调用失败: {result.error}"
                 )
 
-                if result.success and result.content:
-                    try:
-                        parsed_result = json.loads(result.content)
-                        await self._log_event('app_call', json.dumps(parsed_result, ensure_ascii=False), {
-                            'app_id': self.QUERY_GENERATOR_APP_ID,
-                            'latency_ms': result.latency_ms
-                        })
-                        return parsed_result
-                    except json.JSONDecodeError:
-                        logger.warning(f"QueryGenerator app returned non-JSON content: {result.content[:100]}")
-                        return await self._get_mock_query_result(message)
-                else:
-                    logger.warning(f"QueryGenerator app call failed: {result.error}")
-                    return await self._get_mock_query_result(message)
-            else:
-                return await self._get_mock_query_result(message)
-
+        except RuntimeError:
+            raise
         except Exception as e:
             logger.error(f"Query generator app call failed: {e}")
-            return await self._get_mock_query_result(message)
-
-    async def _get_mock_query_result(self, test_scenario: str) -> Dict[str, Any]:
-        """生成模拟的query生成结果"""
-        return {
-            'user_input': '打开一体机灯',
-            'target_device_guid': '38-i750411c84f366',
-            'target_device_name': '一体机',
-            'expected_device_changes': {
-                'lightSwitch': '1',
-                'lightSwitch_text': '开灯'
-            },
-            'expected_response_keywords': ['已打开', '灯', '开启'],
-            'expected_response_semantic': '确认灯已经打开',
-            'test_intent': '测试灯光控制功能',
-            'should_continue': True,
-            'reasoning': '使用模拟数据生成测试query'
-        }
+            raise RuntimeError(
+                f"[MOCK 已删除] QueryGenerator App 调用异常: {e}"
+            )
 
     # ========================================================================
     # 3. 测试执行结果评判
@@ -895,11 +886,13 @@ class TesterService:
             - is_pass: 当前测试步骤是否通过
             - next_action: 枚举值 "next_step" 或 "next_case"
         """
-        try:
-            # 检查是否使用 mock 模式
-            if settings.dev_mock_external_services:
-                return await self._get_mock_judge_result(asr_text)
+        if not self.backend_service:
+            raise RuntimeError(
+                f"[MOCK 已删除] Judge App 调用失败：backend_service 未初始化。"
+                f"asr_text={asr_text[:50] if asr_text else None}"
+            )
 
+        try:
             # 构建消息内容
             current_case = self.case_manager.get_current_case()
             message = self._build_judge_app_message(
@@ -909,33 +902,35 @@ class TesterService:
                 previous_status=previous_status
             )
 
-            # 使用 BackendService 调用 Judge App
-            if self.backend_service:
-                result = await self.backend_service.invoke_app(
-                    app_id=self.JUDGE_APP_ID,
-                    message=message,
+            result = await self.backend_service.invoke_app(
+                app_id=self.JUDGE_APP_ID,
+                message=message,
+            )
+
+            if result.success and result.content:
+                try:
+                    parsed_result = json.loads(result.content)
+                    await self._log_event('app_call', json.dumps(parsed_result, ensure_ascii=False), {
+                        'app_id': self.JUDGE_APP_ID,
+                        'latency_ms': result.latency_ms
+                    })
+                    return parsed_result
+                except json.JSONDecodeError:
+                    raise RuntimeError(
+                        f"[MOCK 已删除] Judge App 返回非 JSON 内容: {result.content[:100]}"
+                    )
+            else:
+                raise RuntimeError(
+                    f"[MOCK 已删除] Judge App 调用失败: {result.error}"
                 )
 
-                if result.success and result.content:
-                    try:
-                        parsed_result = json.loads(result.content)
-                        await self._log_event('app_call', json.dumps(parsed_result, ensure_ascii=False), {
-                            'app_id': self.JUDGE_APP_ID,
-                            'latency_ms': result.latency_ms
-                        })
-                        return parsed_result
-                    except json.JSONDecodeError:
-                        logger.warning(f"Judge app returned non-JSON content: {result.content[:100]}")
-                        return await self._get_mock_judge_result(asr_text)
-                else:
-                    logger.warning(f"Judge app call failed: {result.error}")
-                    return await self._get_mock_judge_result(asr_text)
-            else:
-                return await self._get_mock_judge_result(asr_text)
-
+        except RuntimeError:
+            raise
         except Exception as e:
             logger.error(f"Judge app call failed: {e}")
-            return await self._get_mock_judge_result(asr_text)
+            raise RuntimeError(
+                f"[MOCK 已删除] Judge App 调用异常: {e}"
+            )
 
     def _build_judge_app_message(
         self,
@@ -978,14 +973,6 @@ class TesterService:
             parts.append("|:---|:---|:---|:---|:---|")
 
         return "\n".join(parts)
-
-    async def _get_mock_judge_result(self, asr_text: str) -> Dict[str, Any]:
-        """生成模拟的判断结果"""
-        return {
-            'actual_result': f'模拟分析: {asr_text}',
-            'is_pass': True,
-            'next_action': 'next_case',
-        }
 
     # ========================================================================
     # 4. 测试执行评估与推进

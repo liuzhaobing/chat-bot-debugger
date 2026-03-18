@@ -5,7 +5,6 @@ ASR (Automatic Speech Recognition) 服务
 import asyncio
 import base64
 import logging
-import random
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -85,15 +84,20 @@ class ASRService:
                 logger.info(f"ASR recognition successful: {result.content[:50]}")
                 return result.content
             else:
-                logger.warning(f"ASR returned empty or failed: {result.error}")
-                return await self._recognize_speech_mock(audio_data)
+                raise RuntimeError(
+                    f"[MOCK 已删除] ASR 识别失败: {result.error}。"
+                    f"audio_data 长度={len(audio_data) if audio_data else 0}"
+                )
 
+        except RuntimeError:
+            raise
         except Exception as e:
             logger.error(f"ASR recognition failed with exception: {e}")
             logger.exception("Full exception traceback:")
-            # 降级到模拟模式
-            logger.warning("Falling back to mock ASR")
-            return await self._recognize_speech_mock(audio_data)
+            raise RuntimeError(
+                f"[MOCK 已删除] ASR 识别异常: {e}。"
+                f"audio_data 长度={len(audio_data) if audio_data else 0}"
+            )
 
     async def _save_audio_to_logs(self, audio_data: str, audio_format: str) -> None:
         """
@@ -122,23 +126,3 @@ class ASRService:
         except Exception as e:
             logger.error(f"Failed to save audio to logs: {e}")
             # 不抛出异常，保存失败不应影响 ASR 识别流程
-
-    async def _recognize_speech_mock(self, audio_data: str) -> str:
-        """模拟ASR识别"""
-        await asyncio.sleep(0.5)  # 模拟识别时间
-
-        # 返回模拟的识别结果
-        mock_results = [
-            "打开油烟机",
-            "关闭油烟机",
-            "调到三档",
-            "打开照明",
-            "关闭照明",
-            "开始烹饪",
-            "停止工作",
-            "测试语音识别成功"
-        ]
-
-        result = random.choice(mock_results)
-        logger.info(f"Mock ASR recognized: {result}")
-        return result

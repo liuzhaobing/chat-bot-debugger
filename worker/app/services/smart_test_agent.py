@@ -136,47 +136,48 @@ class SmartTestAgent(AgenticTestAgent):
 
         try:
             if not self.iot_config.get('token') or not self.iot_config.get('familyId'):
-                await self.send_callback('warning', 'IOT配置不完整，使用模拟设备')
-                self.target_device_guid = f"mock_{device_type}_guid"
-                self.target_device_name = f"模拟{device_type}"
-                self.target_device_type = device_type
-            else:
-                devices_result = await self.iot_service.get_family_devices(
-                    self.iot_config['familyId'],
-                    self.iot_config['token']
+                raise RuntimeError(
+                    f"[MOCK 已删除] 无法定位设备：IOT配置不完整。"
+                    f"token={'已设置' if self.iot_config.get('token') else '未设置'}, "
+                    f"familyId={'已设置' if self.iot_config.get('familyId') else '未设置'}"
                 )
 
-                if devices_result.get('success', False) or devices_result.get('rc') == 0:
-                    devices = devices_result.get('data', [])
+            devices_result = await self.iot_service.get_family_devices(
+                self.iot_config['familyId'],
+                self.iot_config['token']
+            )
 
-                    matched_device = None
-                    for device in devices:
-                        device_name = device.get('name', '')
-                        device_dt = device.get('dt', '')
-                        category = device.get('categoryName', '')
+            if devices_result.get('success', False) or devices_result.get('rc') == 0:
+                devices = devices_result.get('data', [])
 
-                        if device_model and device_model.upper() in device_dt.upper():
-                            matched_device = device
-                            break
-                        elif device_type in category or device_type in device_name:
-                            matched_device = device
-                            break
+                matched_device = None
+                for device in devices:
+                    device_name = device.get('name', '')
+                    device_dt = device.get('dt', '')
+                    category = device.get('categoryName', '')
 
-                    if matched_device:
-                        self.target_device_guid = matched_device.get('deviceGuid')
-                        self.target_device_name = matched_device.get('name')
-                        self.target_device_type = device_type
+                    if device_model and device_model.upper() in device_dt.upper():
+                        matched_device = device
+                        break
+                    elif device_type in category or device_type in device_name:
+                        matched_device = device
+                        break
 
-                        await self.send_callback('device_located', f'已定位设备: {self.target_device_name}', {
-                            'device_guid': self.target_device_guid,
-                            'device_name': self.target_device_name,
-                            'device_type': self.target_device_type
-                        })
-                    else:
-                        await self.send_callback('warning', f'未找到匹配的{device_type}设备')
-                        self.target_device_guid = f"mock_{device_type}_guid"
-                        self.target_device_name = f"模拟{device_type}"
-                        self.target_device_type = device_type
+                if matched_device:
+                    self.target_device_guid = matched_device.get('deviceGuid')
+                    self.target_device_name = matched_device.get('name')
+                    self.target_device_type = device_type
+
+                    await self.send_callback('device_located', f'已定位设备: {self.target_device_name}', {
+                        'device_guid': self.target_device_guid,
+                        'device_name': self.target_device_name,
+                        'device_type': self.target_device_type
+                    })
+                else:
+                    raise RuntimeError(
+                        f"[MOCK 已删除] 未找到匹配的{device_type}设备。"
+                        f"可用设备: {[d.get('name') for d in devices]}"
+                    )
 
             self.test_report['device_info'] = {
                 'device_guid': self.target_device_guid,

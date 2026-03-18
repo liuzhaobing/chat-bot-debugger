@@ -333,7 +333,7 @@ export default {
       if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
         const startTestMessage = {
           type: 'start_test',
-          query: '我家有哪些设备？',  // 初始查询
+          query: '你好食神在吗',  // 初始查询
           timestamp: Date.now()
         }
         this.websocket.send(JSON.stringify(startTestMessage))

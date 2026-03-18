@@ -748,15 +748,20 @@ class AgenticTestAgent:
                 # 这时应该强制将当前用例标记为完成，然后推进到下一个用例
                 if progress.action == NextAction.WAIT:
                     # 评判认为需要继续，但查询生成器无法生成新查询
-                    # 强制标记当前用例为完成
+                    # 强制标记当前用例为完成，但需要根据实际步骤结果判断最终状态
                     await self.send_callback('status', '查询生成器无法生成新查询，强制推进到下一个用例...')
                     current_case = self.tester_service.case_manager.get_current_case()
                     if current_case:
                         from app.services.tester.models import TestResultStatus
+                        # 根据实际步骤结果判断最终状态
+                        all_passed = current_case.is_all_steps_passed()
+                        test_status = TestResultStatus.PASS if all_passed else TestResultStatus.FAIL
+                        logger.info(f"查询生成器无法生成新查询，用例 {current_case.id} 最终状态: {test_status.value}, "
+                                   f"step_pass_results={current_case.step_pass_results}")
                         self.tester_service.case_manager.update_case_result(
                             current_case.id,
-                            TestResultStatus.PASS,
-                            current_case.actual_results or ['自动标记为通过'],
+                            test_status,
+                            current_case.actual_results or ['自动标记为' + ('通过' if all_passed else '失败')],
                             None
                         )
                     # 重置 current_index 以便定位下一个用例

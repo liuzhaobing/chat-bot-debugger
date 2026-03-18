@@ -116,10 +116,14 @@ class TTSService:
 
         # 检查必要的环境变量
         if not all([self.base_url, self.app_id, self.access_key, self.resource_id, self.speaker]):
-            logger.warning("TTS service not fully configured, using mock mode")
-            self._use_mock = True
-        else:
-            self._use_mock = False
+            raise RuntimeError(
+                f"[MOCK 已删除] TTS 服务未完整配置。"
+                f"base_url={'已设置' if self.base_url else '未设置'}, "
+                f"app_id={'已设置' if self.app_id else '未设置'}, "
+                f"access_key={'已设置' if self.access_key else '未设置'}, "
+                f"resource_id={'已设置' if self.resource_id else '未设置'}, "
+                f"speaker={'已设置' if self.speaker else '未设置'}"
+            )
     
     async def generate_speech(self, text: str, sample_rate: int = 24000, use_cache: bool = True, speaker: Optional[str] = None) -> str:
         """
@@ -198,19 +202,9 @@ class TTSService:
 
         except Exception as e:
             logger.error(f"TTS generation failed: {e}")
-            # 降级到模拟模式
-            return await self._generate_mock_speech(text)
-    
-    async def _generate_mock_speech(self, text: str) -> str:
-        """生成模拟语音数据"""
-        await asyncio.sleep(0.5)  # 模拟TTS生成时间
-
-        # 生成简单的模拟音频数据
-        mock_audio_data = f"mock_tts_audio_for_{text[:20]}".encode('utf-8')
-        audio_b64 = base64.b64encode(mock_audio_data).decode('utf-8')
-
-        logger.info(f"Mock TTS generated for text: {text[:50]}...")
-        return audio_b64
+            raise RuntimeError(
+                f"[MOCK 已删除] TTS 生成失败: {e}。text={text[:50] if text else None}"
+            )
 
     @classmethod
     def clear_cache(cls) -> None:
