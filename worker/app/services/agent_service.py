@@ -194,8 +194,10 @@ class AgenticTestAgent:
 
         # 设备状态缓存
         self.family_devices: Dict = {}
-        self.previous_device_status: Dict = {}
-        self.current_device_status: Dict = {}
+        # A0: TTS 播放后的设备状态（query 发送后的状态）
+        self.device_status_after_tts: Dict = {}
+        # A1: ASR 识别后的设备状态
+        self.device_status_after_asr: Dict = {}
 
         # 固定时长音频缓冲区
         self.audio_buffer: List[bytes] = []
@@ -250,8 +252,8 @@ class AgenticTestAgent:
         await self._update_task_job_info()
 
         try:
-            # 初始化设备状态 - 必须在生成测试用例之前执行
-            await self.refresh_device_status(is_initialize=True)
+            # 初始化设备信息 - 必须在生成测试用例之前执行
+            await self.refresh_device_status(stage='init')
 
             # 设置测试工程师服务的家庭设备
             self.tester_service.set_family_devices(self.family_devices)
@@ -374,25 +376,36 @@ class AgenticTestAgent:
             self._stop_buffering()
             await self.send_callback('status', '智能体循环已结束')
 
-    async def refresh_device_status(self, is_initialize: bool = False, device_guids: List[str] = None):
+    async def refresh_device_status(self, stage: str = 'after_asr', device_guids: List[str] = None):
         """刷新设备状态
 
         Args:
-            is_initialize: 是否为初始化模式
-                - True: 初始化模式，初始化 family_devices，状态存入 previous_device_status
-                - False: 更新模式，将 current 移动到 previous，状态存入 current_device_status
+            stage: 查询阶段
+                - 'init': 初始化模式，初始化 family_devices，不存储状态
+                - 'after_tts': TTS 播放后查询，状态存入 device_status_after_tts (A0)
+                - 'after_asr': ASR 识别后查询，状态存入 device_status_after_asr (A1)
             device_guids: 指定设备GUID列表，当有值时跳过 get_family_devices 调用，直接查询这些设备状态
         """
         try:
             if not self.iot_config.get('token'):
-                if is_initialize:
+                if stage == 'init':
                     await self.send_callback('warning', 'IOT配置不完整，使用模拟数据')
                 return
 
-            # 更新模式：将当前状态移动到之前状态
-            if not is_initialize:
-                self.previous_device_status = self.current_device_status.copy()
-                self.current_device_status = {}
+            # 确定目标存储变量
+            if stage == 'after_tts':
+                target_status = self.device_status_after_tts
+                # 清空 A0 准备接收新状态
+                self.device_status_after_tts = {}
+                target_dict = self.device_status_after_tts
+            elif stage == 'after_asr':
+                target_status = self.device_status_after_asr
+                # 清空 A1 准备接收新状态
+                self.device_status_after_asr = {}
+                target_dict = self.device_status_after_asr
+            else:
+                # init 模式不需要存储
+                target_dict = {}
 
             # 如果指定了 device_guids，直接查询这些设备
             if device_guids:
@@ -405,23 +418,20 @@ class AgenticTestAgent:
                     for item in data:
                         device_guid = item.get('deviceId')
                         properties = item.get('properties', {})
-                        if device_guid:
-                            if is_initialize:
-                                self.previous_device_status[device_guid] = properties
-                            else:
-                                self.current_device_status[device_guid] = properties
+                        if device_guid and target_dict is not None:
+                            target_dict[device_guid] = properties
 
-                if not is_initialize:
+                if stage == 'after_asr':
                     await self.send_callback('device_status_update', {
-                        'current': self.current_device_status,
-                        'previous': self.previous_device_status,
+                        'a0_tts': self.device_status_after_tts,
+                        'a1_asr': self.device_status_after_asr,
                         'changes': self.detect_device_changes()
                     })
                 return
 
             # 未指定 device_guids，查询家庭所有设备
             if not self.iot_config.get('familyId'):
-                if is_initialize:
+                if stage == 'init':
                     await self.send_callback('warning', 'IOT配置不完整，使用模拟数据')
                 return
 
@@ -433,11 +443,11 @@ class AgenticTestAgent:
             if devices_result.get('success', False) or devices_result.get('rc') == 0:
                 devices = devices_result.get('data', [])
 
-                if is_initialize:
+                if stage == 'init':
                     await self.send_callback('log', f'发现 {len(devices)} 个设备')
 
                 # 初始化模式：更新 family_devices
-                if is_initialize:
+                if stage == 'init':
                     self.family_devices = {}
                     for device in devices:
                         device_guid = device.get('deviceGuid')
@@ -461,24 +471,21 @@ class AgenticTestAgent:
                         for item in data:
                             device_guid = item.get('deviceId')
                             properties = item.get('properties', {})
-                            if device_guid:
-                                if is_initialize:
-                                    self.previous_device_status[device_guid] = properties
-                                else:
-                                    self.current_device_status[device_guid] = properties
+                            if device_guid and target_dict is not None:
+                                target_dict[device_guid] = properties
 
-                if is_initialize:
-                    await self.log_event('iot_query', f'初始化了 {len(self.previous_device_status)} 个设备状态')
-                else:
+                if stage == 'init':
+                    await self.log_event('iot_query', f'初始化了 {len(self.family_devices)} 个设备信息')
+                elif stage == 'after_asr':
                     await self.send_callback('device_status_update', {
-                        'current': self.current_device_status,
-                        'previous': self.previous_device_status,
+                        'a0_tts': self.device_status_after_tts,
+                        'a1_asr': self.device_status_after_asr,
                         'changes': self.detect_device_changes()
                     })
 
         except Exception as e:
             logger.error(f"Failed to refresh device status: {e}")
-            if is_initialize:
+            if stage == 'init':
                 await self.send_callback('warning', f'设备状态初始化失败: {str(e)}')
 
     def _format_devices_to_markdown(self) -> Optional[str]:
@@ -677,16 +684,19 @@ class AgenticTestAgent:
             # 1. 记录用户输入到对话历史
             self.tester_service.add_to_conversation_history('assistant', asr_text)
 
-            # 2. 保存执行前的设备状态，并更新获取执行后的设备状态
-            device_status_before = copy.deepcopy(self.previous_device_status)
-            await self.refresh_device_status(is_initialize=False)
-            device_status_after = copy.deepcopy(self.current_device_status)
+            # 2. ASR 后查询设备状态 (A1)，然后比较 A0 vs A1
+            # A0: TTS 播放时已查询的状态 (device_status_after_tts)
+            # --> 浏览器播放query以控制设备 -->
+            # A1: ASR 识别后查询的状态 (device_status_after_asr)
+            device_status_a0 = copy.deepcopy(self.device_status_after_tts)
+            await self.refresh_device_status(stage='after_asr')
+            device_status_a1 = copy.deepcopy(self.device_status_after_asr)
 
             # 3. 调用 evaluate_round_result 进行评判和推进
             progress = await self.tester_service.evaluate_round_result(
                 asr_text=asr_text,
-                device_status_before=device_status_before,
-                device_status_after=device_status_after
+                device_status_before=device_status_a0,
+                device_status_after=device_status_a1
             )
 
             await self.send_callback('log', f'评判结果: action={progress.action.value}, message={progress.message}')
@@ -791,8 +801,8 @@ class AgenticTestAgent:
             'current_query': self.current_query,
             'loop_step': self.loop_step,
             'device_status': {
-                'current': self.current_device_status,
-                'previous': self.previous_device_status
+                'a0_tts': self.device_status_after_tts,
+                'a1_asr': self.device_status_after_asr
             }
         }
         return await self.process_brain(asr_text, context)
@@ -868,6 +878,9 @@ class AgenticTestAgent:
             if not audio_output_result.success:
                 logger.error(f"Audio output failed: {audio_output_result.error_message}")
                 return False
+
+            # TTS 播放后查询设备状态 (A0) - query 发送后的状态
+            await self.refresh_device_status(stage='after_tts')
 
             await self.wait_for_speaker_response(wait_time=0.0)
 
@@ -1109,23 +1122,23 @@ class AgenticTestAgent:
     def detect_device_changes(self) -> Dict[str, Any]:
         """检测设备状态变化
 
-        使用 jsondiff 对比设备属性变化，属性已经是 dict 格式。
+        使用 jsondiff 对比 A0 (TTS后) 和 A1 (ASR后) 的设备属性变化。
         """
         changes = {}
-        for device_guid in self.current_device_status:
-            current_props = self.current_device_status.get(device_guid, {})
-            previous_props = self.previous_device_status.get(device_guid, {})
+        for device_guid in self.device_status_after_asr:
+            a1_props = self.device_status_after_asr.get(device_guid, {})
+            a0_props = self.device_status_after_tts.get(device_guid, {})
 
-            if current_props != previous_props:
+            if a1_props != a0_props:
                 # 使用 jsondiff 计算详细差异
                 diff = None
                 if HAS_JSONDIFF:
-                    diff = jsondiff.diff(previous_props, current_props)
+                    diff = jsondiff.diff(a0_props, a1_props)
 
                 changes[device_guid] = {
                     'has_change': True,
-                    'current': current_props,
-                    'previous': previous_props,
+                    'a1_asr': a1_props,
+                    'a0_tts': a0_props,
                     'diff': diff
                 }
             else:
@@ -1182,8 +1195,8 @@ class AgenticTestAgent:
 
         await self.send_callback('status', '智能体已停止')
 
-        self.previous_device_status = {}
-        self.current_device_status = {}
+        self.device_status_after_tts = {}
+        self.device_status_after_asr = {}
         self.loop_step = 0
 
         if hasattr(self, 'audio_buffer'):
