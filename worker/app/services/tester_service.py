@@ -17,6 +17,7 @@ from app.services.app_ids import (
     QUERY_GENERATOR_APP_ID,
     TEST_POINT_EXTRACTOR_APP_ID,
 )
+from app.services.verifiers import TestJudge
 
 from .tester.models import (
     # 数据类
@@ -44,7 +45,6 @@ from .tester.models import (
 )
 from .tester.case_manager import TestCaseManager, DEFAULT_TEST_CASES
 from .tester.executor import TestExecutor
-from .tester.judge import TestJudge
 from .tester.progressor import TaskProgressor
 from .tester.defect_tracker import DefectTracker
 from .tester.reporter import TestReporter
@@ -251,6 +251,17 @@ class TesterService:
         self.family_devices = family_devices
         if self.execution_context:
             self.execution_context.family_devices = family_devices
+        # 同时设置 judge 的家庭设备
+        if self.judge:
+            self.judge.set_family_devices(family_devices)
+
+    async def initialize_judge_protocols(self) -> None:
+        """初始化评判器的设备协议
+
+        在设置家庭设备后调用，用于加载设备协议以便在评判时获取属性说明。
+        """
+        if self.judge:
+            await self.judge.initialize_protocols()
 
     async def load_test_cases(self, source: str) -> int:
         """加载测试用例
@@ -569,7 +580,7 @@ class TesterService:
         - 一个测试用例可能需要多轮对话才能完成
         - 每次调用此方法都会调用 _produce_query_content 来生成查询
         - _produce_query_content 内部会调用 QueryGenerator App，由 App 决定是否继续生成查询
-        - 当 App 返回 should_continue=False 时，_produce_query_content 返回空字符串
+        - 当 Judge App 返回 next_action='next_case' 时，表示当前用例完成
         - evaluate_round_result 根据评判结果更新用例状态并决定是否推进
 
         Returns:
@@ -618,7 +629,7 @@ class TesterService:
                 return query
 
             # 如果 steps 中没有提取到，再尝试调用 QueryGenerator App
-            query = await self._produce_query_content({'should_continue': True}, "")
+            query = await self._produce_query_content({'next_action': 'next_step'}, "")
 
             if query:
                 self.total_queries_generated += 1
@@ -633,7 +644,7 @@ class TesterService:
             return query
 
         # 在当前用例内生成测试查询
-        query = await self._produce_query_content({'should_continue': True}, "")
+        query = await self._produce_query_content({'next_action': 'next_step'}, "")
 
         if query:
             self.total_queries_generated += 1
@@ -648,7 +659,7 @@ class TesterService:
                 'query': query,
             })
         else:
-            # 当前用例已完成（should_continue=False），但没有生成查询
+            # 当前用例已完成（next_action='next_case'），但没有生成查询
             logger.info(f"Current case {current_case.id} completed, no more queries")
 
         return query
@@ -694,7 +705,7 @@ class TesterService:
         职责：调用 QueryGenerator App 生成下一轮测试查询
 
         Args:
-            judge_result: 判断结果（包含 should_continue 等信息）
+            judge_result: 判断结果（包含 next_action 等信息）
             asr_text: ASR识别文本
 
         Returns:
@@ -705,11 +716,8 @@ class TesterService:
             return ""
 
         try:
-            if not judge_result.get('should_continue', True):
-                return ""
-
-            suggested_action = judge_result.get('suggested_action', '')
-            if suggested_action == 'end_conversation':
+            # next_action='next_case' 表示当前用例完成，不需要生成新查询
+            if judge_result.get('next_action') == 'next_case':
                 return ""
 
             # 使用全局对话历史
@@ -736,8 +744,8 @@ class TesterService:
 
             await self._send_callback('query_generated', query_result)
 
-            # 检查是否应该继续
-            if not query_result.get('should_continue', True):
+            # 检查是否应该继续（QueryGenerator App 可能返回自己的判断）
+            if query_result.get('should_continue') is False:
                 # 当前用例已完成，返回空字符串
                 # 推进到下一个用例的逻辑由 evaluate_round_result 处理
                 logger.info(f"Query generator indicates should_continue=False, current case completed")
@@ -833,9 +841,8 @@ class TesterService:
             return JudgeResult(
                 case_id="",
                 is_pass=False,
-                confidence=0.0,
-                analysis="没有当前测试用例",
-                should_continue=False,
+                actual_result="没有当前测试用例",
+                next_action="next_case",
             )
 
         # 使用传入的状态或实例状态
@@ -849,15 +856,18 @@ class TesterService:
             ai_response="",
         )
 
-        # 评判结果
+        # 评判结果 - 传入对话历史
+        logger.info(f"[DEBUG] conversation_history before judge: {len(self.conversation_history)} messages, "
+                   f"rounds={len(self.conversation_history) // 2}, content={self.conversation_history}")
         judge_result = await self.judge.judge(
             current_case,
             execution_result,
             before,
-            after
+            after,
+            conversation_history=self.conversation_history
         )
 
-        logger.info(f"Judge result for {current_case.id}: {'PASS' if judge_result.is_pass else 'FAIL'}")
+        logger.info(f"Judge result for {current_case.id}: {'PASS' if judge_result.is_pass else 'FAIL'}, next_action={judge_result.next_action}")
         await self._send_callback('judge_result', judge_result.to_dict())
 
         return judge_result
@@ -872,29 +882,38 @@ class TesterService:
 
         从 agent_service.py 迁移
 
+        注意：此方法已弃用，建议使用 TestJudge.judge() 方法
+
         Args:
             asr_text: ASR识别出的文本
             current_status: 当前设备状态
             previous_status: 之前的设备状态
 
         Returns:
-            分析结果字典
+            分析结果字典，包含：
+            - actual_result: 用例实际执行情况记录
+            - is_pass: 当前测试步骤是否通过
+            - next_action: 枚举值 "next_step" 或 "next_case"
         """
         try:
             # 检查是否使用 mock 模式
             if settings.dev_mock_external_services:
                 return await self._get_mock_judge_result(asr_text)
 
+            # 构建消息内容
+            current_case = self.case_manager.get_current_case()
+            message = self._build_judge_app_message(
+                test_case=current_case,
+                conversation_history=self.conversation_history,
+                current_status=current_status,
+                previous_status=previous_status
+            )
+
             # 使用 BackendService 调用 Judge App
             if self.backend_service:
                 result = await self.backend_service.invoke_app(
                     app_id=self.JUDGE_APP_ID,
-                    message=f"分析用户语音: {asr_text}",
-                    parameters={
-                        "asr_text": asr_text,
-                        "current_device_status": current_status or {},
-                        "previous_device_status": previous_status or {}
-                    }
+                    message=message,
                 )
 
                 if result.success and result.content:
@@ -918,15 +937,54 @@ class TesterService:
             logger.error(f"Judge app call failed: {e}")
             return await self._get_mock_judge_result(asr_text)
 
+    def _build_judge_app_message(
+        self,
+        test_case,
+        conversation_history: List[Dict[str, str]],
+        current_status: Dict,
+        previous_status: Dict
+    ) -> str:
+        """构建评判App的消息内容（Markdown格式）
+
+        使用独立的格式化工具函数构建消息。
+
+        Args:
+            test_case: 测试用例
+            conversation_history: 对话历史记录
+            current_status: 当前设备状态
+            previous_status: 之前设备状态
+
+        Returns:
+            格式化的消息内容
+        """
+        parts = []
+
+        # 1. 当前测试用例
+        parts.append("**当前测试用例**：")
+        parts.append(TestCaseManager.format_test_case_table(test_case))
+        parts.append("")
+
+        # 2. 对话历史记录（最近10轮）
+        parts.append("**对话历史记录**：")
+        parts.append(TestJudge.format_conversation_history_table(conversation_history, max_rounds=10))
+        parts.append("")
+
+        # 3. 设备状态变更记录（只显示变化的部分）
+        parts.append("**设备状态变更记录**：")
+        if test_case and test_case.device_guids:
+            parts.append(TestJudge.format_device_changes_table(previous_status, current_status, test_case.device_guids))
+        else:
+            parts.append("| 设备GUID | 状态有变更的参数键 | 变化前的值 | 变化后的值 | 参数键的含义说明 |")
+            parts.append("|:---|:---|:---|:---|:---|")
+
+        return "\n".join(parts)
+
     async def _get_mock_judge_result(self, asr_text: str) -> Dict[str, Any]:
         """生成模拟的判断结果"""
         return {
-            'analysis': f'分析用户语音: {asr_text}',
-            'confidence': 0.75,
-            'should_continue': True,
-            'suggested_action': 'continue_conversation',
-            'detected_intent': 'device_query',
-            'device_mentioned': True
+            'actual_result': f'模拟分析: {asr_text}',
+            'is_pass': True,
+            'next_action': 'next_case',
         }
 
     # ========================================================================
@@ -941,15 +999,13 @@ class TesterService:
     ) -> TaskProgress:
         """评估本轮执行结果并推进任务
 
-        职责：
-        1. 评判本轮执行结果
-        2. 记录结果到用例
-        3. 决定并执行推进动作
-
-        多轮对话说明：
-        - 一个测试用例可能需要多轮对话才能完成
-        - 每轮执行后，中间结果追加到 actual_results，但不更新 test_result
-        - 只有当 should_continue=False 时，才更新 test_result 为最终状态
+        流程闭环：
+        1. actual_result 记录到用例执行结果中
+        2. 收集当前 case 每个步骤的 is_pass
+        3. 当 next_action='next_case' 时，判断所有步骤是否都通过，更新测试用例最终状态
+        4. 当 is_pass=False 时，记录缺陷
+        5. 当 next_action='next_step' 时，推进当前用例的下一轮 query 生成和执行
+        6. 当 next_action='next_case' 时，推进下一条测试用例的执行
 
         Args:
             asr_text: ASR识别文本
@@ -959,32 +1015,27 @@ class TesterService:
         Returns:
             任务进度
         """
-        # 评判结果
+        # 1. 评判结果
         judge_result = await self.judge_test_result(
             asr_text,
             device_status_before,
             device_status_after
         )
 
-        # 更新用例状态
+        # 2. 更新用例状态
         current_case = self.case_manager.get_current_case()
         if current_case:
-            # 记录本轮执行结果（追加到 actual_results）
-            round_result = f"[轮次{len(current_case.actual_results) + 1}] {'通过' if judge_result.is_pass else '失败'}: {judge_result.analysis}"
+            # 2.1 记录本轮执行结果（actual_result 追加到 actual_results）
+            round_num = len(current_case.actual_results) + 1
+            round_result = f"[轮次{round_num}] {'通过' if judge_result.is_pass else '失败'}: {judge_result.actual_result}"
             current_case.actual_results.append(round_result)
 
-            # 只有当用例完成时才更新 test_result
-            if not judge_result.should_continue:
-                test_status = self.judge.determine_test_status(judge_result)
-                self.case_manager.update_case_result(
-                    current_case.id,
-                    test_status,
-                    current_case.actual_results,  # 使用累积的结果
-                    judge_result.analysis if not judge_result.is_pass else None
-                )
-                logger.info(f"用例 {current_case.id} 完成，最终状态: {test_status.value}")
+            # 2.2 收集每个步骤的 is_pass 状态
+            current_case.step_pass_results.append(judge_result.is_pass)
+            logger.info(f"用例 {current_case.id} 轮次{round_num} is_pass={judge_result.is_pass}, "
+                       f"step_pass_results={current_case.step_pass_results}")
 
-            # 如果失败，记录缺陷
+            # 3. 当 is_pass=False 时，记录缺陷
             if not judge_result.is_pass:
                 defect_id = self.defect_tracker.auto_create_from_test_result(
                     current_case,
@@ -997,16 +1048,50 @@ class TesterService:
                 )
                 if defect_id:
                     judge_result.defects.append(defect_id)
+                    logger.info(f"已记录缺陷: {defect_id}")
 
-        # 决定下一步行动
+            # 4. 当 next_action='next_case' 时，更新测试用例最终状态
+            if judge_result.next_action == 'next_case':
+                # 判断所有步骤是否都通过
+                all_passed = current_case.is_all_steps_passed()
+
+                if all_passed:
+                    test_status = TestResultStatus.PASS
+                    logger.info(f"用例 {current_case.id} 所有步骤通过，最终状态: PASS")
+                else:
+                    test_status = TestResultStatus.FAIL
+                    failed_steps = [i+1 for i, passed in enumerate(current_case.step_pass_results) if not passed]
+                    logger.info(f"用例 {current_case.id} 存在失败步骤 {failed_steps}，最终状态: FAIL")
+
+                # 更新测试用例结果
+                self.case_manager.update_case_result(
+                    current_case.id,
+                    test_status,
+                    current_case.actual_results,
+                    judge_result.actual_result if not all_passed else None
+                )
+
+                # 记录用例完成事件
+                await self._send_callback('case_completed', {
+                    'case_id': current_case.id,
+                    'title': current_case.title,
+                    'test_result': test_status.value,
+                    'step_pass_results': current_case.step_pass_results,
+                    'actual_results': current_case.actual_results,
+                    'defects': judge_result.defects,
+                })
+
+        # 5. 决定下一步行动
         action = self._determine_next_action(judge_result)
 
-        # 执行推进
+        # 6. 执行推进
         progress = self._execute_progression(action, judge_result)
 
-        # 只有当用例完成时才增加计数
-        if not judge_result.should_continue:
+        # 7. 更新统计
+        if judge_result.next_action == 'next_case':
             self.total_cases_executed += 1
+            # 清空对话历史，为新用例做准备
+            self.clear_conversation_history()
 
         await self._send_callback('task_progress', progress.to_dict())
         return progress
@@ -1254,10 +1339,14 @@ class TesterService:
         if self.execution_context:
             self.execution_context.conversation_history = self.conversation_history.copy()
 
-        logger.debug(f"Conversation history updated: {len(self.conversation_history)} messages")
+        logger.info(f"[DEBUG] add_to_conversation_history: role={role}, content={content[:50]}..., total messages={len(self.conversation_history)}")
 
     def _get_conversation_history_context(self) -> str:
-        """获取对话历史的文本格式"""
+        """获取对话历史的文本格式（用于 Query Generator）
+
+        注意：此方法返回简单的文本格式，不限制轮次。
+        如需 Markdown 表格格式并限制轮次，请使用 TestJudge.format_conversation_history_table。
+        """
         if not self.conversation_history:
             return "无历史对话"
 
@@ -1285,50 +1374,16 @@ class TesterService:
         return "\n".join(lines)
 
     def _format_current_case_context(self) -> str:
-        """格式化当前测试用例为 markdown 表格"""
+        """格式化当前测试用例为 markdown 表格
+
+        使用公共工具函数 TestCaseManager.format_test_case_table。
+        """
         current_case = self.case_manager.get_current_case()
-        if not current_case:
-            return "无用例"
-
-        # 定义表格列
-        headers = ["id", "module", "title", "type", "preconditions", "device_guids",
-                   "steps", "expect_results", "actual_results", "test_result"]
-        header_names = {
-            "id": "用例ID",
-            "module": "模块",
-            "title": "标题",
-            "type": "类型",
-            "preconditions": "前置条件",
-            "device_guids": "要操控设备的deviceGuid",
-            "steps": "测试步骤",
-            "expect_results": "预期结果",
-            "actual_results": "实际结果",
-            "test_result": "测试结果"
-        }
-
-        # 构建表头
-        lines = ["| " + " | ".join([header_names.get(h, h) for h in headers]) + " |"]
-        lines.append("|" + "|".join([":---" for _ in headers]) + "|")
-
-        # 构建数据行
-        row_values = []
-        for h in headers:
-            value = getattr(current_case, h, None)
-            if value is None:
-                value = 'N/A'
-            elif isinstance(value, list):
-                value = '<br>'.join(str(v) for v in value)
-            elif hasattr(value, 'value'):
-                value = value.value
-            else:
-                value = str(value)
-            row_values.append(value)
-        lines.append("| " + " | ".join(row_values) + " |")
-
-        return "\n".join(lines)
+        return TestCaseManager.format_test_case_table(current_case)
 
     def clear_conversation_history(self) -> None:
         """清空对话历史"""
+        logger.info(f"[DEBUG] clear_conversation_history called, previous history had {len(self.conversation_history)} messages")
         self.conversation_history = []
         if self.execution_context:
             self.execution_context.conversation_history = []

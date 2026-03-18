@@ -23,6 +23,11 @@ from app.services.app_ids import TEST_CASE_DESIGNER_APP_ID
 logger = logging.getLogger(__name__)
 
 
+# ============================================================================
+# 默认测试用例
+# ============================================================================
+
+
 # 默认测试用例 - 灯光控制测试套件
 DEFAULT_TEST_CASES = [
     {
@@ -141,6 +146,71 @@ class TestCaseManager:
 
         # 加载默认测试用例
         self._load_default_cases()
+
+    @staticmethod
+    def format_test_case_table(test_case, headers: List[str] = None) -> str:
+        """将测试用例格式化为 Markdown 表格
+
+        Args:
+            test_case: 测试用例对象（TestCase 或 dict）
+            headers: 要显示的字段列表，默认显示全部字段
+
+        Returns:
+            Markdown 格式的表格字符串
+        """
+        if test_case is None:
+            return "无用例"
+
+        # 默认表头
+        default_headers = [
+            "id", "module", "title", "type", "preconditions", "device_guids",
+            "steps", "expect_results", "actual_results", "test_result"
+        ]
+        headers = headers or default_headers
+
+        # 表头映射
+        header_names = {
+            "id": "用例ID",
+            "module": "模块",
+            "title": "标题",
+            "type": "类型",
+            "preconditions": "前置条件",
+            "device_guids": "要操控设备的deviceGuid",
+            "steps": "测试步骤",
+            "expect_results": "预期结果",
+            "actual_results": "实际结果",
+            "test_result": "测试结果"
+        }
+
+        # 支持 TestCase 对象或 dict
+        def get_value(obj, key):
+            if hasattr(obj, key):
+                return getattr(obj, key, None)
+            elif isinstance(obj, dict):
+                return obj.get(key)
+            return None
+
+        # 构建表头
+        lines = ["| " + " | ".join([header_names.get(h, h) for h in headers]) + " |"]
+        lines.append("|" + "|".join([":---" for _ in headers]) + "|")
+
+        # 构建数据行
+        row_values = []
+        for h in headers:
+            value = get_value(test_case, h)
+            if value is None:
+                value = ''
+            elif isinstance(value, list):
+                value = '; '.join(str(v) for v in value) if value else ''
+            elif hasattr(value, 'value'):  # Enum 类型
+                value = value.value
+            else:
+                value = str(value)
+            row_values.append(value)
+
+        lines.append("| " + " | ".join(row_values) + " |")
+
+        return "\n".join(lines)
 
     def _load_default_cases(self):
         """加载默认测试用例"""

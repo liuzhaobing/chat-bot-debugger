@@ -196,52 +196,76 @@ result = await self.backend_service.invoke_app(
 
 ---
 
-#### 10.2.4 评判 App
+#### 10.2.4 评判 App (JUDGE) 分析
 
 | 属性 | 值 |
 |------|-----|
 | **App ID** | `e4d13f457f7f486c99ca11b39a7b8347` |
 | **定义位置** | `tester_service.py:104`, `models.py:91` |
 | **调用位置** | `TesterService.call_judge_app()`, `TestJudge.call_judge_app()` |
-| **作用** | 评判测试执行结果是否满足预期，判断当前用例是否通过 |
 
-**入参：**
+┌─────────────────┬────────────────────────────┐
+│      作用       │            说明            │
+├─────────────────┼────────────────────────────┤
+│ 1. 判断步骤通过 │ 当前这一轮交互是否满足预期 │
+├─────────────────┼────────────────────────────┤
+│ 2. 决定是否继续 │ 当前用例是否还需要更多轮次 │
+├─────────────────┼────────────────────────────┤
+│ 3. 指导缺陷记录 │ 失败时用于触发自动创建缺陷记录   │
+└─────────────────┴────────────────────────────┘
+
+**三、输入数据**
+
 ```python
 {
-    "message": str,  # 分析提示，如 "分析用户语音: {asr_text}"
-    "parameters": {
-        "asr_text": str,                      # ASR 识别文本（用户/设备的实际响应）
-        "current_device_status": Dict,        # 执行后设备状态
-        "previous_device_status": Dict,       # 执行前设备状态
-        "device_changes": {                   # 设备状态变化
-            "changes": {
-                "device_guid": {
-                    "has_change": bool,
-                    "before": List,
-                    "after": List,
-                    "diff": {
-                        "added": List,
-                        "removed": List,
-                        "modified": List
-                    }
-                }
-            },
-            "total_changes": int
-        }
-    }
+    "message": str,  # 格式化的上下文信息（Markdown格式）
+    # message 包含:
+    # 1. 当前测试用例（测试用例的表头字段）
+    # 2. 对话历史记录（多轮对话的表头）
+    # 3. 设备状态变更记录
 }
 ```
 
-**出参：**
+**message 结构示例：**
+
+```markdown
+**当前测试用例**：
+| 用例ID | 模块 | 标题 | 类型 | 前置条件 | 要操控设备的deviceGuid | 测试步骤 | 预期结果 | 实际结果 | 测试结果 |
+|:---|:---|:---|:---|:---|:---|:---|:---|:---|:---|
+| APPL-LIGHT-001 | 一体机 - 灯光控制 | 语音打开一体机内部灯光 | Functional | ... | 38-i750411c84f366 | ... | ... | | NotRun |
+
+**对话历史记录**：
+> 注：当前正在评判的是第 3 轮对话（表格中最新的一轮）
+> 注：仅显示最近 10 轮对话，更早的 5 条消息已省略
+
+| 轮次 | 角色 | 内容 |
+|:---|:---|:---|
+| 2 | 测试员 | 打开一体机灯 |
+| 2 | 被测系统 | 好的，已为您打开一体机灯 |
+
+**设备状态变更记录**：
+| 设备GUID | 状态有变更的参数键 | 变化前的值 | 变化后的值 | 参数键的含义说明 |
+|:---|:---|:---|:---|:---|
+| 38-i750411c84f366 | lightSwitch | 0 | 1 | 灯光开关状态 |
+```
+
+**对话历史限制说明：**
+
+| 规则 | 说明 |
+|------|------|
+| 最多轮次 | 只传递最近 **10 轮** 对话（每轮包含用户和系统各1条，共20条消息） |
+| 当前轮次标注 | 明确标注当前正在评判的是第几轮对话，避免模型误解 |
+| 不足10轮 | 正常显示全部对话，不做额外处理 |
+| 首轮测试 | 对话历史为空时，显示"当前是第 1 轮对话（首轮测试）" |
+
+**四、输出数据 —— 标准JSON**
+
 ```python
 {
-    "analysis": str,              # 分析结果描述
-    "confidence": float,          # 置信度 (0.0 - 1.0)
-    "should_continue": bool,      # 是否继续当前用例的测试
-    "suggested_action": str,      # 建议行动: continue_conversation, end_conversation
-    "detected_intent": str,       # 检测到的意图，如 device_control
-    "device_mentioned": bool,     # 是否提及设备
-    "is_pass": bool               # 当前步骤是否通过（可选）
+    "actual_result": str,      # 用例实际执行情况记录，如 "用户请求打开灯，系统确认已打开，设备状态从关闭变为开启"
+    "is_pass": bool,           # 当前测试步骤是否通过
+    "next_action": str,        # 关键：判断当前测试用例是否执行完成，是否需要更多步骤继续完成当前用例的测试
+                              # 枚举值: "next_step" 或 "next_case"
 }
 ```
 
@@ -250,26 +274,78 @@ result = await self.backend_service.invoke_app(
 # tester_service.py:756
 result = await self.backend_service.invoke_app(
     app_id=self.JUDGE_APP_ID,
-    message=f"分析用户语音: {asr_text}",
-    parameters={
-        "asr_text": asr_text,
-        "current_device_status": device_status_after,
-        "previous_device_status": device_status_before,
-        "device_changes": device_changes,
-    }
+    message=message,  # 包含测试用例、对话历史、设备状态变更记录
 )
 
 # judge.py:132
 result = await self.backend_service.invoke_app(
     app_id=self.config.judge_app_id,
-    message=f"分析用户语音: {asr_text}",
-    parameters={
-        "asr_text": asr_text,
-        "current_device_status": device_status_after,
-        "previous_device_status": device_status_before,
-        "device_changes": device_changes,
-    }
+    message=message,  # 包含测试用例、对话历史、设备状态变更记录
 )
+```
+
+**六、流程闭环（TesterService.evaluate_round_result）**
+
+评判结果返回后，TesterService 按以下流程闭环处理：
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              评判结果处理流程                                 │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+1. actual_result 记录到用例执行
+   └─► current_case.actual_results.append(round_result)
+
+2. 收集每个步骤的 is_pass 状态
+   └─► current_case.step_pass_results.append(is_pass)
+
+3. 判断 is_pass
+   ├─► True:  继续流程
+   └─► False: 记录缺陷 (defect_tracker.auto_create_from_test_result)
+
+4. 判断 next_action
+   │
+   ├─► "next_step": 当前用例未完成
+   │   └─► 推进当前用例的下一轮 query 生成和执行
+   │
+   └─► "next_case": 当前用例完成
+       ├─► 判断所有步骤是否都通过: all(step_pass_results)
+       │   ├─► True:  测试结果 = PASS
+       │   └─► False: 测试结果 = FAIL
+       └─► 推进下一条测试用例的执行
+```
+
+**流程闭环代码示例：**
+
+```python
+async def evaluate_round_result(self, asr_text, device_status_before, device_status_after):
+    # 1. 评判结果
+    judge_result = await self.judge_test_result(asr_text, device_status_before, device_status_after)
+
+    current_case = self.case_manager.get_current_case()
+    if current_case:
+        # 2. actual_result 记录到用例执行
+        round_result = f"[轮次{len(current_case.actual_results) + 1}] {'通过' if judge_result.is_pass else '失败'}: {judge_result.actual_result}"
+        current_case.actual_results.append(round_result)
+
+        # 3. 收集每个步骤的 is_pass 状态
+        current_case.step_pass_results.append(judge_result.is_pass)
+
+        # 4. is_pass=False 时，记录缺陷
+        if not judge_result.is_pass:
+            defect_id = self.defect_tracker.auto_create_from_test_result(current_case, {...})
+            judge_result.defects.append(defect_id)
+
+        # 5. next_action='next_case' 时，更新测试用例最终状态
+        if judge_result.next_action == 'next_case':
+            all_passed = all(current_case.step_pass_results)  # 判断所有步骤是否都通过
+            test_status = TestResultStatus.PASS if all_passed else TestResultStatus.FAIL
+            self.case_manager.update_case_result(current_case.id, test_status, ...)
+
+    # 6. 执行推进
+    action = self._determine_next_action(judge_result)
+    progress = self._execute_progression(action, judge_result)
+    return progress
 ```
 
 ---

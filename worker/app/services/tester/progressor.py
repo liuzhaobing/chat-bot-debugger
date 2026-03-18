@@ -70,9 +70,9 @@ class TaskProgressor:
         注意：noise 重试由 on_noise_detected 方法单独处理，不在此方法中判断。
 
         推进策略：
-        - 如果 should_continue=True，返回 WAIT 表示继续当前用例的执行
-        - 如果 should_continue=False 且还有未执行的用例，返回 NEXT_CASE
-        - 如果 should_continue=False 且没有更多用例，返回 STOP
+        - 如果 next_action='next_step'，返回 WAIT 表示继续当前用例的执行
+        - 如果 next_action='next_case' 且还有未执行的用例，返回 NEXT_CASE
+        - 如果 next_action='next_case' 且没有更多用例，返回 STOP
 
         Args:
             context: 推进上下文
@@ -86,21 +86,17 @@ class TaskProgressor:
 
         # 检查评判结果
         if context.last_result:
-            # 如果建议结束对话
-            if context.last_result.suggested_action == 'end_conversation':
+            # next_action 决定下一步
+            next_action = context.last_result.next_action
+
+            # next_case 表示当前用例完成，进入下一个用例
+            if next_action == 'next_case':
                 if context.current_case_index < context.total_cases - 1:
                     return NextAction.NEXT_CASE
                 else:
                     return NextAction.STOP
 
-            # 如果不应该继续（当前用例完成）
-            if not context.last_result.should_continue:
-                if context.current_case_index < context.total_cases - 1:
-                    return NextAction.NEXT_CASE
-                else:
-                    return NextAction.STOP
-
-            # should_continue=True，继续当前用例的执行
+            # next_step 表示继续当前用例的执行
             return NextAction.WAIT
 
         # 没有评判结果，默认等待

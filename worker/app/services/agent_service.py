@@ -15,6 +15,7 @@ Agentic Test Agent 服务
 - TesterService 负责测试用例的完整生命周期
 """
 import asyncio
+import copy
 import json
 import logging
 import base64
@@ -23,6 +24,13 @@ import uuid
 from typing import Optional, Callable, Dict, Any, List
 from dataclasses import dataclass
 from datetime import datetime
+
+try:
+    import jsondiff
+    HAS_JSONDIFF = True
+except ImportError:
+    HAS_JSONDIFF = False
+    logging.warning("jsondiff not available, using basic comparison")
 
 from sqlalchemy import select
 
@@ -243,10 +251,13 @@ class AgenticTestAgent:
 
         try:
             # 初始化设备状态 - 必须在生成测试用例之前执行
-            await self.initialize_device_status()
+            await self.refresh_device_status(is_initialize=True)
 
             # 设置测试工程师服务的家庭设备
             self.tester_service.set_family_devices(self.family_devices)
+
+            # 初始化设备协议（用于参数键含义说明）
+            await self.tester_service.initialize_judge_protocols()
 
             # 如果有 PRD 内容，生成测试用例
             prd_content = self.tester_config.get('prd_content') if self.tester_config else None
@@ -363,11 +374,55 @@ class AgenticTestAgent:
             self._stop_buffering()
             await self.send_callback('status', '智能体循环已结束')
 
-    async def initialize_device_status(self):
-        """初始化设备状态"""
+    async def refresh_device_status(self, is_initialize: bool = False, device_guids: List[str] = None):
+        """刷新设备状态
+
+        Args:
+            is_initialize: 是否为初始化模式
+                - True: 初始化模式，初始化 family_devices，状态存入 previous_device_status
+                - False: 更新模式，将 current 移动到 previous，状态存入 current_device_status
+            device_guids: 指定设备GUID列表，当有值时跳过 get_family_devices 调用，直接查询这些设备状态
+        """
         try:
-            if not self.iot_config.get('token') or not self.iot_config.get('familyId'):
-                await self.send_callback('warning', 'IOT配置不完整，使用模拟数据')
+            if not self.iot_config.get('token'):
+                if is_initialize:
+                    await self.send_callback('warning', 'IOT配置不完整，使用模拟数据')
+                return
+
+            # 更新模式：将当前状态移动到之前状态
+            if not is_initialize:
+                self.previous_device_status = self.current_device_status.copy()
+                self.current_device_status = {}
+
+            # 如果指定了 device_guids，直接查询这些设备
+            if device_guids:
+                status_result = await self.iot_service.get_device_status(
+                    device_guids,
+                    self.iot_config['token']
+                )
+                if status_result.get('success', False) or status_result.get('rc') == 0:
+                    data = status_result.get('data', [])
+                    for item in data:
+                        device_guid = item.get('deviceId')
+                        properties = item.get('properties', {})
+                        if device_guid:
+                            if is_initialize:
+                                self.previous_device_status[device_guid] = properties
+                            else:
+                                self.current_device_status[device_guid] = properties
+
+                if not is_initialize:
+                    await self.send_callback('device_status_update', {
+                        'current': self.current_device_status,
+                        'previous': self.previous_device_status,
+                        'changes': self.detect_device_changes()
+                    })
+                return
+
+            # 未指定 device_guids，查询家庭所有设备
+            if not self.iot_config.get('familyId'):
+                if is_initialize:
+                    await self.send_callback('warning', 'IOT配置不完整，使用模拟数据')
                 return
 
             devices_result = await self.iot_service.get_family_devices(
@@ -377,35 +432,54 @@ class AgenticTestAgent:
 
             if devices_result.get('success', False) or devices_result.get('rc') == 0:
                 devices = devices_result.get('data', [])
-                await self.send_callback('log', f'发现 {len(devices)} 个设备')
 
-                self.family_devices = {}
-                for device in devices:
-                    device_guid = device.get('deviceGuid')
-                    category_name = device.get('categoryName')
-                    nick_name = device.get('name')
-                    display_type = device.get('displayType')
-                    device_status = device.get('status')
-                    self.family_devices[device_guid] = {
-                        'device_guid': device_guid,
-                        'category_name': category_name,
-                        'nick_name': nick_name,
-                        'display_type': display_type,
-                        'device_status': device_status
-                    }
-                    if device_guid:
-                        status_result = await self.iot_service.get_device_status(
-                            device_guid,
-                            self.iot_config['token']
-                        )
-                        if status_result.get('success', False) or status_result.get('rc') == 0:
-                            self.previous_device_status[device_guid] = status_result.get('data', [])
+                if is_initialize:
+                    await self.send_callback('log', f'发现 {len(devices)} 个设备')
 
-                await self.log_event('iot_query', f'初始化了 {len(self.previous_device_status)} 个设备状态')
+                # 初始化模式：更新 family_devices
+                if is_initialize:
+                    self.family_devices = {}
+                    for device in devices:
+                        device_guid = device.get('deviceGuid')
+                        self.family_devices[device_guid] = {
+                            'device_guid': device_guid,
+                            'category_name': device.get('categoryName'),
+                            'nick_name': device.get('name'),
+                            'display_type': device.get('displayType'),
+                            'device_status': device.get('status')
+                        }
+
+                # 批量查询设备状态
+                device_guids_to_query = [d.get('deviceGuid') for d in devices if d.get('deviceGuid')]
+                if device_guids_to_query:
+                    status_result = await self.iot_service.get_device_status(
+                        device_guids_to_query,
+                        self.iot_config['token']
+                    )
+                    if status_result.get('success', False) or status_result.get('rc') == 0:
+                        data = status_result.get('data', [])
+                        for item in data:
+                            device_guid = item.get('deviceId')
+                            properties = item.get('properties', {})
+                            if device_guid:
+                                if is_initialize:
+                                    self.previous_device_status[device_guid] = properties
+                                else:
+                                    self.current_device_status[device_guid] = properties
+
+                if is_initialize:
+                    await self.log_event('iot_query', f'初始化了 {len(self.previous_device_status)} 个设备状态')
+                else:
+                    await self.send_callback('device_status_update', {
+                        'current': self.current_device_status,
+                        'previous': self.previous_device_status,
+                        'changes': self.detect_device_changes()
+                    })
 
         except Exception as e:
-            logger.error(f"Failed to initialize device status: {e}")
-            await self.send_callback('warning', f'设备状态初始化失败: {str(e)}')
+            logger.error(f"Failed to refresh device status: {e}")
+            if is_initialize:
+                await self.send_callback('warning', f'设备状态初始化失败: {str(e)}')
 
     def _format_devices_to_markdown(self) -> Optional[str]:
         """将家庭设备信息转换为 Markdown 格式
@@ -604,9 +678,9 @@ class AgenticTestAgent:
             self.tester_service.add_to_conversation_history('assistant', asr_text)
 
             # 2. 保存执行前的设备状态，并更新获取执行后的设备状态
-            device_status_before = self.previous_device_status.copy()
-            await self.update_device_status()
-            device_status_after = self.current_device_status.copy()
+            device_status_before = copy.deepcopy(self.previous_device_status)
+            await self.refresh_device_status(is_initialize=False)
+            device_status_after = copy.deepcopy(self.current_device_status)
 
             # 3. 调用 evaluate_round_result 进行评判和推进
             progress = await self.tester_service.evaluate_round_result(
@@ -1032,54 +1106,27 @@ class AgenticTestAgent:
             await self.send_callback('error', f'固定时长音频处理失败: {str(e)}')
             return VADASRResult(success=False, error_message=str(e))
 
-    async def update_device_status(self):
-        """更新设备状态"""
-        try:
-            if not self.iot_config.get('token') or not self.iot_config.get('familyId'):
-                return
-
-            self.previous_device_status = self.current_device_status.copy()
-            self.current_device_status = {}
-
-            devices_result = await self.iot_service.get_family_devices(
-                self.iot_config['familyId'],
-                self.iot_config['token']
-            )
-
-            if devices_result.get('success', False) or devices_result.get('rc') == 0:
-                devices = devices_result.get('data', [])
-
-                for device in devices[:3]:
-                    device_guid = device.get('deviceGuid')
-                    if device_guid:
-                        status_result = await self.iot_service.get_device_status(
-                            device_guid,
-                            self.iot_config['token']
-                        )
-                        if status_result.get('success', False) or status_result.get('rc') == 0:
-                            self.current_device_status[device_guid] = status_result.get('data', [])
-
-                await self.send_callback('device_status_update', {
-                    'current': self.current_device_status,
-                    'previous': self.previous_device_status,
-                    'changes': self.detect_device_changes()
-                })
-
-        except Exception as e:
-            logger.error(f"Failed to update device status: {e}")
-
     def detect_device_changes(self) -> Dict[str, Any]:
-        """检测设备状态变化"""
+        """检测设备状态变化
+
+        使用 jsondiff 对比设备属性变化，属性已经是 dict 格式。
+        """
         changes = {}
         for device_guid in self.current_device_status:
-            current = self.current_device_status.get(device_guid, [])
-            previous = self.previous_device_status.get(device_guid, [])
+            current_props = self.current_device_status.get(device_guid, {})
+            previous_props = self.previous_device_status.get(device_guid, {})
 
-            if current != previous:
+            if current_props != previous_props:
+                # 使用 jsondiff 计算详细差异
+                diff = None
+                if HAS_JSONDIFF:
+                    diff = jsondiff.diff(previous_props, current_props)
+
                 changes[device_guid] = {
                     'has_change': True,
-                    'current': current,
-                    'previous': previous
+                    'current': current_props,
+                    'previous': previous_props,
+                    'diff': diff
                 }
             else:
                 changes[device_guid] = {'has_change': False}

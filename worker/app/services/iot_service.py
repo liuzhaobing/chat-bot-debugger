@@ -5,7 +5,7 @@ IoT 服务
 import asyncio
 import logging
 import random
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import httpx
 
 from app.config import settings
@@ -75,35 +75,45 @@ class IOTService:
             logger.error(f"Failed to get family devices: {e}")
             return await self._get_mock_family_devices()
     
-    async def get_device_status(self, device_guid: str, iot_token: Optional[str] = None) -> Dict[str, Any]:
-        """查询指定设备GUID的状态详情"""
+    async def get_device_status(self, device_guids: List[str], iot_token: Optional[str] = None) -> Dict[str, Any]:
+        """查询指定设备GUID列表的状态详情
+
+        Args:
+            device_guids: 设备GUID列表
+            iot_token: IOT token
+
+        Returns:
+            设备状态结果，data中包含多个设备的状态列表
+        """
         _iot_token = iot_token or self.token
-        
+        device_ids_str = ",".join(device_guids)
+
         if not _iot_token or settings.dev_mock_external_services:
-            return await self._get_mock_device_status(device_guid)
-        
+            return await self._get_mock_device_status(device_guids)
+
         try:
             async with httpx.AsyncClient(timeout=settings.iot_timeout) as client:
                 response = await client.get(
                     f"{self.base_url}/iot/api/device/property/shadow",
                     headers={"Authorization": f"Bearer {_iot_token}"},
-                    params={"deviceIds": device_guid}
+                    params={"deviceIds": device_ids_str}
                 )
-                
+
                 response.raise_for_status()
                 result = response.json()
-                
+
                 # 更新缓存
-                self.device_cache[device_guid] = result
-                self.last_update_time[device_guid] = asyncio.get_event_loop().time()
-                
-                logger.info(f"Device status retrieved: {device_guid}")
+                for device_guid in device_guids:
+                    self.device_cache[device_guid] = result
+                    self.last_update_time[device_guid] = asyncio.get_event_loop().time()
+
+                logger.info(f"Device status retrieved: {device_ids_str}")
                 return result
-                
+
         except Exception as e:
             logger.error(f"Failed to get device status: {e}")
-            return await self._get_mock_device_status(device_guid)
-    
+            return await self._get_mock_device_status(device_guids)
+
     async def _get_mock_family_devices(self) -> Dict[str, Any]:
         """返回模拟的家庭设备清单"""
         await asyncio.sleep(0.3)
@@ -142,24 +152,26 @@ class IOTService:
             ]
         }
     
-    async def _get_mock_device_status(self, device_guid: str) -> Dict[str, Any]:
+    async def _get_mock_device_status(self, device_guids: List[str]) -> Dict[str, Any]:
         """返回模拟的设备状态"""
         await asyncio.sleep(0.3)
-        
+
+        data = []
+        for device_guid in device_guids:
+            data.append({
+                "deviceId": device_guid,
+                "status": 1,
+                "properties": {
+                    "powerState": random.choice([0, 1]),
+                    "workState": random.choice([0, 1, 2]),
+                    "faultCode": 0,
+                    "timestamp": int(asyncio.get_event_loop().time())
+                }
+            })
+
         return {
             "rc": 0,
             "msg": "操作成功",
             "success": True,
-            "data": [
-                {
-                    "deviceId": device_guid,
-                    "status": 1,
-                    "properties": {
-                        "powerState": random.choice([0, 1]),
-                        "workState": random.choice([0, 1, 2]),
-                        "faultCode": 0,
-                        "timestamp": int(asyncio.get_event_loop().time())
-                    }
-                }
-            ]
+            "data": data
         }

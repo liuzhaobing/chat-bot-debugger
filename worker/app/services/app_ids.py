@@ -34,7 +34,7 @@ ASR_APP_ID = "4f95e97b0ec641fab9772b68a81bcf4a"
 TTS_APP_ID = ""  # 从环境变量配置
 
 # 验证 App
-VERIFICATION_APP_ID = "3b5c603a388541f7942396adec9a57ce"
+VERIFICATION_APP_ID = "e4d13f457f7f486c99ca11b39a7b8347"
 
 
 # ============================================================================

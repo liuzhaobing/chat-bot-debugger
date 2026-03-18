@@ -183,7 +183,8 @@ class TestCase:
     device_guids: List[str]
     steps: List[str]
     expect_results: List[str]
-    actual_results: List[str] = field(default_factory=list)
+    actual_results: List[str] = field(default_factory=list)      # 每轮执行的实际结果记录
+    step_pass_results: List[bool] = field(default_factory=list)  # 每轮执行的 is_pass 记录
     test_result: TestResultStatus = TestResultStatus.NOT_RUN
     execution_time: Optional[datetime] = None
     duration_seconds: Optional[float] = None
@@ -203,6 +204,7 @@ class TestCase:
             "steps": self.steps,
             "expect_results": self.expect_results,
             "actual_results": self.actual_results,
+            "step_pass_results": self.step_pass_results,
             "test_result": self.test_result.value,
             "execution_time": self.execution_time.isoformat() if self.execution_time else None,
             "duration_seconds": self.duration_seconds,
@@ -224,6 +226,7 @@ class TestCase:
             steps=data.get("steps", []),
             expect_results=data.get("expect_results", []),
             actual_results=data.get("actual_results", []),
+            step_pass_results=data.get("step_pass_results", []),
             test_result=TestResultStatus(data.get("test_result", "NotRun")),
             execution_time=datetime.fromisoformat(data["execution_time"]) if data.get("execution_time") else None,
             duration_seconds=data.get("duration_seconds"),
@@ -231,6 +234,16 @@ class TestCase:
             error_message=data.get("error_message"),
             test_point_id=data.get("test_point_id"),
         )
+
+    def is_all_steps_passed(self) -> bool:
+        """判断所有步骤是否都通过
+
+        Returns:
+            True 如果所有步骤都通过，False 如果有任何一个步骤失败
+        """
+        if not self.step_pass_results:
+            return False
+        return all(self.step_pass_results)
 
 
 # ============================================================================
@@ -279,28 +292,25 @@ class ExecutionResult:
 
 @dataclass
 class JudgeResult:
-    """评判结果"""
+    """评判结果
+
+    核心目的：判断当前测试步骤是否达到了预期效果
+    - 设备响应是否正确？ - ASR 识别的语音回复是否符合预期
+    - 设备状态是否变化？ - IoT 设备状态是否按预期改变
+    """
     case_id: str
-    is_pass: bool
-    confidence: float
-    analysis: str
-    detected_intent: Optional[str] = None
-    should_continue: bool = True
-    suggested_action: str = "continue_conversation"
-    device_mentioned: bool = False
-    defects: List[str] = field(default_factory=list)  # 缺陷ID列表
+    is_pass: bool                                    # 当前测试步骤是否通过
+    actual_result: str = ""                          # 用例实际执行情况记录
+    next_action: str = "next_step"                   # 枚举值: "next_step" 或 "next_case"
+    defects: List[str] = field(default_factory=list) # 缺陷ID列表
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典格式"""
         return {
             "case_id": self.case_id,
             "is_pass": self.is_pass,
-            "confidence": self.confidence,
-            "analysis": self.analysis,
-            "detected_intent": self.detected_intent,
-            "should_continue": self.should_continue,
-            "suggested_action": self.suggested_action,
-            "device_mentioned": self.device_mentioned,
+            "actual_result": self.actual_result,
+            "next_action": self.next_action,
             "defects": self.defects,
         }
 

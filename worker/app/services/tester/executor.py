@@ -141,51 +141,6 @@ class TestExecutor:
 
         return f"执行测试用例 {test_case.id}"
 
-    async def record_device_status_before(
-        self,
-        device_guids: List[str],
-        iot_service
-    ) -> Dict[str, Any]:
-        """执行前记录设备状态
-
-        Args:
-            device_guids: 设备GUID列表
-            iot_service: IOT服务实例
-
-        Returns:
-            设备状态字典 {device_guid: status}
-        """
-        status = {}
-        try:
-            for device_guid in device_guids:
-                result = await iot_service.get_device_status(
-                    device_guid,
-                    iot_service.token
-                )
-                if result.get('success') or result.get('rc') == 0:
-                    status[device_guid] = result.get('data', [])
-                    logger.debug(f"Recorded before status for device {device_guid}")
-        except Exception as e:
-            logger.error(f"Error recording device status before: {e}")
-
-        return status
-
-    async def record_device_status_after(
-        self,
-        device_guids: List[str],
-        iot_service
-    ) -> Dict[str, Any]:
-        """执行后记录设备状态
-
-        Args:
-            device_guids: 设备GUID列表
-            iot_service: IOT服务实例
-
-        Returns:
-            设备状态字典 {device_guid: status}
-        """
-        return await self.record_device_status_before(device_guids, iot_service)
-
     def construct_test_data(
         self,
         test_case: TestCase,

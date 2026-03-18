@@ -27,10 +27,12 @@ from .models import (
 )
 from .case_manager import TestCaseManager, DEFAULT_TEST_CASES
 from .executor import TestExecutor
-from .judge import TestJudge
 from .progressor import TaskProgressor
 from .defect_tracker import DefectTracker
 from .reporter import TestReporter
+
+# TestJudge 已移至 verifiers.py，需要从那里导入
+# 注意：避免循环导入，请直接使用 from app.services.verifiers import TestJudge
 
 __all__ = [
     # 数据类
@@ -56,7 +58,7 @@ __all__ = [
     # 服务类
     "TestCaseManager",
     "TestExecutor",
-    "TestJudge",
+    # "TestJudge",  # 已移至 app.services.verifiers
     "TaskProgressor",
     "DefectTracker",
     "TestReporter",

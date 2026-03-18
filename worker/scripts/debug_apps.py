@@ -189,11 +189,11 @@ async def debug_judge_app(
     device_status_before = device_status_before or {}
     device_status_after = device_status_after or {}
 
-    # 计算设备状态变化
+    # 计算设备状态变化（属性已经是 dict 格式）
     device_changes = {"changes": {}, "total_changes": 0}
     for device_guid in set(list(device_status_before.keys()) + list(device_status_after.keys())):
-        before = device_status_before.get(device_guid, [])
-        after = device_status_after.get(device_guid, [])
+        before = device_status_before.get(device_guid, {})
+        after = device_status_after.get(device_guid, {})
         if before != after:
             device_changes["changes"][device_guid] = {
                 "has_change": True,

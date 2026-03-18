@@ -327,7 +327,7 @@ class SmartTestAgent(AgenticTestAgent):
         try:
             if self.target_device_guid and self.iot_config.get('token'):
                 status_result = await self.iot_service.get_device_status(
-                    self.target_device_guid,
+                    [self.target_device_guid],
                     self.iot_config['token']
                 )
 

@@ -167,7 +167,7 @@ def get_device_status(request):
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            result = loop.run_until_complete(iot_service.get_device_status(device_guid, iot_token))
+            result = loop.run_until_complete(iot_service.get_device_status([device_guid], iot_token))
         finally:
             loop.close()
         
