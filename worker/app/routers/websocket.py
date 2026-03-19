@@ -205,19 +205,35 @@ async def agentic_test_websocket(
                     )
                     conn_info.metadata["agent"] = agent
 
-                    # 启动测试
-                    asyncio.create_task(agent.start_loop(query, iot_config))
+                    # 第一阶段：初始化并生成测试用例（等待用户确认）
+                    asyncio.create_task(agent.initialize_and_generate_cases(iot_config))
 
                     await connection_manager.send_message(
                         session_id,
                         {
                             "type": "status",
-                            "content": "测试开始",
+                            "content": "开始生成测试用例...",
                             "metadata": {
                                 "initial_query": query,
                                 "iot_config": bool(iot_config)
                             }
                         }
+                    )
+
+                elif message_type == "test_case_confirm":
+                    # 用户确认测试用例，启动主循环
+                    if not agent:
+                        await connection_manager.send_message(
+                            session_id,
+                            {"type": "error", "content": "请先发送 start_test 消息"}
+                        )
+                        continue
+
+                    # 启动主循环
+                    asyncio.create_task(agent.start_main_loop())
+                    await connection_manager.send_message(
+                        session_id,
+                        {"type": "status", "content": "测试用例已确认，开始执行..."}
                     )
 
                 elif message_type == "close_connection":

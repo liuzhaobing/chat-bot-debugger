@@ -6,7 +6,7 @@
 
 import json
 import logging
-from typing import Optional, Dict, Any, List, Tuple
+from typing import AsyncGenerator, Callable, Optional, Dict, Any, List, Tuple
 from datetime import datetime
 
 from .models import (
@@ -17,7 +17,7 @@ from .models import (
     TestCaseStatistics,
     TesterConfig,
 )
-from app.services.backend_service import BackendService
+from app.services.backend_service import BackendService, StreamChunk
 from app.services.app_ids import TEST_CASE_DESIGNER_APP_ID
 
 logger = logging.getLogger(__name__)
@@ -309,6 +309,7 @@ class TestCaseManager:
             生成的测试用例列表
         """
         logger.info(f"Designing test cases from PRD, length: {len(prd)}")
+        logger.info("[NON-STREAM] Using invoke_app for test case generation")
         if functions_md:
             logger.info(f"Functions MD provided, length: {len(functions_md)}")
         if devices_md:
@@ -357,6 +358,135 @@ class TestCaseManager:
         except Exception as e:
             logger.error(f"Error designing test cases from PRD: {e}", exc_info=True)
             return []
+
+    async def design_cases_from_prd_stream(
+        self,
+        prd: str,
+        functions_md: Optional[str] = None,
+        devices_md: Optional[str] = None,
+        backend_service: Optional[BackendService] = None,
+        stream_callback: Optional[Callable[[str], None]] = None
+    ) -> List[TestCase]:
+        """根据PRD（产品需求文档）流式设计测试用例
+
+        通过调用后端的测试用例设计 APP，流式生成测试用例。
+        支持 stream_callback 回调，实时将生成的文本发送给前端。
+
+        Args:
+            prd: 产品需求文档内容
+            functions_md: 设备功能说明（Markdown格式）
+            devices_md: 家庭设备信息（Markdown格式）
+            backend_service: BackendService 实例
+            stream_callback: 流式文本回调函数，用于实时发送生成内容
+
+        Returns:
+            生成的测试用例列表
+        """
+        logger.info(f"Designing test cases from PRD (streaming), length: {len(prd)}")
+        logger.info("[STREAM] Using invoke_app_stream for test case generation")
+        if functions_md:
+            logger.info(f"Functions MD provided, length: {len(functions_md)}")
+        if devices_md:
+            logger.info(f"Devices MD provided, length: {len(devices_md)}")
+
+        service = backend_service or BackendService()
+
+        # 构建完整的提示词
+        prompt = self._build_test_case_prompt(prd, functions_md, devices_md)
+
+        # 收集完整的生成内容
+        full_content = ""
+        usage = None
+
+        try:
+            async for chunk in service.invoke_app_stream(
+                app_id=TEST_CASE_DESIGNER_APP_ID,
+                message=prompt,
+                timeout=600,
+            ):
+                if chunk.is_error:
+                    logger.error(f"Stream error: {chunk.error}")
+                    break
+
+                # 收集内容
+                if chunk.content:
+                    full_content += chunk.content
+
+                    # 通过回调发送给前端
+                    if stream_callback:
+                        await stream_callback(chunk.content)
+
+                # 收集 usage
+                if chunk.usage:
+                    usage = chunk.usage
+
+                if chunk.is_done:
+                    break
+
+            logger.info(f"Test case designer returned {len(full_content)} chars")
+            if usage:
+                logger.info(f"Token usage: {usage}")
+
+            # 解析生成的测试用例
+            test_cases = self._parse_test_cases_content(full_content)
+
+            # 添加到映射
+            for case in test_cases:
+                self._case_map[case.id] = case
+
+            logger.info(f"Generated {len(test_cases)} test cases from PRD")
+            return test_cases
+
+        except Exception as e:
+            logger.error(f"Error designing test cases from PRD (streaming): {e}", exc_info=True)
+            return []
+
+    def _parse_test_cases_content(self, content: str) -> List[TestCase]:
+        """解析测试用例生成内容
+
+        支持两种格式：
+        1. 纯 JSON 数组
+        2. Markdown 代码块中的 JSON
+
+        Args:
+            content: 生成的内容
+
+        Returns:
+            解析出的测试用例列表
+        """
+        import re
+
+        # 尝试直接解析 JSON
+        try:
+            cases_data = json.loads(content)
+            if isinstance(cases_data, list):
+                test_cases = []
+                for case_data in cases_data:
+                    case = TestCase.from_dict(case_data)
+                    test_cases.append(case)
+                return test_cases
+        except json.JSONDecodeError:
+            pass
+
+        # 尝试从 Markdown 代码块中提取 JSON
+        json_pattern = r'```(?:json)?\s*\n(.*?)\n```'
+        matches = re.findall(json_pattern, content, re.DOTALL)
+
+        for match in matches:
+            try:
+                cases_data = json.loads(match)
+                if isinstance(cases_data, list):
+                    test_cases = []
+                    for case_data in cases_data:
+                        case = TestCase.from_dict(case_data)
+                        test_cases.append(case)
+                    return test_cases
+            except json.JSONDecodeError:
+                continue
+
+        logger.warning("Failed to parse test cases content")
+        logger.debug(f"Content: {content[:500]}...")
+        return []
 
     async def design_case_for_test_point(
         self,

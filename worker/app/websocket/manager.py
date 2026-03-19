@@ -88,25 +88,30 @@ class ConnectionManager:
                 )
                 await websocket.close(code=1008, reason="Max connections reached")
                 return
-            
-            # 如果会话已存在，先断开旧连接
+
+            # 如果会话已存在，先保存 metadata（保留 Agent 等状态）
+            old_metadata = {}
             if session_id in self.active_connections:
-                logger.warning(f"Session {session_id} already connected, closing old connection")
                 old_conn = self.active_connections[session_id]
+                old_metadata = old_conn.metadata.copy()  # 保留状态（Agent、配置等）
+                logger.warning(
+                    f"Session {session_id} already connected, "
+                    f"preserving metadata and closing old connection"
+                )
                 try:
                     await old_conn.websocket.close(code=1000, reason="New connection established")
                 except Exception as e:
                     logger.error(f"Error closing old connection: {e}")
-            
+
             # 接受连接
             await websocket.accept()
-            
-            # 创建连接信息
+
+            # 创建连接信息，合并旧的 metadata
             conn_info = ConnectionInfo(
                 websocket=websocket,
                 session_id=session_id,
                 user_id=user_id,
-                metadata=metadata or {}
+                metadata=old_metadata or metadata or {}
             )
             
             # 注册连接

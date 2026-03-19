@@ -478,6 +478,49 @@ class TesterService:
 
         return cases
 
+    async def design_test_cases_stream(
+        self,
+        prd: str,
+        functions_md: Optional[str] = None,
+        devices_md: Optional[str] = None,
+        backend_service=None
+    ) -> List[TestCase]:
+        """流式设计测试用例
+
+        根据PRD（产品需求文档）、设备功能说明和家庭设备信息流式生成测试用例。
+        实时将生成的内容发送到前端。
+
+        Args:
+            prd: 产品需求文档内容
+            functions_md: 设备功能说明（Markdown格式，可选）
+            devices_md: 家庭设备信息（Markdown格式，可选）
+            backend_service: BackendService 实例（可选）
+
+        Returns:
+            生成的测试用例列表
+        """
+        logger.info("[STREAM] design_test_cases_stream called - using streaming path")
+
+        # 定义流式回调，将生成的内容发送到前端
+        async def stream_callback(content: str):
+            await self._send_callback('test_case_stream', {
+                'content': content,
+            })
+
+        cases = await self.case_manager.design_cases_from_prd_stream(
+            prd, functions_md, devices_md, backend_service, stream_callback
+        )
+
+        # 发送完成事件
+        await self._send_callback('test_cases_generated', {
+            'count': len(cases),
+            'test_cases': [tc.to_dict() for tc in cases],
+        })
+
+        await self._send_callback('log', f'根据PRD生成了 {len(cases)} 个测试用例')
+
+        return cases
+
     async def generate_test_cases_from_config(
         self,
         devices_md: Optional[str] = None
@@ -486,6 +529,7 @@ class TesterService:
 
         如果配置中有 prd_content，则根据 PRD、设备功能说明和家庭设备信息生成测试用例。
         生成成功后，清空默认用例，使用新生成的用例。
+        支持流式生成，实时将内容发送到前端。
 
         Args:
             devices_md: 家庭设备信息（Markdown格式，可选）
@@ -515,9 +559,13 @@ class TesterService:
             else:
                 logger.warning(f"Failed to retrieve protocol: {self.config.iot_protocol_id}")
 
-        # 生成测试用例
+        # 流式生成测试用例
         await self._send_callback('status', '正在生成测试用例...')
-        cases = await self.design_test_cases(
+        await self._send_callback('test_case_generation_started', {
+            'prd_length': len(self.config.prd_content),
+        })
+
+        cases = await self.design_test_cases_stream(
             prd=self.config.prd_content,
             functions_md=functions_md,
             devices_md=devices_md,

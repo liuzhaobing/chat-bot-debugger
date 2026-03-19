@@ -130,11 +130,20 @@
     <!-- VAD+ASR测试面板 -->
     <div v-if="showVadAsrTest" class="vad-asr-overlay">
       <div class="vad-asr-panel">
-        <VadAsrTestPanel 
+        <VadAsrTestPanel
           @close="showVadAsrTest = false"
         />
       </div>
     </div>
+
+    <!-- 测试用例确认弹窗 -->
+    <TestCaseDesignPopup
+      v-show="showTestCasePopup"
+      ref="testCasePopup"
+      :initial-test-cases="pendingTestCases"
+      @confirm="confirmTestCases"
+      @cancel="cancelTestCaseConfirm"
+    />
   </div>
 </template>
 
@@ -145,6 +154,7 @@ import TranscriptPanel from '@/components/agentic-test/TranscriptPanel.vue'
 import SessionManager from '@/components/agentic-test/SessionManager.vue'
 import VadAsrTestPanel from '@/components/agentic-test/VadAsrTestPanel.vue'
 import SceneTestPanel from '@/components/agentic-test/SceneTestPanel.vue'
+import TestCaseDesignPopup from '@/components/agentic-test/TestCaseDesignPopup.vue'
 import RealtimeAudioProcessor, { createAudioMessage } from '@/utils/realtimeAudioProcessor.js'
 import { getAgenticTestWsUrl } from '@/config/worker.js'
 import agenticTestService from '@/services/agenticTestService'
@@ -156,7 +166,8 @@ export default {
     TranscriptPanel,
     SessionManager,
     VadAsrTestPanel,
-    SceneTestPanel
+    SceneTestPanel,
+    TestCaseDesignPopup
   },
   computed: {
     ...mapState('agenticTest', [
@@ -231,7 +242,15 @@ export default {
       reconnectTimeout: null,
 
       // 配置初始化状态
-      isConfigInitialized: false
+      isConfigInitialized: false,
+
+      // 测试用例确认弹窗
+      showTestCasePopup: false,
+      pendingTestCases: [],
+      testCaseRawContent: '',
+      isGeneratingTestCases: false,
+      // 标记是否已经生成过测试用例（防止重连后重复生成）
+      hasGeneratedTestCases: false
     }
   },
   mounted() {
@@ -522,20 +541,16 @@ export default {
         // 1. 建立WebSocket连接
         await this.connectToWebSocket()
 
-        // 2. 初始化并启动音频处理器
-        await this.initializeAudioProcessor()
-
-        // 3. 启动会话计时器
+        // 2. 启动会话计时器
         this.startSessionTimer()
 
-        // 4. 更新状态
+        // 3. 更新状态（注意：音频处理器延迟到用户确认测试用例后初始化）
         this.isSessionActive = true
         this.isConnecting = false
         this.connectionStatus = 'active'
-        this.activePanel = 'transcript' // 自动切换到字幕面板
 
-        this.addSystemLog('system', 'success', '会话启动成功，麦克风已激活')
-        this.addTranscriptMessage('system', '会话已开始，请开始说话...', false, true)
+        this.addSystemLog('system', 'success', '会话启动成功，等待测试用例确认...')
+        this.addTranscriptMessage('system', '会话已开始，正在生成测试用例...', false, true)
 
       } catch (error) {
         console.error('启动会话失败:', error)
@@ -557,6 +572,9 @@ export default {
         window.$message?.warning('已有会话在运行中，请先停止当前会话')
         return
       }
+
+      // 重置测试用例生成标记（用户主动开始新测试）
+      this.hasGeneratedTestCases = false
 
       // 设置测试配置
       if (payload.testerConfig) {
@@ -836,12 +854,24 @@ export default {
         const data = JSON.parse(event.data)
 
         switch (data.type) {
+          case 'ping':
+            // 响应心跳，防止被服务端断开
+            if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
+              this.websocket.send(JSON.stringify({ type: 'pong' }))
+            }
+            break
+
           case 'config_initialized':
             // 配置初始化成功
             this.isConfigInitialized = true
             this.addSystemLog('config', 'success', '配置初始化成功', data.metadata)
-            // 配置初始化成功后发送 start_test
-            this.sendStartTest()
+            // 只有在未生成过测试用例时才发送 start_test
+            // 如果已经生成过（比如重连场景），则跳过
+            if (!this.hasGeneratedTestCases) {
+              this.sendStartTest()
+            } else {
+              this.addSystemLog('config', 'info', '测试用例已生成，跳过重新发送 start_test')
+            }
             // 连接建立完成，resolve Promise
             break
 
@@ -890,6 +920,66 @@ export default {
             this.addSystemLog('system', 'success', '测试用例准备就绪，共 ' + readyCasesCount + ' 个用例', readyTestCases)
             // 可以在这里更新 UI 显示测试用例列表
             this.$emit('test-cases-ready', readyTestCases)
+            break
+
+          case 'test_case_generation_started':
+            // 开始生成测试用例，打开确认弹窗
+            this.isGeneratingTestCases = true
+            this.pendingTestCases = []
+            this.testCaseRawContent = ''
+            // 重置弹窗状态
+            if (this.$refs.testCasePopup) {
+              this.$refs.testCasePopup.reset()
+            }
+            // 显示弹窗
+            this.showTestCasePopup = true
+            this.addSystemLog('system', 'info', '开始生成测试用例...')
+            break
+
+          case 'test_case_stream':
+            // 流式测试用例内容，追加到弹窗
+            var streamContent = (data.content && data.content.content) || data.content || ''
+            if (streamContent) {
+              this.testCaseRawContent += streamContent
+              // 确保弹窗已挂载后再添加内容
+              if (this.$refs.testCasePopup) {
+                this.$refs.testCasePopup.addDesignChunk(streamContent)
+              }
+            }
+            break
+
+          case 'test_cases_generated':
+            // 测试用例生成完成，解析并填充表格
+            var generatedCases = (data.content && data.content.test_cases) || []
+            if (generatedCases.length > 0 && this.$refs.testCasePopup) {
+              this.pendingTestCases = generatedCases
+              this.$refs.testCasePopup.setDesignComplete(generatedCases)
+            }
+            this.isGeneratingTestCases = false
+            // 标记测试用例已生成，防止重连后重复生成
+            this.hasGeneratedTestCases = true
+            this.addSystemLog('system', 'success', `测试用例生成完成，共 ${generatedCases.length} 个用例`)
+            break
+
+          case 'test_cases_ready_for_confirm':
+            // 测试用例已准备好，等待用户确认
+            var confirmCases = (data.content && data.content.test_cases) || []
+            var confirmCount = (data.content && data.content.count) || confirmCases.length
+
+            // 如果弹窗未打开（可能是默认用例或之前已处理），则打开弹窗
+            if (!this.showTestCasePopup) {
+              this.showTestCasePopup = true
+              this.$nextTick(() => {
+                if (this.$refs.testCasePopup && confirmCases.length > 0) {
+                  this.pendingTestCases = confirmCases
+                  this.$refs.testCasePopup.setDesignComplete(confirmCases)
+                }
+              })
+            }
+            this.isGeneratingTestCases = false
+            // 标记测试用例已生成，防止重连后重复生成
+            this.hasGeneratedTestCases = true
+            this.addSystemLog('system', 'info', `测试用例准备就绪，共 ${confirmCount} 个用例，等待确认...`)
             break
 
           case 'test_completed':
@@ -1269,6 +1359,52 @@ export default {
           break
         default:
           this.$message?.error(`音频处理错误: ${errorType} - ${error?.message || '未知错误'}`)
+      }
+    },
+
+    /**
+     * 确认测试用例
+     * 发送 test_case_confirm 消息到服务端，并初始化音频处理器
+     */
+    async confirmTestCases(testCases) {
+      if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
+        // 1. 初始化音频处理器（用户确认后才开始采集音频）
+        try {
+          await this.initializeAudioProcessor()
+          this.addSystemLog('audio', 'success', '音频处理器初始化成功，麦克风已激活')
+        } catch (error) {
+          console.error('音频处理器初始化失败:', error)
+          this.addSystemLog('audio', 'error', `音频处理器初始化失败: ${error.message}`)
+          // 即使音频初始化失败，也继续执行测试
+        }
+
+        // 2. 切换到字幕面板
+        this.activePanel = 'transcript'
+
+        // 3. 发送确认消息到服务端
+        const confirmMessage = {
+          type: 'test_case_confirm',
+          timestamp: Date.now()
+        }
+        this.websocket.send(JSON.stringify(confirmMessage))
+        this.showTestCasePopup = false
+        this.addSystemLog('system', 'success', `已确认 ${testCases.length} 个测试用例，开始执行...`)
+        this.addTranscriptMessage('system', '测试用例已确认，请开始说话...', false, true)
+      } else {
+        this.addSystemLog('websocket', 'error', 'WebSocket 未连接，无法确认测试用例')
+      }
+    },
+
+    /**
+     * 取消测试用例确认
+     */
+    cancelTestCaseConfirm() {
+      this.showTestCasePopup = false
+      this.addSystemLog('system', 'info', '已取消测试用例确认')
+
+      // 停止会话
+      if (this.isSessionActive) {
+        this.handleStopSession()
       }
     },
 

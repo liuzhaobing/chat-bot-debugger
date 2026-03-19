@@ -228,11 +228,12 @@ class AgenticTestAgent:
         random_suffix = base64.b32encode(os.urandom(5)).decode("ascii").lower()
         return f"TEST_{timestamp}_{random_suffix}"
 
-    async def start_loop(self, initial_query: str = None, iot_config: Optional[Dict[str, str]] = None):
-        """启动智能体循环
+    async def initialize_and_generate_cases(self, iot_config: Optional[Dict[str, str]] = None):
+        """初始化服务并生成测试用例（流式）
+
+        第一阶段：准备测试用例，等待用户确认
 
         Args:
-            initial_query: 初始查询（可选，如果不提供则从测试用例生成）
             iot_config: IOT 配置
         """
         self.is_running = True
@@ -269,26 +270,33 @@ class AgenticTestAgent:
                 cases = await self.tester_service.generate_test_cases_from_config(devices_md)
                 if cases:
                     await self.send_callback('log', f'成功生成 {len(cases)} 个测试用例')
-                    # 通知前端用例已准备就绪
-                    await self.send_callback('test_cases_ready', {
-                        'count': len(cases),
-                        'test_cases': [tc.to_dict() for tc in cases]
-                    })
                 else:
                     await self.send_callback('log', '生成测试用例为空，使用默认测试用例')
             # 后门：当 prd_content == '测试' 时，跳过生成，直接使用默认用例
             elif prd_content == '测试':
                 await self.send_callback('log', '检测到测试标记，使用默认测试用例')
 
-            # 通知前端测试用例准备就绪，即将开始执行
+            # 通知前端测试用例已准备就绪，等待确认
             all_cases = self.tester_service.get_test_cases()
-            await self.send_callback('status', f'测试用例准备就绪，共 {len(all_cases)} 个用例')
+            await self.send_callback('test_cases_ready_for_confirm', {
+                'count': len(all_cases),
+                'test_cases': [tc.to_dict() for tc in all_cases]
+            })
+            await self.send_callback('status', f'测试用例准备就绪，共 {len(all_cases)} 个用例，等待确认...')
 
+        except Exception as e:
+            logger.error(f"Error in initialize_and_generate_cases: {e}", exc_info=True)
+            await self.send_callback('error', f'初始化或生成测试用例失败: {str(e)}')
+            self.is_running = False
+
+    async def start_main_loop(self):
+        """启动主测试循环
+
+        第二阶段：用户确认后执行音频处理
+        """
+        try:
             # 获取初始查询：优先使用外部传入的，否则从测试用例生成
-            if initial_query:
-                self.current_query = initial_query
-            else:
-                self.current_query = await self.tester_service.generate_test_query() or ""
+            self.current_query = await self.tester_service.generate_test_query() or ""
 
             if not self.current_query:
                 await self.send_callback('status', '没有可执行的测试用例')
@@ -375,6 +383,18 @@ class AgenticTestAgent:
             self.is_running = False
             self._stop_buffering()
             await self.send_callback('status', '智能体循环已结束')
+
+    async def start_loop(self, initial_query: str = None, iot_config: Optional[Dict[str, str]] = None):
+        """启动智能体循环（向后兼容）
+
+        保持向后兼容，内部调用新的两阶段方法
+
+        Args:
+            initial_query: 初始查询（可选，如果不提供则从测试用例生成）
+            iot_config: IOT 配置
+        """
+        await self.initialize_and_generate_cases(iot_config)
+        await self.start_main_loop()
 
     async def refresh_device_status(self, stage: str = 'after_asr', device_guids: List[str] = None):
         """刷新设备状态
