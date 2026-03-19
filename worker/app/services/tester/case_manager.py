@@ -254,7 +254,7 @@ class TestCaseManager:
         # 添加 PRD 部分
         if prd:
             prompt_parts.append("## 任务要求")
-            prompt_parts.append("请分析以下需求，生成完整的测试用例集，以 JSON 格式输出：")
+            prompt_parts.append("请基于以下需求，设计一套完整的测试用例集。测试场景聚焦语音对话交互（涵盖厨电控制、状态查询等）。请以结构化的 JSON 格式输出：")
             prompt_parts.append(prd)
 
         return "\n\n".join(prompt_parts)
