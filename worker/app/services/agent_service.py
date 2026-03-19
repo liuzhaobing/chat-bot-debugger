@@ -421,11 +421,37 @@ class AgenticTestAgent:
                         if device_guid and target_dict is not None:
                             target_dict[device_guid] = properties
 
-                if stage == 'after_asr':
+                if stage == 'after_tts':
+                    # A0: TTS 播放后发送设备状态
+                    await self.send_callback('log', {
+                        'content': '[A0_TTS] 设备状态',
+                        'details': self.device_status_after_tts,
+                        'category': 'iot'
+                    })
                     await self.send_callback('device_status_update', {
+                        'stage': 'after_tts',
+                        'a0_tts': self.device_status_after_tts,
+                        'timestamp': time.time()
+                    })
+                elif stage == 'after_asr':
+                    # A1: ASR 识别后发送设备状态及变化
+                    await self.send_callback('log', {
+                        'content': '[A1_ASR] 设备状态',
+                        'details': self.device_status_after_asr,
+                        'category': 'iot'
+                    })
+                    # A1: ASR 识别后发送设备状态及变化
+                    await self.send_callback('log', {
+                        'content': '[A0_A1] 状态变更',
+                        'details': self.detect_device_changes(),
+                        'category': 'iot'
+                    })
+                    await self.send_callback('device_status_update', {
+                        'stage': 'after_asr',
                         'a0_tts': self.device_status_after_tts,
                         'a1_asr': self.device_status_after_asr,
-                        'changes': self.detect_device_changes()
+                        'changes': self.detect_device_changes(),
+                        'timestamp': time.time()
                     })
                 return
 
@@ -476,11 +502,37 @@ class AgenticTestAgent:
 
                 if stage == 'init':
                     await self.log_event('iot_query', f'初始化了 {len(self.family_devices)} 个设备信息')
-                elif stage == 'after_asr':
+                elif stage == 'after_tts':
+                    # A0: TTS 播放后发送设备状态
+                    await self.send_callback('log', {
+                        'content': '[A0_TTS] 设备状态',
+                        'details': self.device_status_after_tts,
+                        'category': 'iot'
+                    })
                     await self.send_callback('device_status_update', {
+                        'stage': 'after_tts',
+                        'a0_tts': self.device_status_after_tts,
+                        'timestamp': time.time()
+                    })
+                elif stage == 'after_asr':
+                    # A1: ASR 识别后发送设备状态
+                    await self.send_callback('log', {
+                        'content': '[A1_ASR] 设备状态',
+                        'details': self.device_status_after_asr,
+                        'category': 'iot'
+                    })
+                    # A1: ASR 识别后发送状态变更
+                    await self.send_callback('log', {
+                        'content': '[A0_A1] 状态变更',
+                        'details': self.detect_device_changes(),
+                        'category': 'iot'
+                    })
+                    await self.send_callback('device_status_update', {
+                        'stage': 'after_asr',
                         'a0_tts': self.device_status_after_tts,
                         'a1_asr': self.device_status_after_asr,
-                        'changes': self.detect_device_changes()
+                        'changes': self.detect_device_changes(),
+                        'timestamp': time.time()
                     })
 
         except Exception as e:
