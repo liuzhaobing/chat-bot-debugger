@@ -275,6 +275,18 @@ class AgenticTestAgent:
             # 后门：当 prd_content == '测试' 时，跳过生成，直接使用默认用例
             elif prd_content == '测试':
                 await self.send_callback('log', '检测到测试标记，使用默认测试用例')
+                # 发送测试用例设计流程消息，让前端表格正确响应
+                await self.send_callback('test_case_generation_started', {
+                    'prd_length': len(prd_content),
+                })
+                # 获取默认测试用例
+                default_cases = self.tester_service.get_test_cases()
+                # 发送生成完成消息
+                await self.send_callback('test_cases_generated', {
+                    'test_cases': [tc.to_dict() for tc in default_cases],
+                    'count': len(default_cases)
+                })
+                await self.send_callback('log', f'使用默认测试用例 {len(default_cases)} 个')
 
             # 通知前端测试用例已准备就绪，等待确认
             all_cases = self.tester_service.get_test_cases()
