@@ -404,6 +404,83 @@ class AppViewSet(viewsets.ModelViewSet):
                 "latency_ms": int((time.time() - start_time) * 1000)
             }
 
+    def _execute_agent_1_0_stream(self, app, provider, messages_payload, configuration):
+        """
+        流式执行 Agent 1.0 类型的应用
+
+        注意：数据库查询必须在生成器外部完成，避免在 ASGI 异步上下文中调用同步 ORM
+
+        Args:
+            app: App 模型实例
+            provider: Provider 模型实例（已查询）
+            messages_payload: 已构建好的消息列表
+            configuration: 应用配置
+
+        Yields:
+            str: SSE 格式的流式数据行
+        """
+        start_time = time.time()
+
+        # 内部生成器函数
+        def stream_generator():
+            nonlocal start_time
+            try:
+                # 1. 构建请求 payload（启用流式）
+                headers = {
+                    "Authorization": f"Bearer {provider.api_key}",
+                    "Content-Type": "application/json"
+                }
+
+                payload = {
+                    "model": app.model_name,
+                    "messages": messages_payload,
+                    "stream": True,
+                    "stream_options": {"include_usage": True}
+                }
+
+                # 添加配置参数
+                if 'temperature' in configuration:
+                    payload['temperature'] = float(configuration['temperature'])
+                if 'max_tokens' in configuration:
+                    payload['max_tokens'] = int(configuration['max_tokens'])
+
+                # 2. 流式调用大模型 API
+                with httpx.stream(
+                        "POST",
+                        f"{provider.base_url}/chat/completions",
+                        headers=headers,
+                        json=payload,
+                        timeout=60.0
+                ) as response:
+                    response.raise_for_status()
+                    for line in response.iter_lines():
+                        if line:
+                            yield line + '\n'
+
+            except httpx.HTTPStatusError as e:
+                error_data = json.dumps({
+                    "status": "error",
+                    "error": f"调用大模型失败: {str(e)}",
+                    "latency_ms": int((time.time() - start_time) * 1000)
+                }, ensure_ascii=False)
+                yield f"data: {error_data}\n\n"
+            except httpx.RequestError as e:
+                error_data = json.dumps({
+                    "status": "error",
+                    "error": f"请求错误: {str(e)}",
+                    "latency_ms": int((time.time() - start_time) * 1000)
+                }, ensure_ascii=False)
+                yield f"data: {error_data}\n\n"
+            except Exception as e:
+                error_data = json.dumps({
+                    "status": "error",
+                    "error": f"执行失败: {str(e)}",
+                    "latency_ms": int((time.time() - start_time) * 1000)
+                }, ensure_ascii=False)
+                yield f"data: {error_data}\n\n"
+
+        return stream_generator()
+
     def _execute_agent_asr(self, app, user_message=None, context=None, parameters=None):
         """
         执行 Agent ASR 类型的应用
@@ -718,6 +795,141 @@ class AppViewSet(viewsets.ModelViewSet):
 
         status_code = status.HTTP_200_OK if result['status'] == 'success' else status.HTTP_500_INTERNAL_SERVER_ERROR
         return Response(response_data, status=status_code)
+
+    @action(detail=True, methods=['post'], url_path='invoke/stream')
+    def invoke_stream(self, request, pk=None):
+        """
+        [POST] 流式执行 App
+
+        实时返回 SSE 格式的流式响应，适用于 Agent 1.0 类型应用
+        """
+        app = self.get_object()
+        request_id = uuid.uuid4().hex
+
+        # 验证应用类型
+        app_type_code = app.app_type.code if app.app_type else None
+        if app_type_code != 'agent_1_0':
+            return Response({
+                "request_id": request_id,
+                "app_id": app.id,
+                "app_name": app.name,
+                "status": "error",
+                "error": f"流式接口仅支持 Agent 1.0 类型应用，当前类型: {app_type_code}"
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # 验证请求数据
+        serializer = AppInvokeRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response({
+                "request_id": request_id,
+                "app_id": app.id,
+                "app_name": app.name,
+                "status": "error",
+                "error": serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        data = serializer.validated_data
+        user_message = data.get('message', '')
+        context = data.get('context')
+        parameters = data.get('parameters')
+
+        # ========== 在生成器外部完成所有同步操作（数据库查询、消息构建） ==========
+
+        # 1. 获取 Provider
+        if not app.provider_id:
+            return Response({
+                "request_id": request_id,
+                "app_id": app.id,
+                "app_name": app.name,
+                "status": "error",
+                "error": "应用未配置 Provider"
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            provider = Provider.objects.get(id=app.provider_id)
+        except Provider.DoesNotExist:
+            return Response({
+                "request_id": request_id,
+                "app_id": app.id,
+                "app_name": app.name,
+                "status": "error",
+                "error": f"Provider {app.provider_id} 不存在"
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # 2. 验证模型配置
+        if not app.model_name:
+            return Response({
+                "request_id": request_id,
+                "app_id": app.id,
+                "app_name": app.name,
+                "status": "error",
+                "error": "应用未配置模型"
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # 3. 构建消息列表
+        messages_payload = []
+        execution_mode = getattr(app, 'execution_mode', 'chat')
+
+        if execution_mode == 'task':
+            # 任务执行式 (Task Mode)
+            try:
+                prompt_template = Template(app.system_prompt or "").render(**(parameters or {}))
+            except Exception:
+                prompt_template = app.system_prompt or ""
+
+            final_message = prompt_template
+            if user_message and user_message.strip():
+                final_message = f"{prompt_template}\n\n{user_message}"
+
+            messages_payload.append({
+                "role": "user",
+                "content": final_message
+            })
+        else:
+            # 对话聊天式 (Chat Mode)
+            try:
+                system_prompt = Template(app.system_prompt or "").render(**(parameters or {}))
+            except Exception:
+                system_prompt = app.system_prompt or ""
+
+            if system_prompt:
+                messages_payload.append({
+                    "role": "system",
+                    "content": system_prompt
+                })
+
+            if context and isinstance(context, list):
+                for msg in context:
+                    if isinstance(msg, dict) and 'role' in msg and 'content' in msg:
+                        messages_payload.append({
+                            "role": msg['role'],
+                            "content": msg['content']
+                        })
+
+            if user_message:
+                messages_payload.append({
+                    "role": "user",
+                    "content": user_message
+                })
+
+        # 4. 获取配置
+        configuration = app.configuration or {}
+
+        # ========== 调用流式执行 ==========
+        stream_generator = self._execute_agent_1_0_stream(
+            app=app,
+            provider=provider,
+            messages_payload=messages_payload,
+            configuration=configuration
+        )
+
+        response_stream = StreamingHttpResponse(
+            stream_generator,
+            content_type='text/event-stream'
+        )
+        response_stream['Cache-Control'] = 'no-cache'
+        response_stream['X-Accel-Buffering'] = 'no'
+        return response_stream
 
     # ============================
     # 2. Function Calling 调用接口
