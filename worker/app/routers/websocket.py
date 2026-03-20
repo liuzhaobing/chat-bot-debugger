@@ -124,6 +124,10 @@ async def agentic_test_websocket(
                         {"type": "pong", "content": "pong"}
                     )
 
+                elif message_type == "pong":
+                    # 前端响应心跳，只需更新心跳时间即可
+                    pass
+
                 elif message_type == "init_config":
                     new_tester_config = data.get("tester_config", {})
                     new_iot_config = data.get("iot_config", {})

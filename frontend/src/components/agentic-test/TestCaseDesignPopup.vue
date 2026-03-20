@@ -15,7 +15,7 @@
       </div>
 
       <div class="popup-body">
-        <!-- 设计进行中提示（无用例时显示居中动画） -->
+        <!-- 正在设计状态（无用例时显示居中动画） -->
         <div v-if="isDesigning && testCases.length === 0" class="designing-status">
           <div class="spinner"></div>
           <span>正在设计测试用例...</span>
@@ -27,9 +27,9 @@
             <thead>
               <tr>
                 <th class="col-index">#</th>
-                <th class="col-id">用例ID</th>
-                <th class="col-title">标题</th>
-                <th class="col-type">类型</th>
+                <th class="col-id">用例编号</th>
+                <th class="col-title">用例标题</th>
+                <th class="col-type">测试类型</th>
                 <th class="col-actions">操作</th>
               </tr>
             </thead>
@@ -75,17 +75,26 @@
         </div>
 
         <!-- 原始内容预览（放在表格下方） -->
-        <div v-if="rawContent && showRawContent" class="raw-content">
+        <div v-if="showRawContent" class="raw-content">
           <div class="raw-content-header">
             <span>原始输出</span>
-            <button @click="showRawContent = false">收起</button>
+            <div class="raw-content-actions">
+              <button class="copy-btn" @click="copyRawContent" title="复制">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+                <span v-if="copySuccess">{{ copySuccess }}</span>
+              </button>
+              <button @click="showRawContent = false">收起</button>
+            </div>
           </div>
-          <pre>{{ rawContent }}</pre>
+          <pre>{{ displayRawContent }}</pre>
         </div>
 
-        <!-- 空状态 -->
-        <div v-else-if="!isDesigning" class="empty-state">
-          <span>暂无更多测试用例</span>
+        <!-- 空状态（仅在非设计状态且无用例时显示） -->
+        <div v-if="!isDesigning && testCases.length === 0" class="empty-state">
+          <span>暂无测试用例</span>
         </div>
       </div>
 
@@ -98,7 +107,7 @@
             </svg>
             添加用例
           </button>
-          <button v-if="rawContent" class="toggle-raw-btn" @click="showRawContent = !showRawContent">
+          <button v-if="testCases.length > 0" class="toggle-raw-btn" @click="showRawContent = !showRawContent">
             {{ showRawContent ? '隐藏原始输出' : '显示原始输出' }}
           </button>
         </div>
@@ -128,19 +137,19 @@
           </div>
           <div class="edit-modal-body">
             <div class="form-group">
-              <label>用例ID</label>
+              <label>用例编号</label>
               <input v-model="editingCase.id" type="text" />
             </div>
             <div class="form-group">
-              <label>模块</label>
+              <label>所属模块</label>
               <input v-model="editingCase.module" type="text" />
             </div>
             <div class="form-group">
-              <label>标题</label>
+              <label>用例标题</label>
               <input v-model="editingCase.title" type="text" />
             </div>
             <div class="form-group">
-              <label>类型</label>
+              <label>测试类型</label>
               <select v-model="editingCase.type">
                 <option value="Functional">功能测试</option>
                 <option value="State">状态测试</option>
@@ -192,6 +201,7 @@ export default {
       showRawContent: false,
       editingIndex: null,
       editingCase: null,
+      copySuccess: '',
       // Streaming JSON parsing state
       jsonBuffer: '',
       inJsonArray: false,
@@ -201,6 +211,14 @@ export default {
     }
   },
   computed: {
+    displayRawContent() {
+      // 如果有原始流式内容，直接返回
+      if (this.rawContent) {
+        return this.rawContent
+      }
+      // 否则返回测试用例的 JSON 格式
+      return JSON.stringify(this.testCases, null, 2)
+    },
     editingCasePreconditionsText: {
       get() {
         return (this.editingCase?.preconditions || []).join('\n')
@@ -473,11 +491,7 @@ export default {
         this.testCases.push(testCase)
         console.log('[StreamingJSON] Added test case:', testCase.id, 'Total:', this.testCases.length)
       }
-
-      // 如果已经有测试用例了，停止显示"正在设计"状态
-      if (this.testCases.length > 0 && this.isDesigning) {
-        this.isDesigning = false
-      }
+      // 注意：isDesigning 状态由外部通过 setDesignComplete/setDesigning 控制，不在这里修改
     },
 
     /**
@@ -593,6 +607,25 @@ export default {
     },
 
     /**
+     * 复制原始内容
+     */
+    async copyRawContent() {
+      try {
+        await navigator.clipboard.writeText(this.displayRawContent)
+        this.copySuccess = '已复制'
+        setTimeout(() => {
+          this.copySuccess = ''
+        }, 2000)
+      } catch (err) {
+        console.error('复制失败:', err)
+        this.copySuccess = '复制失败'
+        setTimeout(() => {
+          this.copySuccess = ''
+        }, 2000)
+      }
+    },
+
+    /**
      * 重置状态
      */
     reset() {
@@ -612,6 +645,7 @@ export default {
 </script>
 
 <style scoped>
+/* ========== 弹窗动画 ========== */
 .test-case-popup-overlay {
   position: fixed;
   top: 0;
@@ -624,6 +658,16 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .test-case-popup {
@@ -637,6 +681,18 @@ export default {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  animation: popIn 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes popIn {
+  from {
+    opacity: 0;
+    transform: scale(0.92) translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 .popup-header {
@@ -700,6 +756,16 @@ export default {
   gap: 12px;
   padding: 60px;
   color: var(--text-secondary);
+  animation: pulseFade 1.5s ease-in-out infinite;
+}
+
+@keyframes pulseFade {
+  0%, 100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 .spinner-small {
@@ -741,12 +807,36 @@ export default {
   color: var(--text-tertiary);
 }
 
+.raw-content-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .raw-content-header button {
   background: none;
   border: none;
   color: var(--accent-blue);
   cursor: pointer;
   font-size: 12px;
+}
+
+.copy-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.copy-btn:hover {
+  background: rgba(79, 70, 229, 0.1);
+}
+
+.copy-btn svg {
+  width: 14px;
+  height: 14px;
 }
 
 .raw-content pre {
@@ -794,6 +884,30 @@ export default {
 
 .test-cases-table tbody tr:last-child td {
   border-bottom: none;
+}
+
+/* 表格行动画 */
+.test-cases-table tbody tr {
+  animation: rowSlideIn 0.3s ease-out;
+  animation-fill-mode: both;
+}
+
+.test-cases-table tbody tr:nth-child(1) { animation-delay: 0.05s; }
+.test-cases-table tbody tr:nth-child(2) { animation-delay: 0.1s; }
+.test-cases-table tbody tr:nth-child(3) { animation-delay: 0.15s; }
+.test-cases-table tbody tr:nth-child(4) { animation-delay: 0.2s; }
+.test-cases-table tbody tr:nth-child(5) { animation-delay: 0.25s; }
+.test-cases-table tbody tr:nth-child(n+6) { animation-delay: 0.3s; }
+
+@keyframes rowSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 .test-cases-table tbody tr:hover {
@@ -892,6 +1006,18 @@ export default {
   border-top: 1px solid var(--border-color);
   color: var(--text-secondary);
   font-size: 13px;
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .action-btn {
@@ -1030,6 +1156,7 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
+  animation: fadeIn 0.15s ease-out;
 }
 
 .edit-modal {
@@ -1043,6 +1170,7 @@ export default {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  animation: popIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
 .edit-modal-header {
