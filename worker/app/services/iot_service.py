@@ -90,7 +90,6 @@ class IOTService:
             设备状态结果，data中包含多个设备的状态列表
         """
         _iot_token = iot_token or self.token
-        device_ids_str = ",".join(device_guids)
 
         if not _iot_token:
             raise RuntimeError(
@@ -98,24 +97,43 @@ class IOTService:
                 f"device_guids={device_guids}"
             )
 
+        if not device_guids:
+            return {"data": [], "success": True, "rc": 0}
+
         try:
             async with httpx.AsyncClient(timeout=settings.iot_timeout) as client:
-                response = await client.get(
-                    f"{self.base_url}/iot/api/device/property/shadow",
-                    headers={"Authorization": f"Bearer {_iot_token}"},
-                    params={"deviceIds": device_ids_str}
-                )
+                # 接口不支持传多个设备ID，需要循环单独调用
+                all_device_data = []
 
-                response.raise_for_status()
-                result = response.json()
-
-                # 更新缓存
                 for device_guid in device_guids:
-                    self.device_cache[device_guid] = result
-                    self.last_update_time[device_guid] = asyncio.get_event_loop().time()
+                    try:
+                        response = await client.get(
+                            f"{self.base_url}/iot/api/device/property/shadow",
+                            headers={"Authorization": f"Bearer {_iot_token}"},
+                            params={"deviceIds": device_guid}
+                        )
 
-                logger.info(f"Device status retrieved: {device_ids_str}")
-                return result
+                        response.raise_for_status()
+                        result = response.json()
+
+                        # 提取返回数据中的设备状态
+                        device_data = result.get("data", [])
+                        if isinstance(device_data, list):
+                            all_device_data.extend(device_data)
+                        elif isinstance(device_data, dict):
+                            all_device_data.append(device_data)
+
+                        # 更新缓存
+                        self.device_cache[device_guid] = result
+                        self.last_update_time[device_guid] = asyncio.get_event_loop().time()
+
+                        logger.info(f"Device status retrieved: {device_guid}")
+
+                    except Exception as e:
+                        logger.error(f"Failed to get device status for {device_guid}: {e}")
+                        # 单个设备失败不影响其他设备，继续处理
+
+                return {"data": all_device_data, "success": True, "rc": 0}
 
         except Exception as e:
             logger.error(f"Failed to get device status: {e}")
