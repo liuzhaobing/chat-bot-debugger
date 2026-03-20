@@ -126,7 +126,27 @@
             <span class="log-category">{{ getCategoryLabel(log.category) }}</span>
             <span class="log-message">{{ log.message }}</span>
           </div>
-          <div v-if="hasDetails(log.details)" class="log-content">
+          <div v-if="hasDetails(log.details)" class="log-content" :class="{ 'is-collapsed': !isLogExpanded(log.id) }">
+            <div class="log-content-header">
+              <button class="expand-btn" @click="toggleLogExpand(log.id)">
+                <svg v-if="isLogExpanded(log.id)" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="6,9 12,15 18,9"></polyline>
+                </svg>
+                <svg v-else xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="9,18 15,12 9,6"></polyline>
+                </svg>
+                <span>{{ isLogExpanded(log.id) ? '收起' : '展开' }}</span>
+              </button>
+              <button class="copy-btn" @click="copyLogContent(log)" :title="copySuccessLogId === log.id ? '已复制' : '复制'" :class="{ 'copy-success': copySuccessLogId === log.id }">
+                <svg v-if="copySuccessLogId === log.id" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="20,6 9,17 4,12"></polyline>
+                </svg>
+                <svg v-else xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+              </button>
+            </div>
             <pre>{{ JSON.stringify(log.details, null, 2) }}</pre>
           </div>
         </div>
@@ -150,7 +170,9 @@ export default {
   },
   data() {
     return {
-      logFilter: 'all'
+      logFilter: 'all',
+      expandedLogs: new Set(),  // 存储展开的日志ID
+      copySuccessLogId: null    // 复制成功的日志ID（用于显示提示）
     }
   },
   computed: {
@@ -207,6 +229,33 @@ export default {
       if (Array.isArray(details)) return details.length > 0
       if (typeof details === 'object') return Object.keys(details).length > 0
       return false
+    },
+
+    isLogExpanded(logId) {
+      return this.expandedLogs.has(logId)
+    },
+
+    toggleLogExpand(logId) {
+      if (this.expandedLogs.has(logId)) {
+        this.expandedLogs.delete(logId)
+      } else {
+        this.expandedLogs.add(logId)
+      }
+      // 触发响应式更新
+      this.expandedLogs = new Set(this.expandedLogs)
+    },
+
+    async copyLogContent(log) {
+      try {
+        const content = JSON.stringify(log.details, null, 2)
+        await navigator.clipboard.writeText(content)
+        this.copySuccessLogId = log.id
+        setTimeout(() => {
+          this.copySuccessLogId = null
+        }, 2000)
+      } catch (err) {
+        console.error('复制失败:', err)
+      }
     },
     
     clearTranscript() {
@@ -592,12 +641,90 @@ export default {
   border: 1px solid var(--border-color);
 }
 
+.log-content-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.expand-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: all 0.2s ease;
+}
+
+.expand-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.expand-btn svg {
+  width: 12px;
+  height: 12px;
+}
+
+.copy-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: 3px;
+  transition: all 0.2s ease;
+}
+
+.copy-btn:hover {
+  background: var(--bg-hover);
+  color: var(--accent-blue);
+}
+
+.copy-btn.copy-success {
+  color: #10b981;
+}
+
+.copy-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
 .log-content pre {
   margin: 0;
   font-size: 11px;
   color: var(--text-secondary);
   white-space: pre-wrap;
   word-break: break-all;
+  line-height: 1.4;
+}
+
+/* 折叠状态：最多显示5行 */
+.log-content.is-collapsed pre {
+  max-height: calc(1.4em * 5);  /* 5行 */
+  overflow: hidden;
+  position: relative;
+}
+
+.log-content.is-collapsed pre::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2em;
+  background: linear-gradient(transparent, var(--bg-secondary));
+  pointer-events: none;
 }
 
 /* 动画 */

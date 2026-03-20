@@ -207,6 +207,9 @@ async def agentic_test_websocket(
                         iot_config,
                         tester_config=tester_config
                     )
+                    # 保存前端传来的初始 query
+                    if query:
+                        agent.initial_query = query
                     conn_info.metadata["agent"] = agent
 
                     # 第一阶段：初始化并生成测试用例（等待用户确认）
@@ -226,12 +229,16 @@ async def agentic_test_websocket(
 
                 elif message_type == "test_case_confirm":
                     # 用户确认测试用例，启动主循环
+                    logger.info(f"[test_case_confirm] Received confirm, agent exists: {agent is not None}")
                     if not agent:
                         await connection_manager.send_message(
                             session_id,
                             {"type": "error", "content": "请先发送 start_test 消息"}
                         )
                         continue
+
+                    # 打印 agent 的 tester_service 状态
+                    logger.info(f"[test_case_confirm] Agent tester_service cases: {len(agent.tester_service.get_test_cases())}")
 
                     # 启动主循环
                     asyncio.create_task(agent.start_main_loop())

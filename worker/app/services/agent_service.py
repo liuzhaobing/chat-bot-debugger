@@ -46,7 +46,7 @@ from app.services.iot_service import IOTService
 from app.services.audio_processor import AudioProcessingService
 from app.services.backend_service import BackendService
 from app.services.tester_service import TesterService
-from app.services.tester.models import NextAction, TestCase
+from app.services.tester.models import NextAction, TestCase, TestResultStatus
 from app.utils.audio_utils import AudioConverter
 from app.config import settings
 
@@ -133,6 +133,7 @@ class AgenticTestAgent:
         self.is_running = False
         self._test_completed = False  # 标记测试是否已正常完成
         self.current_query = ""
+        self.initial_query = ""  # 前端传来的初始查询（优先使用）
         self.current_asr_result = ""
         self.real_voice_active_time = 0.0
 
@@ -281,6 +282,12 @@ class AgenticTestAgent:
                 })
                 # 获取默认测试用例
                 default_cases = self.tester_service.get_test_cases()
+                logger.info(f"获取默认测试用例: {len(default_cases)} 个")
+                if default_cases:
+                    for i, case in enumerate(default_cases):
+                        logger.info(f"用例 {i+1}: {case.id} - {case.title}")
+                else:
+                    logger.warning("没有默认测试用例！")
                 # 发送生成完成消息
                 await self.send_callback('test_cases_generated', {
                     'test_cases': [tc.to_dict() for tc in default_cases],
@@ -307,20 +314,34 @@ class AgenticTestAgent:
         第二阶段：用户确认后执行音频处理
         """
         try:
-            # 获取初始查询：优先使用外部传入的，否则从测试用例生成
-            self.current_query = await self.tester_service.generate_test_query() or ""
+            # 获取初始查询：优先使用前端传来的 initial_query，否则从测试用例生成
+            if self.initial_query:
+                self.current_query = self.initial_query
+                logger.info(f"[start_main_loop] 使用前端传来的初始查询: {self.current_query}")
+            else:
+                # 重置测试用例索引为 -1，确保从第一个用例开始
+                # 这样 generate_test_query 会正确识别为"需要定位新用例"
+                self.tester_service.case_manager.current_index = -1
+                logger.info(f"[start_main_loop] 重置 current_index=-1，测试用例数: {len(self.tester_service.get_test_cases())}")
+
+                # 从测试用例生成查询
+                self.current_query = await self.tester_service.generate_test_query() or ""
 
             if not self.current_query:
                 await self.send_callback('status', '没有可执行的测试用例')
                 return
 
+            logger.info(f"[start_main_loop] 成功获取查询: {self.current_query}")
+
             # 记录初始用户查询
             self.tester_service.add_to_conversation_history('user', self.current_query)
 
+            logger.info(f"[start_main_loop] 发送 ai_response 消息")
             await self.log_event('user_query', self.current_query)
             await self.send_callback('ai_response', self.current_query)
             await self.send_callback('log', f'开始执行测试查询: {self.current_query}')
             await self.send_callback('status', '智能体循环已启动')
+            logger.info(f"[start_main_loop] ai_response 消息已发送")
 
             # 固定时长模式：先播放初始 TTS，然后开始积累音频
             if self.audio_mode == self.AUDIO_MODE_FIXED_DURATION:
@@ -455,11 +476,7 @@ class AgenticTestAgent:
 
                 if stage == 'after_tts':
                     # A0: TTS 播放后发送设备状态
-                    await self.send_callback('log', {
-                        'content': '[A0_TTS] 设备状态',
-                        'details': self.device_status_after_tts,
-                        'category': 'iot'
-                    })
+                    await self.send_callback('log', '[A0_TTS] 设备状态', self.device_status_after_tts)
                     await self.send_callback('device_status_update', {
                         'stage': 'after_tts',
                         'a0_tts': self.device_status_after_tts,
@@ -467,17 +484,9 @@ class AgenticTestAgent:
                     })
                 elif stage == 'after_asr':
                     # A1: ASR 识别后发送设备状态及变化
-                    await self.send_callback('log', {
-                        'content': '[A1_ASR] 设备状态',
-                        'details': self.device_status_after_asr,
-                        'category': 'iot'
-                    })
+                    await self.send_callback('log', '[A1_ASR] 设备状态', self.device_status_after_asr)
                     # A1: ASR 识别后发送设备状态及变化
-                    await self.send_callback('log', {
-                        'content': '[A0_A1] 状态变更',
-                        'details': self.detect_device_changes(),
-                        'category': 'iot'
-                    })
+                    await self.send_callback('log', '[A0_A1] 状态变更', self.detect_device_changes())
                     await self.send_callback('device_status_update', {
                         'stage': 'after_asr',
                         'a0_tts': self.device_status_after_tts,
@@ -536,11 +545,7 @@ class AgenticTestAgent:
                     await self.log_event('iot_query', f'初始化了 {len(self.family_devices)} 个设备信息')
                 elif stage == 'after_tts':
                     # A0: TTS 播放后发送设备状态
-                    await self.send_callback('log', {
-                        'content': '[A0_TTS] 设备状态',
-                        'details': self.device_status_after_tts,
-                        'category': 'iot'
-                    })
+                    await self.send_callback('log', '[A0_TTS] 设备状态', self.device_status_after_tts)
                     await self.send_callback('device_status_update', {
                         'stage': 'after_tts',
                         'a0_tts': self.device_status_after_tts,
@@ -548,17 +553,9 @@ class AgenticTestAgent:
                     })
                 elif stage == 'after_asr':
                     # A1: ASR 识别后发送设备状态
-                    await self.send_callback('log', {
-                        'content': '[A1_ASR] 设备状态',
-                        'details': self.device_status_after_asr,
-                        'category': 'iot'
-                    })
+                    await self.send_callback('log', '[A1_ASR] 设备状态', self.device_status_after_asr)
                     # A1: ASR 识别后发送状态变更
-                    await self.send_callback('log', {
-                        'content': '[A0_A1] 状态变更',
-                        'details': self.detect_device_changes(),
-                        'category': 'iot'
-                    })
+                    await self.send_callback('log', '[A0_A1] 状态变更', self.detect_device_changes())
                     await self.send_callback('device_status_update', {
                         'stage': 'after_asr',
                         'a0_tts': self.device_status_after_tts,
@@ -836,7 +833,6 @@ class AgenticTestAgent:
                     await self.send_callback('status', '查询生成器无法生成新查询，强制推进到下一个用例...')
                     current_case = self.tester_service.case_manager.get_current_case()
                     if current_case:
-                        from app.services.tester.models import TestResultStatus
                         # 根据实际步骤结果判断最终状态
                         all_passed = current_case.is_all_steps_passed()
                         test_status = TestResultStatus.PASS if all_passed else TestResultStatus.FAIL
@@ -1026,18 +1022,38 @@ class AgenticTestAgent:
                             self.tester_service.reset_noise_retry()
                             self._start_buffering(reset_noise_count=True)
                     else:
-                        # 跳过当前用例
-                        await self.send_callback('status', '多次检测到噪音，跳过当前轮次...')
+                        # 噪音重试次数用完，标记当前用例为 BLOCKED，推进到下一个用例
+                        await self.send_callback('status', '多次检测到噪音，跳过当前用例...')
                         self.tester_service.reset_noise_retry()
 
-                        # 直接进入下一轮 Brain 处理
-                        brain_result = await self.process_brain_with_device_context("<skip_to_next_query>")
-                        if brain_result.success and brain_result.next_query:
+                        # 标记当前用例为 BLOCKED
+                        current_case = self.tester_service.get_current_test_case()
+                        if current_case:
+                            self.tester_service.case_manager.update_case_result(
+                                current_case.id,
+                                TestResultStatus.BLOCKED,
+                                [],
+                                "多次检测到噪音，跳过该用例"
+                            )
+                            await self.send_callback('log', f'用例 {current_case.id} 因噪音被标记为阻塞')
+
+                        # 推进到下一个用例并获取查询
+                        self.tester_service.case_manager.current_index = -1
+                        next_query = await self.tester_service.generate_test_query()
+
+                        if next_query:
+                            self.current_query = next_query
+                            await self.send_callback('status', f'开始执行下一个测试用例...')
+                            await self.send_callback('ai_response', self.current_query)
                             await asyncio.sleep(1.0)
                             await self.execute_full_loop()
                             self._audio_input_event.set()
                         else:
-                            await self.send_callback('status', '对话完成，等待新的音频输入...')
+                            await self.send_callback('status', '所有测试用例已完成')
+                            await self.send_callback('test_completed', {
+                                'reason': 'all_cases_completed',
+                                'blocked_case': current_case.id if current_case else None
+                            })
                     return
 
             else:

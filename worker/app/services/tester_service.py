@@ -634,7 +634,13 @@ class TesterService:
         Returns:
             测试查询语句，如果没有更多用例或当前用例已完成则返回None
         """
+        # 调试：打印所有用例的状态
+        logger.info(f"[generate_test_query] 总用例数: {len(self.case_manager.test_cases)}")
+        for i, case in enumerate(self.case_manager.test_cases):
+            logger.info(f"[generate_test_query] 用例 {i}: {case.id}, test_result={case.test_result}, type={type(case.test_result)}")
+
         current_case = self.case_manager.get_current_case()
+        logger.info(f"[generate_test_query] current_index={self.case_manager.current_index}, current_case={current_case}")
 
         # 判断是否需要定位新用例：
         # 1. 没有当前用例（current_index == -1）
@@ -643,10 +649,12 @@ class TesterService:
             not current_case or
             current_case.test_result != TestResultStatus.NOT_RUN
         )
+        logger.info(f"[generate_test_query] need_locate_new_case={need_locate_new_case}, TestResultStatus.NOT_RUN={TestResultStatus.NOT_RUN}")
 
         if need_locate_new_case:
             # 定位到第一个未执行的用例
             next_index = self.get_next_case_index()
+            logger.info(f"[generate_test_query] get_next_case_index returned: {next_index}")
             if next_index is None:
                 logger.info("No more test cases to execute")
                 return None
@@ -654,6 +662,7 @@ class TesterService:
             # 设置当前用例
             self.case_manager.current_index = next_index
             current_case = self.case_manager.get_current_case()
+            logger.info(f"[generate_test_query] Set current_index={next_index}, current_case={current_case.id if current_case else None}")
             if not current_case:
                 logger.info("No more test cases to execute")
                 return None
@@ -664,6 +673,7 @@ class TesterService:
             # 新用例的第一个查询：从 steps 中提取，而不是调用 QueryGenerator App
             # 这样可以确保新用例一定能开始执行
             query = self._extract_first_query_from_case(current_case)
+            logger.info(f"[generate_test_query] _extract_first_query_from_case returned: {query}")
 
             if query:
                 self.total_queries_generated += 1
@@ -1263,6 +1273,7 @@ class TesterService:
             self.case_manager.test_cases,
             self.case_manager.current_index
         )
+        logger.info(f"[get_next_case_index] unexecuted indices: {unexecuted}, total cases: {len(self.case_manager.test_cases)}")
 
         if not unexecuted:
             return None
