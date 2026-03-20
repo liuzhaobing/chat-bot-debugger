@@ -4,7 +4,9 @@
 设备协议 JSON 文件转 Markdown 表格工具
 """
 
+import argparse
 import json
+import sys
 from pathlib import Path
 
 
@@ -128,20 +130,54 @@ def convert_device_json_to_markdown(json_path: str) -> str:
 
 
 def main():
-    """测试函数"""
-    script_dir = Path(__file__).parent
-    test_file = script_dir / "CQ928.json"
+    parser = argparse.ArgumentParser(
+        description='将设备协议 JSON 文件转换为 Markdown 表格'
+    )
+    parser.add_argument(
+        'json_file',
+        type=str,
+        help='JSON 文件路径'
+    )
+    parser.add_argument(
+        '-o', '--output',
+        type=str,
+        help='输出 Markdown 文件路径（默认使用相同路径和文件名，仅更改后缀为 .md）'
+    )
 
-    if test_file.exists():
-        md_content = convert_device_json_to_markdown(str(test_file))
-        print(md_content)
+    args = parser.parse_args()
 
-        output_file = script_dir / "CQ928.md"
-        with open(output_file, 'w', encoding='utf-8') as f:
-            f.write(md_content)
-        print(f"\n---\n已保存到: {output_file}")
+    json_path = Path(args.json_file)
+
+    if not json_path.exists():
+        print(f"错误: 文件不存在: {json_path}", file=sys.stderr)
+        sys.exit(1)
+
+    if json_path.suffix.lower() != '.json':
+        print(f"错误: 输入文件必须是 .json 格式: {json_path}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        md_content = convert_device_json_to_markdown(str(json_path))
+    except json.JSONDecodeError as e:
+        print(f"错误: JSON 解析失败: {e}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"错误: 转换失败: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    # 确定输出路径
+    if args.output:
+        output_path = Path(args.output)
     else:
-        print(f"测试文件不存在: {test_file}")
+        output_path = json_path.with_suffix('.md')
+
+    try:
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(md_content)
+        print(f"转换成功: {output_path}")
+    except Exception as e:
+        print(f"错误: 写入文件失败: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

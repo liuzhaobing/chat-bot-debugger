@@ -1,0 +1,833 @@
+{
+  "device_model": "CQ9878A",
+  "device_type": "一体机",
+  "device_name": "CQ9878A一体机",
+  "function_config": {
+    "mode_switch": {
+      "name": "mode_switch",
+      "modes": [
+        "营养蒸",
+        "蒸模式",
+        "澎湃蒸",
+        "焖炖",
+        "焙烤",
+        "预热",
+        "烤模式",
+        "风焙烤",
+        "风扇烤",
+        "加湿烤",
+        "烤烧",
+        "空气炸",
+        "炸模式",
+        "蒸汽炸",
+        "解冻",
+        "发酵",
+        "保温",
+        "清洁",
+        "干燥",
+        "杀菌",
+        "除垢",
+        "微波",
+        "复热",
+        "微蒸",
+        "微烤",
+        "微炖",
+        "早餐速蒸",
+        "预约",
+        "关闭预约"
+      ],
+      "description": "CQ9878A一体机模式设置及相关参数说明",
+      "mode_parameters_config": [
+        {
+          "function_name": "烤烧",
+          "function_parameters": {
+            "setTemperature": {
+              "type": "int",
+              "description": "设定温度",
+              "nl_description": "一体机的烤烧模式的目标温度（℃）",
+              "required": 1,
+              "defaultX": 200,
+              "minimum": 35,
+              "maximum": 230
+            },
+            "setMinute": {
+              "type": "time",
+              "description": "设置时间",
+              "nl_description": "一体机的烤烧模式的运行时长",
+              "required": 1,
+              "defaultX": "00:30:00",
+              "minimum": "00:01:00",
+              "maximum": "02:00:00"
+            }
+          }
+        },
+        {
+          "function_name": "焙烤",
+          "function_parameters": {
+            "setTemperature": {
+              "type": "int",
+              "description": "设定温度",
+              "nl_description": "一体机的焙烤模式的目标温度（℃）",
+              "required": 1,
+              "defaultX": 160,
+              "minimum": 35,
+              "maximum": 230
+            },
+            "setMinute": {
+              "type": "time",
+              "description": "设置时间",
+              "nl_description": "一体机的焙烤模式的运行时长",
+              "required": 1,
+              "defaultX": "00:30:00",
+              "minimum": "00:01:00",
+              "maximum": "02:00:00"
+            }
+          }
+        },
+        {
+          "function_name": "预热",
+          "function_parameters": {
+            "setTemperature": {
+              "type": "int",
+              "description": "设定温度",
+              "nl_description": "一体机的预热模式的目标温度（℃）",
+              "required": 1,
+              "defaultX": 160,
+              "minimum": 35,
+              "maximum": 230
+            },
+            "setMinute": {
+              "type": "time",
+              "description": "设置时间",
+              "nl_description": "一体机的预热模式的运行时长",
+              "required": 1,
+              "defaultX": "00:30:00",
+              "minimum": "00:01:00",
+              "maximum": "02:00:00"
+            }
+          }
+        },
+        {
+          "function_name": "烤模式",
+          "function_parameters": {
+            "setTemperature": {
+              "type": "int",
+              "description": "设定温度",
+              "nl_description": "一体机的烤模式的目标温度（℃）",
+              "required": 1,
+              "defaultX": 160,
+              "minimum": 35,
+              "maximum": 230
+            },
+            "setMinute": {
+              "type": "time",
+              "description": "设置时间",
+              "nl_description": "一体机的烤模式的运行时长",
+              "required": 1,
+              "defaultX": "00:30:00",
+              "minimum": "00:01:00",
+              "maximum": "02:00:00"
+            }
+          }
+        },
+        {
+          "function_name": "风焙烤",
+          "function_parameters": {
+            "setTemperature": {
+              "type": "int",
+              "description": "设定温度",
+              "nl_description": "一体机的风焙烤模式的目标温度（℃）",
+              "required": 1,
+              "defaultX": 200,
+              "minimum": 35,
+              "maximum": 250
+            },
+            "setMinute": {
+              "type": "time",
+              "description": "设置时间",
+              "nl_description": "一体机的风焙烤模式的运行时长",
+              "required": 1,
+              "defaultX": "00:30:00",
+              "minimum": "00:01:00",
+              "maximum": "02:00:00"
+            }
+          }
+        },
+        {
+          "function_name": "风扇烤",
+          "function_parameters": {
+            "setTemperature": {
+              "type": "int",
+              "description": "设定温度",
+              "nl_description": "一体机的风扇烤模式的目标温度（℃）",
+              "required": 1,
+              "defaultX": 160,
+              "minimum": 35,
+              "maximum": 230
+            },
+            "setMinute": {
+              "type": "time",
+              "description": "设置时间",
+              "nl_description": "一体机的风扇烤模式的运行时长",
+              "required": 1,
+              "defaultX": "00:30:00",
+              "minimum": "00:01:00",
+              "maximum": "02:00:00"
+            }
+          }
+        },
+        {
+          "function_name": "加湿烤",
+          "function_parameters": {
+            "setTemperature": {
+              "type": "int",
+              "description": "设定温度",
+              "nl_description": "一体机的加湿烤模式的目标温度（℃）",
+              "required": 1,
+              "defaultX": 200,
+              "minimum": 150,
+              "maximum": 250
+            },
+            "setMinute": {
+              "type": "time",
+              "description": "设置时间",
+              "nl_description": "一体机的加湿烤模式的运行时长",
+              "required": 1,
+              "defaultX": "00:30:00",
+              "minimum": "00:01:00",
+              "maximum": "02:00:00"
+            }
+          }
+        },
+        {
+          "function_name": "空气炸",
+          "function_parameters": {
+            "setTemperature": {
+              "type": "int",
+              "description": "设定温度",
+              "nl_description": "一体机的空气炸模式的目标温度（℃）",
+              "required": 1,
+              "defaultX": 200,
+              "minimum": 35,
+              "maximum": 230
+            },
+            "setMinute": {
+              "type": "time",
+              "description": "设置时间",
+              "nl_description": "一体机的空气炸模式的运行时长",
+              "required": 1,
+              "defaultX": "00:30:00",
+              "minimum": "00:01:00",
+              "maximum": "02:00:00"
+            }
+          }
+        },
+        {
+          "function_name": "炸模式",
+          "function_parameters": {
+            "setTemperature": {
+              "type": "int",
+              "description": "设定温度",
+              "nl_description": "一体机的炸模式的目标温度（℃）",
+              "required": 1,
+              "defaultX": 200,
+              "minimum": 35,
+              "maximum": 230
+            },
+            "setMinute": {
+              "type": "time",
+              "description": "设置时间",
+              "nl_description": "一体机的炸模式的运行时长",
+              "required": 1,
+              "defaultX": "00:30:00",
+              "minimum": "00:01:00",
+              "maximum": "02:00:00"
+            }
+          }
+        },
+        {
+          "function_name": "蒸汽炸",
+          "function_parameters": {
+            "setTemperature": {
+              "type": "int",
+              "description": "设定温度",
+              "nl_description": "一体机的蒸汽炸模式的目标温度（℃）",
+              "required": 1,
+              "defaultX": 200,
+              "minimum": 35,
+              "maximum": 230
+            },
+            "setMinute": {
+              "type": "time",
+              "description": "设置时间",
+              "nl_description": "一体机的蒸汽炸模式的运行时长",
+              "required": 1,
+              "defaultX": "00:30:00",
+              "minimum": "00:01:00",
+              "maximum": "02:00:00"
+            }
+          }
+        },
+        {
+          "function_name": "营养蒸",
+          "function_parameters": {
+            "setTemperature": {
+              "type": "int",
+              "description": "设定温度",
+              "nl_description": "一体机的营养蒸模式的目标温度（℃）",
+              "required": 0,
+              "defaultX": 100,
+              "minimum": 30,
+              "maximum": 150
+            },
+            "setMinute": {
+              "type": "time",
+              "description": "设置时间",
+              "nl_description": "一体机的营养蒸模式的运行时长",
+              "required": 1,
+              "defaultX": "00:20:00",
+              "minimum": "00:01:00",
+              "maximum": "02:00:00"
+            }
+          }
+        },
+        {
+          "function_name": "蒸模式",
+          "function_parameters": {
+            "setTemperature": {
+              "type": "int",
+              "description": "设定温度",
+              "nl_description": "一体机的蒸模式的目标温度（℃）",
+              "required": 0,
+              "defaultX": 100,
+              "minimum": 30,
+              "maximum": 150
+            },
+            "setMinute": {
+              "type": "time",
+              "description": "设置时间",
+              "nl_description": "一体机的蒸模式的运行时长",
+              "required": 1,
+              "defaultX": "00:20:00",
+              "minimum": "00:01:00",
+              "maximum": "02:00:00"
+            }
+          }
+        },
+        {
+          "function_name": "澎湃蒸",
+          "function_parameters": {
+            "setTemperature": {
+              "type": "int",
+              "description": "设定温度",
+              "nl_description": "一体机的澎湃蒸模式的目标温度（℃）",
+              "required": 0,
+              "defaultX": 105,
+              "minimum": 105,
+              "maximum": 105
+            },
+            "setMinute": {
+              "type": "time",
+              "description": "设置时间",
+              "nl_description": "一体机的澎湃蒸模式的运行时长",
+              "required": 1,
+              "defaultX": "00:10:00",
+              "minimum": "00:01:00",
+              "maximum": "02:00:00"
+            }
+          }
+        },
+        {
+          "function_name": "焖炖",
+          "function_parameters": {
+            "setTemperature": {
+              "type": "int",
+              "description": "设定温度",
+              "nl_description": "一体机的焖炖模式的目标温度（℃）",
+              "required": 0,
+              "defaultX": 180,
+              "minimum": 35,
+              "maximum": 220
+            },
+            "setMinute": {
+              "type": "time",
+              "description": "设置时间",
+              "nl_description": "一体机的焖炖模式的运行时长",
+              "required": 1,
+              "defaultX": "01:00:00",
+              "minimum": "00:01:00",
+              "maximum": "02:00:00"
+            }
+          }
+        },
+        {
+          "function_name": "解冻",
+          "function_parameters": {
+            "setTemperature": {
+              "type": "int",
+              "description": "设定温度",
+              "nl_description": "一体机的解冻模式的目标温度（℃）",
+              "required": 0,
+              "defaultX": 50,
+              "not_support": 1
+            },
+            "setMicroWaveLevel": {
+              "type": "int",
+              "description": "微波功率，单位瓦特",
+              "nl_description": "一体机的解冻模式的微波功率（瓦）",
+              "required": 0,
+              "defaultX": 200,
+              "enum": [
+                200
+              ]
+            },
+            "setMinute": {
+              "type": "time",
+              "description": "设置时间",
+              "nl_description": "一体机的解冻模式的运行时长",
+              "required": 1,
+              "defaultX": "00:15:00",
+              "minimum": "00:01:00",
+              "maximum": "01:00:00"
+            }
+          }
+        },
+        {
+          "function_name": "发酵",
+          "function_parameters": {
+            "setTemperature": {
+              "type": "int",
+              "description": "设定温度",
+              "nl_description": "一体机的发酵模式的目标温度（℃）",
+              "required": 0,
+              "defaultX": 35,
+              "minimum": 35,
+              "maximum": 35
+            },
+            "setMinute": {
+              "type": "time",
+              "description": "设置时间",
+              "nl_description": "一体机的发酵模式的运行时长",
+              "required": 1,
+              "defaultX": "00:40:00",
+              "minimum": "00:01:00",
+              "maximum": "12:00:00"
+            }
+          }
+        },
+        {
+          "function_name": "保温",
+          "function_parameters": {
+            "setTemperature": {
+              "type": "int",
+              "description": "设定温度",
+              "nl_description": "一体机的保温模式的目标温度（℃）",
+              "required": 0,
+              "defaultX": 60,
+              "minimum": 60,
+              "maximum": 60
+            },
+            "setMinute": {
+              "type": "time",
+              "description": "设置时间",
+              "nl_description": "一体机的保温模式的运行时长",
+              "required": 1,
+              "defaultX": "02:00:00",
+              "minimum": "00:01:00",
+              "maximum": "06:00:00"
+            }
+          }
+        },
+        {
+          "function_name": "清洁",
+          "function_parameters": {
+            "setTemperature": {
+              "type": "int",
+              "description": "设定温度",
+              "nl_description": "一体机的清洁模式的目标温度（℃）",
+              "required": 0,
+              "defaultX": 100,
+              "minimum": 100,
+              "maximum": 100
+            },
+            "setMinute": {
+              "type": "time",
+              "description": "设置时间",
+              "nl_description": "一体机的清洁模式的运行时长",
+              "required": 0,
+              "defaultX": "00:10:00",
+              "minimum": "00:10:00",
+              "maximum": "00:10:00"
+            }
+          }
+        },
+        {
+          "function_name": "干燥",
+          "function_parameters": {
+            "setTemperature": {
+              "type": "int",
+              "description": "设定温度",
+              "nl_description": "一体机的干燥模式的目标温度（℃）",
+              "required": 0,
+              "defaultX": 150,
+              "minimum": 150,
+              "maximum": 150
+            },
+            "setMinute": {
+              "type": "time",
+              "description": "设置时间",
+              "nl_description": "一体机的干燥模式的运行时长",
+              "required": 0,
+              "defaultX": "00:10:00",
+              "minimum": "00:10:00",
+              "maximum": "00:10:00"
+            }
+          }
+        },
+        {
+          "function_name": "杀菌",
+          "function_parameters": {
+            "setTemperature": {
+              "type": "int",
+              "description": "设定温度",
+              "nl_description": "一体机的杀菌模式的目标温度（℃）",
+              "required": 0,
+              "defaultX": 100,
+              "minimum": 100,
+              "maximum": 100
+            },
+            "setMinute": {
+              "type": "time",
+              "description": "设置时间",
+              "nl_description": "一体机的杀菌模式的运行时长",
+              "required": 0,
+              "defaultX": "00:30:00",
+              "minimum": "00:30:00",
+              "maximum": "00:30:00"
+            }
+          }
+        },
+        {
+          "function_name": "除垢",
+          "function_parameters": {}
+        },
+        {
+          "function_name": "微波",
+          "function_parameters": {
+            "setMicroWaveLevel": {
+              "type": "int",
+              "description": "微波功率，单位瓦特",
+              "nl_description": "一体机的微波模式的微波功率（瓦）",
+              "required": 1,
+              "defaultX": 800,
+              "enum": [
+                200,
+                300,
+                400,
+                500,
+                600,
+                800
+              ]
+            },
+            "setMinute": {
+              "type": "time",
+              "description": "设置时间",
+              "nl_description": "一体机的微波模式的运行时长",
+              "required": 1,
+              "defaultX": "00:00:30",
+              "minimum": "00:00:05",
+              "maximum": "01:30:00"
+            }
+          }
+        },
+        {
+          "function_name": "复热",
+          "function_parameters": {
+            "setMicroWaveLevel": {
+              "type": "int",
+              "description": "微波功率，单位瓦特",
+              "nl_description": "一体机的复热模式的微波功率（瓦）",
+              "required": 0,
+              "defaultX": 800,
+              "enum": [
+                800
+              ]
+            },
+            "setMinute": {
+              "type": "time",
+              "description": "设置时间",
+              "nl_description": "一体机的复热模式的运行时长",
+              "required": 0,
+              "defaultX": "00:02:00",
+              "minimum": "00:00:05",
+              "maximum": "00:10:00"
+            }
+          }
+        },
+        {
+          "function_name": "微蒸",
+          "function_parameters": {
+            "setMicroWaveLevel": {
+              "type": "int",
+              "description": "微波功率，单位瓦特",
+              "nl_description": "一体机的微蒸模式的微波功率（瓦）",
+              "required": 0,
+              "defaultX": 200,
+              "not_support": 1,
+              "enum": [
+                200
+              ]
+            },
+            "setTemperature": {
+              "type": "int",
+              "description": "设定温度",
+              "nl_description": "一体机的微蒸模式的目标温度（℃）",
+              "required": 0,
+              "defaultX": 100,
+              "minimum": 100,
+              "maximum": 100,
+              "not_support": 1
+            },
+            "setMinute": {
+              "type": "time",
+              "description": "设置时间",
+              "nl_description": "一体机的微蒸模式的运行时长",
+              "required": 1,
+              "defaultX": "00:15:00",
+              "minimum": "00:01:00",
+              "maximum": "02:00:00"
+            }
+          }
+        },
+        {
+          "function_name": "微烤",
+          "function_parameters": {
+            "setMicroWaveLevel": {
+              "type": "int",
+              "description": "微波功率，单位瓦特",
+              "nl_description": "一体机的微烤模式的微波功率（瓦）",
+              "required": 0,
+              "defaultX": 200,
+              "not_support": 1,
+              "enum": [
+                200
+              ]
+            },
+            "setTemperature": {
+              "type": "int",
+              "description": "设定温度",
+              "nl_description": "一体机的微烤模式的目标温度（℃）",
+              "required": 1,
+              "defaultX": 200,
+              "minimum": 35,
+              "maximum": 200
+            },
+            "setMinute": {
+              "type": "time",
+              "description": "设置时间",
+              "nl_description": "一体机的微烤模式的运行时长",
+              "required": 1,
+              "defaultX": "00:20:00",
+              "minimum": "00:01:00",
+              "maximum": "02:00:00"
+            }
+          }
+        },
+        {
+          "function_name": "微炖",
+          "function_parameters": {
+            "setMicroWaveLevel": {
+              "type": "int",
+              "description": "微波功率，单位瓦特",
+              "nl_description": "一体机的微炖模式的微波功率（瓦）",
+              "required": 0,
+              "defaultX": 300,
+              "not_support": 1,
+              "enum": [
+                300
+              ]
+            },
+            "setTemperature": {
+              "type": "int",
+              "description": "设定温度",
+              "nl_description": "一体机的微炖模式的目标温度（℃）",
+              "required": 0,
+              "defaultX": 150,
+              "minimum": 35,
+              "maximum": 200
+            },
+            "setMinute": {
+              "type": "time",
+              "description": "设置时间",
+              "nl_description": "一体机的微炖模式的运行时长",
+              "required": 1,
+              "defaultX": "01:00:00",
+              "minimum": "00:01:00",
+              "maximum": "02:00:00"
+            }
+          }
+        },
+        {
+          "function_name": "早餐速蒸",
+          "function_parameters": {
+            "setTemperature": {
+              "type": "int",
+              "description": "设定温度",
+              "nl_description": "一体机的早餐速蒸模式的目标温度（℃）",
+              "required": 0,
+              "defaultX": 100,
+              "minimum": 100,
+              "maximum": 100
+            },
+            "setMicroWaveLevel": {
+              "type": "int",
+              "description": "设置早餐速蒸档位",
+              "nl_description": "一体机的早餐速蒸模式的功率档位",
+              "required": 0,
+              "not_support": 1
+            },
+            "setMinute": {
+              "type": "time",
+              "description": "设置时间",
+              "nl_description": "一体机的早餐速蒸模式的运行时长",
+              "required": 1,
+              "defaultX": "00:08:00",
+              "minimum": "00:01:00",
+              "maximum": "00:30:00"
+            }
+          }
+        },
+        {
+          "function_name": "预约",
+          "function_parameters": {
+            "reservationMinute": {
+              "type": "time",
+              "description": "预约启动延迟，reservationMinute和reservationClock使用其中一个即可",
+              "nl_description": "一体机预约启动的延迟时长, 请指定延迟时长或者具体时间，只需要指定一个即可",
+              "required": 1,
+              "minimum": "00:01:00",
+              "maximum": "333:20:00",
+              "alternative": [
+                "reservationClock"
+              ]
+            },
+            "reservationClock": {
+              "type": "string",
+              "description": "预约启动具体时刻，格式：HH:MM，reservationMinute和reservationClock使用其中一个即可",
+              "nl_description": "一体机预约启动的具体时间（HH:MM），请指定延迟时长或者具体时间，只需要指定一个即可",
+              "required": 1,
+              "alternative": [
+                "reservationMinute"
+              ]
+            }
+          }
+        },
+        {
+          "function_name": "关闭预约",
+          "function_parameters": {}
+        }
+      ]
+    },
+    "turn_on": {
+      "function_name": "turn_on",
+      "description": "打开一体机电源",
+      "function_parameters": {}
+    },
+    "shutdown": {
+      "function_name": "shutdown",
+      "description": "关闭一体机电源",
+      "function_parameters": {}
+    },
+    "startup": {
+      "function_name": "startup",
+      "description": "开始一体机的运行",
+      "function_parameters": {}
+    },
+    "all_property_get": {
+      "function_name": "all_property_get",
+      "description": "查询一体机正处于的工作状态和参数",
+      "function_parameters": {}
+    },
+    "pause_running": {
+      "function_name": "pause_running",
+      "description": "暂停一体机的当前运行",
+      "function_parameters": {}
+    },
+    "continue_running": {
+      "function_name": "continue_running",
+      "description": "继续一体机的当前运行",
+      "function_parameters": {}
+    },
+    "terminate_running": {
+      "function_name": "terminate_running",
+      "description": "终止一体机的当前运行",
+      "function_parameters": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "营养蒸",
+            "蒸模式",
+            "澎湃蒸",
+            "焖炖",
+            "焙烤",
+            "预热",
+            "烤模式",
+            "风焙烤",
+            "风扇烤",
+            "加湿烤",
+            "烤烧",
+            "空气炸",
+            "炸模式",
+            "蒸汽炸",
+            "解冻",
+            "发酵",
+            "保温",
+            "清洁",
+            "干燥",
+            "杀菌",
+            "除垢",
+            "微波",
+            "复热",
+            "微蒸",
+            "微烤",
+            "微炖",
+            "早餐速蒸"
+          ],
+          "description": "用户提及终止'哪个模式'时抽取，否则均不抽取",
+          "nl_description": "用户提及终止'哪个模式'时抽取，否则均不抽取",
+          "required": 0
+        }
+      }
+    },
+    "light_switch": {
+      "function_name": "light_switch",
+      "description": "控制一体机灯光的开关",
+      "function_parameters": {
+        "switch": {
+          "type": "string",
+          "enum": [
+            "关闭",
+            "开启"
+          ],
+          "description": "控制一体机灯光的开关状态",
+          "nl_description": "一体机灯光的开关状态",
+          "required": 1
+        }
+      }
+    },
+    "finish_with_increase_time": {
+      "function_name": "finish_with_increase_time",
+      "description": "设置一体机运行结束后的加时时长",
+      "function_parameters": {
+        "overtimeSet": {
+          "type": "time",
+          "description": "加时时长",
+          "nl_description": "一体机运行结束后的加时时长",
+          "required": 1,
+          "minimum": "00:01:00",
+          "maximum": "20:00:00"
+        }
+      }
+    }
+  }
+}
