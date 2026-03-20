@@ -970,8 +970,9 @@ class AgenticTestAgent:
             await self.wait_for_speaker_response(wait_time=0.0)
 
             if self.audio_mode == self.AUDIO_MODE_FIXED_DURATION:
-                await self.send_callback('status', f'TTS播放完成，开始积累 {self.fixed_duration} 秒音频...')
-                self._start_buffering()
+                await self.send_callback('status', 'TTS 播放中，等待播放结束后开始缓冲...')
+                # 不再立即调用 _start_buffering()
+                # 等待前端发送 tts_playback_ended 消息
                 return False
             else:
                 await self.send_callback('status', '等待音频输入...')
@@ -1147,6 +1148,19 @@ class AgenticTestAgent:
         """停止积累音频 buffer"""
         self.is_buffering = False
         logger.info("Stopped buffering audio")
+
+    def start_buffering_after_tts(self):
+        """TTS 播放结束后开始音频缓冲
+
+        由前端 tts_playback_ended 消息触发，
+        确保在 TTS 播放结束后才开始计时。
+        """
+        # 关键：先清空任何残留的音频数据
+        self.audio_buffer = []
+        self.buffer_start_time = time.perf_counter()
+        self.is_buffering = True
+        self.tester_service.reset_noise_retry()
+        logger.info(f"TTS playback ended, starting fresh buffer, duration target: {self.fixed_duration}s")
 
     async def _process_fixed_duration_with_buffer(self, audio_data: str, audio_format: str = 'pcm') -> Optional[VADASRResult]:
         """固定时长模式：后端控制 buffer 积累和处理"""

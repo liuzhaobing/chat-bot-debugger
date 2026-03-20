@@ -350,6 +350,16 @@ async def agentic_test_websocket(
                         }
                     )
 
+                elif message_type == "tts_playback_ended":
+                    # TTS 播放结束，开始音频缓冲
+                    if agent:
+                        agent.start_buffering_after_tts()
+                    else:
+                        await connection_manager.send_message(
+                            session_id,
+                            {"type": "warning", "content": "智能体未运行"}
+                        )
+
                 else:
                     logger.warning(f"Unknown message type: {message_type}")
                     await connection_manager.send_message(

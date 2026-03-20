@@ -1141,6 +1141,16 @@ export default {
         source.onended = () => {
           this.addSystemLog('audio', 'info', '音频播放完成')
           this.currentPlayingAudio = null
+
+          // 通知后端 TTS 播放结束
+          if (this.isWebSocketReady()) {
+            const message = {
+              type: 'tts_playback_ended',
+              timestamp: Date.now()
+            }
+            this.websocket.send(JSON.stringify(message))
+            this.addSystemLog('audio', 'info', '已通知后端 TTS 播放结束')
+          }
         }
 
         source.start()
