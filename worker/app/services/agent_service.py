@@ -462,11 +462,6 @@ class AgenticTestAgent:
 
             # 如果指定了 device_guids，直接查询这些设备
             if device_guids:
-                # IOT 平台 BUG 兼容：连续调用两次，使用第二次的结果
-                await self.iot_service.get_device_status(
-                    device_guids,
-                    self.iot_config['token']
-                )
                 status_result = await self.iot_service.get_device_status(
                     device_guids,
                     self.iot_config['token']
