@@ -1,7 +1,398 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
+  <component name="ChangeListManager">
+    <list default="true" id="8a25aaac-832b-4887-a18c-0759324ef442" name="Changes" comment="fix: prd integration and iot md saving">
+      <change beforePath="$PROJECT_DIR$/.idea/chat-bot-debugger.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/chat-bot-debugger.iml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/agentic_test/services.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/agentic_test/services.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/db.sqlite3" beforeDir="false" afterPath="$PROJECT_DIR$/backend/db.sqlite3" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/src/views/agent/agentic-test/AgenticTestView.vue" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/views/agent/agentic-test/AgenticTestView.vue" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/worker/app/config.py" beforeDir="false" afterPath="$PROJECT_DIR$/worker/app/config.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/worker/app/services/agent_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/worker/app/services/agent_service.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/worker/app/services/asr_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/worker/app/services/asr_service.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/worker/app/services/iot_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/worker/app/services/iot_service.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/worker/app/services/smart_test_agent.py" beforeDir="false" afterPath="$PROJECT_DIR$/worker/app/services/smart_test_agent.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/worker/app/services/tester_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/worker/app/services/tester_service.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/worker/app/services/tts_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/worker/app/services/tts_service.py" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="DjangoConsoleOptions" custom-start-script="import sys; print('Python %s on %s' % (sys.version, sys.platform))&#10;import django; print('Django %s' % django.get_version())&#10;sys.path.extend([WORKING_DIR_AND_PYTHON_PATHS])&#10;if 'setup' in dir(django): django.setup()&#10;import django_manage_shell; django_manage_shell.run(PROJECT_ROOT)">
+    <option name="myCustomStartScript" value="import sys; print('Python %s on %s' % (sys.version, sys.platform))&#10;import django; print('Django %s' % django.get_version())&#10;sys.path.extend([WORKING_DIR_AND_PYTHON_PATHS])&#10;if 'setup' in dir(django): django.setup()&#10;import django_manage_shell; django_manage_shell.run(PROJECT_ROOT)" />
+  </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Python Script" />
+      </list>
+    </option>
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 8
+}</component>
+  <component name="ProjectId" id="3Av5D3tfFUJ9YIdrKJTEu9qMfoF" />
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "Django Server.backend.executor": "Run",
+    "Python.aaa.executor": "Run",
+    "Python.backend.executor": "Run",
+    "Python.debug_omni.executor": "Debug",
+    "Python.main.executor": "Run",
+    "Python.manage.executor": "Run",
+    "Python.update_functions_md.executor": "Run",
+    "Python.worker.executor": "Run",
+    "RunOnceActivity.OpenDjangoStructureViewOnStart": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
+    "git-widget-placeholder": "feature/prd",
+    "last_opened_file_path": "//wsl$/Ubuntu-22.04/home/liuzhaobing/develop/github/chat-bot-debugger",
+    "nodejs_package_manager_path": "npm",
+    "npm.serve.executor": "Run",
+    "settings.editor.selected.configurable": "preferences.pluginManager",
+    "vue.rearranger.settings.migration": "true"
+  },
+  "keyToStringList": {
+    "DatabaseDriversLRU": [
+      "sqlite"
+    ]
+  }
+}]]></component>
+  <component name="RunManager" selected="Python.worker">
+    <configuration name="aaa" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="chat-bot-debugger" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="RUN_TOOL" value="" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/aaa.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="debug_omni_api" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="chat-bot-debugger" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/worker/scripts" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="RUN_TOOL" value="" />
+      <option name="SCRIPT_NAME" value="\\wsl$\Ubuntu-22.04\home\liuzhaobing\develop\github\chat-bot-debugger\worker\scripts\debug_omni_api.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="update_functions_md" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="chat-bot-debugger" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/backend" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="RUN_TOOL" value="" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/backend/update_functions_md.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="worker" type="PythonConfigurationType" factoryName="Python" temporary="true">
+      <module name="chat-bot-debugger" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/worker/app" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="RUN_TOOL" value="" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/worker/app/main.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="backend" type="Python.DjangoServer" factoryName="Django server">
+      <module name="chat-bot-debugger" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+        <env name="DJANGO_SETTINGS_MODULE" value="core.settings" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="\\wsl$\Ubuntu-22.04\home\liuzhaobing\develop\github\chat-bot-debugger\backend" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="RUN_TOOL" value="" />
+      <option name="launchJavascriptDebuger" value="false" />
+      <option name="port" value="8000" />
+      <option name="host" value="" />
+      <option name="additionalOptions" value="" />
+      <option name="browserUrl" value="" />
+      <option name="runTestServer" value="false" />
+      <option name="runNoReload" value="false" />
+      <option name="useCustomRunCommand" value="false" />
+      <option name="customRunCommand" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="worker" type="Python.FastAPI">
+      <option name="file" value="\\wsl$\Ubuntu-22.04\home\liuzhaobing\develop\github\chat-bot-debugger\worker\app\main.py" />
+      <module name="chat-bot-debugger" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/worker" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="RUN_TOOL" value="" />
+      <option name="launchJavascriptDebuger" value="false" />
+      <method v="2" />
+    </configuration>
+    <configuration name="serve" type="js.build_tools.npm" temporary="true" nameIsGenerated="true">
+      <package-json value="$PROJECT_DIR$/frontend/package.json" />
+      <command value="run" />
+      <scripts>
+        <script value="serve" />
+      </scripts>
+      <node-interpreter value="wsl://Ubuntu-22.04@/home/liuzhaobing/.nvm/versions/node/v20.20.1/bin/node" />
+      <envs />
+      <method v="2" />
+    </configuration>
+    <list>
+      <item itemvalue="Django Server.backend" />
+      <item itemvalue="FastAPI.worker" />
+      <item itemvalue="npm.serve" />
+      <item itemvalue="Python.update_functions_md" />
+      <item itemvalue="Python.aaa" />
+      <item itemvalue="Python.debug_omni_api" />
+      <item itemvalue="Python.worker" />
+    </list>
+    <recent_temporary>
+      <list>
+        <item itemvalue="Python.worker" />
+        <item itemvalue="Python.update_functions_md" />
+        <item itemvalue="npm.serve" />
+        <item itemvalue="Python.aaa" />
+        <item itemvalue="Python.debug_omni_api" />
+      </list>
+    </recent_temporary>
+  </component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-js-predefined-d6986cc7102b-9b0f141eb926-JavaScript-PY-253.31033.139" />
+        <option value="bundled-python-sdk-2653e85de345-6d6dccd035ac-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-253.31033.139" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="8a25aaac-832b-4887-a18c-0759324ef442" name="Changes" comment="" />
+      <created>1773460080856</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1773460080856</updated>
+      <workItem from="1773460082346" duration="5606000" />
+      <workItem from="1773468192193" duration="133000" />
+      <workItem from="1773468352648" duration="438000" />
+      <workItem from="1773468820966" duration="10744000" />
+      <workItem from="1773485266784" duration="5397000" />
+      <workItem from="1773498758197" duration="632000" />
+      <workItem from="1773578229447" duration="30493000" />
+      <workItem from="1773647567099" duration="288000" />
+      <workItem from="1773648197911" duration="30591000" />
+      <workItem from="1773736034829" duration="164000" />
+    </task>
+    <task id="LOCAL-00001" summary="fix: parse error">
+      <option name="closed" value="true" />
+      <created>1773462397033</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1773462397033</updated>
+    </task>
+    <task id="LOCAL-00002" summary="fix: using bailian asr instead">
+      <option name="closed" value="true" />
+      <created>1773474072234</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1773474072234</updated>
+    </task>
+    <task id="LOCAL-00003" summary="fix: disable unused logs">
+      <option name="closed" value="true" />
+      <created>1773477730846</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1773477730846</updated>
+    </task>
+    <task id="LOCAL-00004" summary="add: app-ids.md">
+      <option name="closed" value="true" />
+      <created>1773491452792</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1773491452792</updated>
+    </task>
+    <task id="LOCAL-00005" summary="add: 数字员工概念">
+      <option name="closed" value="true" />
+      <created>1773639874810</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1773639874810</updated>
+    </task>
+    <task id="LOCAL-00006" summary="add: 测试报告概念">
+      <option name="closed" value="true" />
+      <created>1773656746578</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1773656746579</updated>
+    </task>
+    <task id="LOCAL-00007" summary="fix: css">
+      <option name="closed" value="true" />
+      <created>1773715462992</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1773715462992</updated>
+    </task>
+    <task id="LOCAL-00008" summary="fix: report write error">
+      <option name="closed" value="true" />
+      <created>1773719258790</created>
+      <option name="number" value="00008" />
+      <option name="presentableId" value="LOCAL-00008" />
+      <option name="project" value="LOCAL" />
+      <updated>1773719258791</updated>
+    </task>
+    <task id="LOCAL-00009" summary="fix: prd integration and iot md saving">
+      <option name="closed" value="true" />
+      <created>1773735563207</created>
+      <option name="number" value="00009" />
+      <option name="presentableId" value="LOCAL-00009" />
+      <option name="project" value="LOCAL" />
+      <updated>1773735563207</updated>
+    </task>
+    <option name="localTasksCounter" value="10" />
+    <servers />
+  </component>
+  <component name="TerminalProjectNonSharedOptionsProvider">
+    <option name="shellPath" value="wsl.exe -d Ubuntu-22.04 -e zsh " />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="fix: parse error" />
+    <MESSAGE value="fix: using bailian asr instead" />
+    <MESSAGE value="fix: disable unused logs" />
+    <MESSAGE value="add: app-ids.md" />
+    <MESSAGE value="add: 数字员工概念" />
+    <MESSAGE value="add: 测试报告概念" />
+    <MESSAGE value="fix: css" />
+    <MESSAGE value="fix: report write error" />
+    <MESSAGE value="fix: prd integration and iot md saving" />
+    <option name="LAST_COMMIT_MESSAGE" value="fix: prd integration and iot md saving" />
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <breakpoints>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/worker/app/services/tester_service.py</url>
+          <line>989</line>
+          <option name="timeStamp" value="5" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/worker/app/services/tester_service.py</url>
+          <line>462</line>
+          <option name="timeStamp" value="6" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/worker/app/services/tester_service.py</url>
+          <line>465</line>
+          <option name="timeStamp" value="7" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/worker/app/services/tester_service.py</url>
+          <line>491</line>
+          <option name="timeStamp" value="9" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/worker/app/services/verifiers.py</url>
+          <line>1027</line>
+          <option name="timeStamp" value="12" />
+        </line-breakpoint>
+      </breakpoints>
+    </breakpoint-manager>
+  </component>
+  <component name="com.intellij.coverage.CoverageDataManagerImpl">
+    <SUITE FILE_PATH="coverage/chat_bot_debugger$update_functions_md.coverage" NAME="update_functions_md Coverage Results" MODIFIED="1773731011529" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/backend" />
+    <SUITE FILE_PATH="coverage/chat_bot_debugger$worker.coverage" NAME="worker Coverage Results" MODIFIED="1773829190483" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/worker/app" />
+    <SUITE FILE_PATH="coverage/chat_bot_debugger$manage.coverage" NAME="manage Coverage Results" MODIFIED="1773467241044" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/backend" />
+    <SUITE FILE_PATH="coverage/chat_bot_debugger$debug_omni.coverage" NAME="debug_omni Coverage Results" MODIFIED="1773469776518" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/worker/scripts" />
+    <SUITE FILE_PATH="coverage/chat_bot_debugger$aaa.coverage" NAME="aaa Coverage Results" MODIFIED="1773645337057" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/chat_bot_debugger$main.coverage" NAME="main Coverage Results" MODIFIED="1773461241322" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/worker/app" />
   </component>
 </project>
