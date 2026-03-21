@@ -360,6 +360,16 @@ async def agentic_test_websocket(
                             {"type": "warning", "content": "智能体未运行"}
                         )
 
+                elif message_type == "silence_detected":
+                    # 前端检测到静默，提前结束buffer等待
+                    if agent:
+                        await agent.trigger_early_asr()
+                    else:
+                        await connection_manager.send_message(
+                            session_id,
+                            {"type": "warning", "content": "智能体未运行"}
+                        )
+
                 else:
                     logger.warning(f"Unknown message type: {message_type}")
                     await connection_manager.send_message(

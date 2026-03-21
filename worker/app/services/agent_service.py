@@ -1238,6 +1238,82 @@ class AgenticTestAgent:
             await self.send_callback('error', f'固定时长音频处理失败: {str(e)}')
             return VADASRResult(success=False, error_message=str(e))
 
+    async def trigger_early_asr(self):
+        """前端检测到静默，提前触发ASR识别"""
+        try:
+            if not self.is_buffering:
+                logger.info("Not in buffering state, ignoring silence_detected")
+                return
+
+            # 检查是否有音频数据，并在锁内停止缓冲
+            async with self.buffer_lock:
+                if not self.audio_buffer:
+                    logger.info("Audio buffer is empty, continuing to wait")
+                    # 缓冲区为空，继续等待但不重置检测状态
+                    return
+
+                combined_audio = b''.join(self.audio_buffer)
+                self.audio_buffer = []
+                self._stop_buffering()  # 在锁内停止缓冲，避免竞态
+
+            current_duration = len(combined_audio) / 32000
+
+            await self.send_callback('status', f'检测到静默，提前结束音频采集: {current_duration:.2f}秒')
+            await self.log_event('mic_capture', '静默检测触发提前处理', {
+                'audio_bytes': len(combined_audio),
+                'duration_s': current_duration
+            })
+
+            # 执行ASR识别
+            wav_audio_b64 = AudioConverter.pcm_to_wav_base64(combined_audio)
+            asr_result = await self.asr_service.recognize_speech(wav_audio_b64, audio_format="wav")
+
+            await self.send_callback('transcript_final', asr_result, {
+                'loop_step': self.loop_step,
+                'audio_duration_s': current_duration,
+                'audio_mode': 'silence_detected'
+            })
+
+            asr_text = asr_result.strip()
+
+            if not asr_text:
+                # ASR结果为空，作为噪音处理
+                logger.info("Silence-triggered ASR result is empty")
+                self.current_asr_result = ""
+                return
+
+            self.current_asr_result = asr_text
+            if asr_text != '<noise>':
+                self.current_asr_true_result = asr_text
+                self.real_voice_active_time = time.perf_counter()
+
+            logger.info(f"Silence-triggered ASR result: '{asr_text}'")
+
+            # 查询设备状态
+            device_status = await self.iot_service.get_device_status_all()
+            self.device_status_after_asr = device_status
+
+            # 检测设备状态变化
+            changes = self.detect_device_changes()
+            has_changes = any(c.get('has_change', False) for c in changes.values())
+
+            if has_changes:
+                await self.log_event('device_status', '检测到设备状态变化', {'changes': changes})
+
+            # 添加到对话历史
+            self.tester_service.add_to_conversation_history('user', asr_text)
+
+            # 通知测试工程师服务
+            await self.tester_service.on_user_input(asr_text, changes)
+
+            # 设置事件，触发后续处理
+            if hasattr(self, '_audio_input_event'):
+                self._audio_input_event.set()
+
+        except Exception as e:
+            logger.error(f"Error in trigger_early_asr: {e}", exc_info=True)
+            await self.send_callback('error', f'静默检测处理失败: {str(e)}')
+
     def detect_device_changes(self) -> Dict[str, Any]:
         """检测设备状态变化
 

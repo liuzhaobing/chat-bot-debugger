@@ -250,7 +250,14 @@ export default {
       testCaseRawContent: '',
       isGeneratingTestCases: false,
       // 标记是否已经生成过测试用例（防止重连后重复生成）
-      hasGeneratedTestCases: false
+      hasGeneratedTestCases: false,
+
+      // 静默检测状态机
+      silenceDetectionActive: false,   // 静默检测是否激活
+      hasDetectedVoice: false,          // 是否已检测到用户说话
+      silenceStartTime: null,           // 静默开始时间
+      silenceThreshold: 3000,           // 3秒静默阈值
+      volumeThreshold: 0.02             // 音量阈值
     }
   },
   mounted() {
@@ -436,6 +443,11 @@ export default {
         this.audioProcessor.onAudioLevel = (level) => {
           this.currentAudioLevel = level
           this.hasAudioActivity = level > 0.02
+
+          // 静默检测逻辑
+          if (this.silenceDetectionActive) {
+            this.handleSilenceDetection(level)
+          }
         }
 
         this.audioProcessor.onVoiceActivity = () => {
@@ -759,6 +771,9 @@ export default {
      * 断开WebSocket连接
      */
     disconnectFromWebSocket() {
+      // 停止静默检测
+      this.stopSilenceDetection()
+
       if (this.websocket) {
         try {
           // 连接关闭前先发送stop_test
@@ -1151,6 +1166,9 @@ export default {
             this.websocket.send(JSON.stringify(message))
             this.addSystemLog('audio', 'info', '已通知后端 TTS 播放结束')
           }
+
+          // 新增：启动静默检测
+          this.startSilenceDetection()
         }
 
         source.start()
@@ -1424,6 +1442,9 @@ export default {
     async cleanup() {
       console.log('开始清理资源...')
 
+      // 停止静默检测
+      this.stopSilenceDetection()
+
       // 停止会话计时器
       this.stopSessionTimer()
 
@@ -1449,6 +1470,61 @@ export default {
       this.sessionDuration = 0
 
       console.log('资源清理完成')
+    },
+
+    /**
+     * 静默检测控制方法
+     */
+    startSilenceDetection() {
+      // 重置状态
+      this.silenceDetectionActive = true
+      this.hasDetectedVoice = false
+      this.silenceStartTime = null
+      this.addSystemLog('audio', 'info', '开始静默检测')
+    },
+
+    stopSilenceDetection() {
+      this.silenceDetectionActive = false
+      this.hasDetectedVoice = false
+      this.silenceStartTime = null
+    },
+
+    handleSilenceDetection(level) {
+      const hasVoice = level >= this.volumeThreshold
+
+      if (!this.hasDetectedVoice) {
+        // 阶段1：等待用户说话（从无声到有声）
+        if (hasVoice) {
+          this.hasDetectedVoice = true
+          this.silenceStartTime = null  // 重置静默计时
+          this.addSystemLog('audio', 'info', '检测到用户说话')
+        }
+      } else {
+        // 阶段2：已说话，检测静默（从有声到无声）
+        if (hasVoice) {
+          // 用户还在说话，重置静默计时
+          this.silenceStartTime = null
+        } else {
+          // 用户静默中
+          if (!this.silenceStartTime) {
+            this.silenceStartTime = Date.now()
+          } else if (Date.now() - this.silenceStartTime >= this.silenceThreshold) {
+            // 静默超过3秒，触发提前处理
+            this.addSystemLog('audio', 'info', '检测到3秒静默，提前触发识别')
+            this.sendSilenceDetected()
+            this.stopSilenceDetection()  // 停止检测，避免重复发送
+          }
+        }
+      }
+    },
+
+    sendSilenceDetected() {
+      if (!this.isWebSocketReady()) return
+      const message = {
+        type: 'silence_detected',
+        timestamp: Date.now()
+      }
+      this.websocket.send(JSON.stringify(message))
     }
   }
 }
