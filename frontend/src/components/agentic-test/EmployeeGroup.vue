@@ -222,69 +222,55 @@ export default {
   position: relative;
 }
 
-/* 悬停气泡 - 云朵样式 */
+/* 悬停气泡 - 简洁现代风格 */
 .hover-bubble {
   position: absolute;
   left: 50%;
-  transform: translateX(-50%) scale(0);
-  background: #fff;
-  color: #333;
-  padding: 10px 18px;
+  transform: translateX(-50%) scale(0.8);
+  background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+  color: #374151;
+  padding: 8px 16px;
   border-radius: 20px;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   white-space: nowrap;
   opacity: 0;
-  transition: all 0.25s ease;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   pointer-events: none;
   z-index: 10;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.12);
+  border: 1px solid rgba(0, 0, 0, 0.06);
 }
 
-/* 云朵左侧装饰 */
+/* 小尾巴 */
 .hover-bubble::before {
   content: '';
   position: absolute;
-  top: 6px;
-  left: -10px;
-  width: 18px;
-  height: 18px;
-  background: #fff;
-  border-radius: 50%;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 8px solid #f8f9fa;
 }
 
-/* 云朵右侧装饰 */
-.hover-bubble::after {
-  content: '';
-  position: absolute;
-  top: 10px;
-  right: -12px;
-  width: 14px;
-  height: 14px;
-  background: #fff;
-  border-radius: 50%;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
-}
-
-/* 紫色 - 最高，角色高度280px */
+/* 不同角色的气泡位置 - 都放在角色头顶上方，避免遮挡 */
 .character-purple .hover-bubble {
-  top: -320px;
+  top: -45px;
 }
 
-/* 黑色 - 次高，角色高度240px */
 .character-black .hover-bubble {
-  top: -280px;
+  top: -45px;
 }
 
-/* 橙色 - 矮胖，半圆高度85px */
 .character-orange .hover-bubble {
   top: -125px;
 }
 
-/* 黄色 - 中等，半圆高度57px + 矩形120px */
 .character-yellow .hover-bubble {
-  top: -100px;
+  top: -95px;
 }
 
 .character-wrapper:hover .hover-bubble {

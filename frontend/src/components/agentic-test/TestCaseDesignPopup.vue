@@ -1,17 +1,11 @@
 <template>
-  <div class="test-case-popup-overlay" @click.self="handleCancel">
-    <div class="test-case-popup">
+  <div v-if="visible" class="test-case-popup-overlay" @click.stop>
+    <div class="test-case-popup" @click.stop>
       <div class="popup-header">
         <h3>测试用例设计</h3>
         <span class="case-count" v-if="testCases.length > 0">
           共 {{ testCases.length }} 条用例
         </span>
-        <button class="close-btn" @click="handleCancel">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
-        </button>
       </div>
 
       <div class="popup-body">
@@ -191,6 +185,10 @@ export default {
     initialTestCases: {
       type: Array,
       default: () => []
+    },
+    visible: {
+      type: Boolean,
+      default: false
     }
   },
   data() {
@@ -265,6 +263,20 @@ export default {
     if (this.initialTestCases.length > 0) {
       this.testCases = [...this.initialTestCases]
       this.isDesigning = false
+    }
+    // 阻止 ESC 键关闭弹窗
+    this.handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        e.stopPropagation()
+      }
+    }
+    document.addEventListener('keydown', this.handleKeyDown, true)
+  },
+  beforeDestroy() {
+    // 移除键盘事件监听
+    if (this.handleKeyDown) {
+      document.removeEventListener('keydown', this.handleKeyDown, true)
     }
   },
   watch: {

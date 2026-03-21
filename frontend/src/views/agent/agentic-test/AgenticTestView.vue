@@ -1,110 +1,24 @@
 <template>
   <div class="agentic-test-view">
-    <!-- 顶部工具栏 -->
-    <div class="top-toolbar">
-      <div class="toolbar-left">
-        <h1 class="page-title">厨电控制测试</h1>
-        <span class="page-subtitle">Agentic Test 语音交互平台</span>
-      </div>
-      
-      <div class="toolbar-center">
-        <div class="panel-tabs">
-          <button
-            class="tab-btn"
-            :class="{ active: activePanel === 'employee' }"
-            @click="switchPanel('employee')"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-              <circle cx="8.5" cy="7" r="4"></circle>
-              <path d="M20 8v6"></path>
-              <path d="M23 11h-6"></path>
-            </svg>
-            <span>数字员工</span>
-          </button>
-          <button
-            class="tab-btn"
-            :class="{ active: activePanel === 'transcript' }"
-            @click="switchPanel('transcript')"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-            </svg>
-            <span>通话字幕</span>
-          </button>
-          <button
-            class="tab-btn"
-            :class="{ active: activePanel === 'devices' }"
-            @click="switchPanel('devices')"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
-              <path d="M2 17l10 5 10-5"></path>
-              <path d="M2 12l10 5 10-5"></path>
-            </svg>
-            <span>智能设备</span>
-          </button>
-        </div>
-      </div>
-      
-      <div class="toolbar-right">
-        <!-- VAD+ASR测试按钮 -->
-        <!--
-        <button
-          class="test-btn"
-          @click="showVadAsrTest = true"
-          title="VAD+ASR调试"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
-            <path d="M2 17l10 5 10-5"></path>
-            <path d="M2 12l10 5 10-5"></path>
-          </svg>
-          <span>VAD+ASR调试</span>
-        </button>
-        -->
-        <!-- 语音会话按钮 - 仅在连接建立时显示 -->
-        <button
-          v-if="isConnecting || isSessionActive"
-          class="session-status-btn"
-          @click="handleVoiceAgentClick"
-          :class="{
-            connected: isSessionActive,
-            connecting: isConnecting
-          }"
-        >
-          <div class="status-dot"></div>
-          <strong v-if="isConnecting">连线中...</strong>
-          <strong v-if="isSessionActive" class="session-duration">{{ formattedSessionDuration }}</strong>
-        </button>
-      </div>
-    </div>
-
     <!-- 主内容区域 -->
     <div class="main-content">
       <!-- 数字员工面板 -->
-      <div v-if="activePanel === 'employee'" class="employee-container">
+      <div class="employee-container">
         <SceneTestPanel
           ref="sceneTestPanel"
-          @start-session-with-config="handleStartSessionWithConfig"
-        />
-      </div>
-
-      <!-- 通话字幕面板 -->
-      <div v-if="activePanel === 'transcript'" class="transcript-container">
-        <TranscriptPanel
+          :has-pending-test-cases="pendingTestCases.length > 0"
           :transcript-messages="transcriptMessages"
-          :logs="systemLogs"
+          :system-logs="systemLogs"
+          :is-session-active="isSessionActive"
+          :is-connecting="isConnecting"
+          :session-duration="sessionDuration"
+          @start-session-with-config="handleStartSessionWithConfig"
+          @reopen-test-case-popup="handleReopenTestCasePopup"
           @clear-transcript="clearTranscript"
           @clear-logs="clearLogs"
+          @session-btn-click="handleVoiceAgentClick"
+          @test-cases-confirm="confirmTestCases"
         />
-      </div>
-
-      <!-- 智能设备面板 -->
-      <div v-if="activePanel === 'devices'" class="devices-container">
-        <div class="devices-content">
-          <IOTConfigPanel ref="iotPanel" :hide-config="true" />
-        </div>
       </div>
     </div>
 
@@ -136,25 +50,15 @@
       </div>
     </div>
 
-    <!-- 测试用例确认弹窗 -->
-    <TestCaseDesignPopup
-      v-show="showTestCasePopup"
-      ref="testCasePopup"
-      :initial-test-cases="pendingTestCases"
-      @confirm="confirmTestCases"
-      @cancel="cancelTestCaseConfirm"
-    />
+    <!-- 测试用例确认弹窗 - 已移动到 SceneTestPanel 左侧面板 -->
   </div>
 </template>
 
 <script>
 import { mapState, mapGetters, mapActions } from 'vuex'
-import IOTConfigPanel from '@/components/agentic-test/IOTConfigPanel.vue'
-import TranscriptPanel from '@/components/agentic-test/TranscriptPanel.vue'
 import SessionManager from '@/components/agentic-test/SessionManager.vue'
 import VadAsrTestPanel from '@/components/agentic-test/VadAsrTestPanel.vue'
 import SceneTestPanel from '@/components/agentic-test/SceneTestPanel.vue'
-import TestCaseDesignPopup from '@/components/agentic-test/TestCaseDesignPopup.vue'
 import RealtimeAudioProcessor, { createAudioMessage } from '@/utils/realtimeAudioProcessor.js'
 import { getAgenticTestWsUrl } from '@/config/worker.js'
 import agenticTestService from '@/services/agenticTestService'
@@ -162,12 +66,9 @@ import agenticTestService from '@/services/agenticTestService'
 export default {
   name: 'AgenticTestView',
   components: {
-    IOTConfigPanel,
-    TranscriptPanel,
     SessionManager,
     VadAsrTestPanel,
-    SceneTestPanel,
-    TestCaseDesignPopup
+    SceneTestPanel
   },
   computed: {
     ...mapState('agenticTest', [
@@ -189,7 +90,6 @@ export default {
   data() {
     return {
       // UI状态
-      activePanel: 'employee', // 'transcript' | 'devices' | 'employee'
       showMainInterface: false,
       showVadAsrTest: false,
 
@@ -244,8 +144,7 @@ export default {
       // 配置初始化状态
       isConfigInitialized: false,
 
-      // 测试用例确认弹窗
-      showTestCasePopup: false,
+      // 测试用例
       pendingTestCases: [],
       testCaseRawContent: '',
       isGeneratingTestCases: false,
@@ -287,10 +186,12 @@ export default {
     ]),
 
     /**
-     * 面板切换
+     * 重新打开测试用例确认弹窗
      */
-    switchPanel(panel) {
-      this.activePanel = panel
+    handleReopenTestCasePopup() {
+      if (this.pendingTestCases.length > 0 && this.$refs.sceneTestPanel) {
+        this.$refs.sceneTestPanel.switchToTestCasePanel()
+      }
     },
 
     /**
@@ -373,27 +274,11 @@ export default {
     handleIOTConfigChange(config) {
       this.iotConfig = { ...config }
       this.addSystemLog('iot', 'info', 'IOT配置已更新')
-      
+
       // 如果WebSocket已连接，立即发送更新的配置
       if (this.isWebSocketReady()) {
         this.sendIOTConfigToServer()
       }
-    },
-
-    /**
-     * 处理加载设备请求
-     */
-    handleLoadDevices(config) {
-      this.addSystemLog('iot', 'info', '开始加载设备列表...', { config })
-      // 这里可以触发IOTConfigPanel的加载设备方法
-      // 通过事件总线或者ref来调用
-      this.$nextTick(() => {
-        // 如果IOTConfigPanel有暴露的方法，可以直接调用
-        const iotPanel = this.$refs.iotPanel
-        if (iotPanel && typeof iotPanel.loadDevices === 'function') {
-          iotPanel.loadDevices()
-        }
-      })
     },
 
     /**
@@ -942,12 +827,11 @@ export default {
             this.isGeneratingTestCases = true
             this.pendingTestCases = []
             this.testCaseRawContent = ''
-            // 重置弹窗状态
-            if (this.$refs.testCasePopup) {
-              this.$refs.testCasePopup.reset()
+            // 重置弹窗状态并切换到测试用例面板
+            if (this.$refs.sceneTestPanel) {
+              this.$refs.sceneTestPanel.resetTestCasePanel()
+              this.$refs.sceneTestPanel.switchToTestCasePanel()
             }
-            // 显示弹窗
-            this.showTestCasePopup = true
             this.addSystemLog('system', 'info', '开始生成测试用例...')
             break
 
@@ -957,8 +841,8 @@ export default {
             if (streamContent) {
               this.testCaseRawContent += streamContent
               // 确保弹窗已挂载后再添加内容
-              if (this.$refs.testCasePopup) {
-                this.$refs.testCasePopup.addDesignChunk(streamContent)
+              if (this.$refs.sceneTestPanel) {
+                this.$refs.sceneTestPanel.addTestCaseChunk(streamContent)
               }
             }
             break
@@ -966,9 +850,9 @@ export default {
           case 'test_cases_generated':
             // 测试用例生成完成，解析并填充表格
             var generatedCases = (data.content && data.content.test_cases) || []
-            if (generatedCases.length > 0 && this.$refs.testCasePopup) {
+            if (generatedCases.length > 0 && this.$refs.sceneTestPanel) {
               this.pendingTestCases = generatedCases
-              this.$refs.testCasePopup.setDesignComplete(generatedCases)
+              this.$refs.sceneTestPanel.setTestCaseComplete(generatedCases)
             }
             this.isGeneratingTestCases = false
             // 标记测试用例已生成，防止重连后重复生成
@@ -981,13 +865,13 @@ export default {
             var confirmCases = (data.content && data.content.test_cases) || []
             var confirmCount = (data.content && data.content.count) || confirmCases.length
 
-            // 如果弹窗未打开（可能是默认用例或之前已处理），则打开弹窗
-            if (!this.showTestCasePopup) {
-              this.showTestCasePopup = true
+            // 切换到测试用例面板
+            if (this.$refs.sceneTestPanel) {
+              this.$refs.sceneTestPanel.switchToTestCasePanel()
               this.$nextTick(() => {
-                if (this.$refs.testCasePopup && confirmCases.length > 0) {
+                if (confirmCases.length > 0) {
                   this.pendingTestCases = confirmCases
-                  this.$refs.testCasePopup.setDesignComplete(confirmCases)
+                  this.$refs.sceneTestPanel.setTestCaseComplete(confirmCases)
                 }
               })
             }
@@ -1415,7 +1299,10 @@ export default {
           timestamp: Date.now()
         }
         this.websocket.send(JSON.stringify(confirmMessage))
-        this.showTestCasePopup = false
+        // 切换回字幕面板
+        if (this.$refs.sceneTestPanel) {
+          this.$refs.sceneTestPanel.rightPanelContent = 'transcript'
+        }
         this.addSystemLog('system', 'success', `已确认 ${testCases.length} 个测试用例，开始执行...`)
         this.addTranscriptMessage('system', '测试用例已确认，请开始说话...', false, true)
       } else {
@@ -1427,7 +1314,10 @@ export default {
      * 取消测试用例确认
      */
     cancelTestCaseConfirm() {
-      this.showTestCasePopup = false
+      // 切换回字幕面板
+      if (this.$refs.sceneTestPanel) {
+        this.$refs.sceneTestPanel.rightPanelContent = 'transcript'
+      }
       this.addSystemLog('system', 'info', '已取消测试用例确认')
 
       // 停止会话
@@ -1539,275 +1429,17 @@ export default {
   position: relative;
 }
 
-/* 顶部工具栏 - 参考dial-agent样式 */
-.top-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 20px;
-  background: var(--bg-primary);
-  border-bottom: 1px solid var(--border-color);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  z-index: 10;
-}
-
-.toolbar-left {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.page-title {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.page-subtitle {
-  font-size: 11px;
-  color: var(--text-tertiary);
-  font-weight: 500;
-}
-
-.panel-tabs {
-  display: flex;
-  background: var(--bg-primary);
-  border-radius: 12px;
-  padding: 4px;
-  gap: 2px;
-  border: 1px solid var(--border-color);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-}
-
-.tab-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 16px;
-  border: none;
-  background: transparent;
-  border-radius: 8px;
-  color: var(--text-tertiary);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  position: relative;
-  overflow: hidden;
-}
-
-.tab-btn::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.1), transparent);
-  transition: left 0.5s ease;
-}
-
-.tab-btn:hover::before {
-  left: 100%;
-}
-
-.tab-btn:hover {
-  color: var(--text-secondary);
-  background: var(--bg-hover);
-  transform: translateY(-1px);
-}
-
-.tab-btn.active {
-  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
-  color: white;
-  font-weight: 600;
-  box-shadow: 
-    0 4px 12px rgba(59, 130, 246, 0.3),
-    0 2px 4px rgba(59, 130, 246, 0.2);
-  transform: translateY(-1px);
-}
-
-.tab-btn.active::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, transparent 50%);
-  border-radius: 8px;
-  pointer-events: none;
-}
-
-.tab-btn.active:hover {
-  background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
-  box-shadow: 
-    0 6px 16px rgba(59, 130, 246, 0.4),
-    0 2px 6px rgba(59, 130, 246, 0.3);
-  transform: translateY(-2px);
-}
-
-.tab-btn svg {
-  width: 16px;
-  height: 16px;
-  transition: all 0.3s ease;
-}
-
-.tab-btn.active svg {
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
-}
-
-.toolbar-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-/* VAD+ASR测试按钮 */
-.test-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
-  border: 1px solid var(--border-color);
-  background: var(--bg-primary);
-  border-radius: 8px;
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.test-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-  border-color: var(--accent-blue);
-}
-
-.test-btn svg {
-  width: 14px;
-  height: 14px;
-}
-
-/* 会话状态按钮 - 类似dial-agent的灵动岛样式 */
-.session-status-btn {
-  background: #000;
-  border-radius: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: white;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-  backdrop-filter: blur(20px);
-  font-size: 12px;
-  font-weight: 500;
-  min-width: 80px;
-  justify-content: center;
-}
-
-.session-status-btn:hover {
-  transform: scale(1.05);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
-}
-
-.session-status-btn.connected {
-  background: #000;
-  border-color: rgba(16, 185, 129, 0.3);
-  animation: connected-glow 2s infinite;
-}
-
-.session-status-btn.connecting {
-  background: #000;
-  border-color: rgba(245, 158, 11, 0.3);
-  animation: connecting-glow 1s infinite;
-}
-
-.session-status-btn.connected .status-dot {
-  background: #10b981;
-  animation: pulse 2s infinite;
-}
-
-.session-status-btn.connecting .status-dot {
-  background: #f59e0b;
-  animation: pulse 0.8s infinite;
-}
-
-.session-status-btn .status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #6b7280;
-  transition: all 0.3s ease;
-}
-
-.session-status-btn .session-duration {
-  color: #10b981;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  font-weight: 600;
-}
-
-@keyframes connected-glow {
-  0%, 100% {
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3), 0 0 0 0 rgba(16, 185, 129, 0.4);
-  }
-  50% {
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4), 0 0 0 4px rgba(16, 185, 129, 0.2);
-  }
-}
-
-@keyframes connecting-glow {
-  0%, 100% {
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3), 0 0 0 0 rgba(245, 158, 11, 0.4);
-  }
-  50% {
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4), 0 0 0 4px rgba(245, 158, 11, 0.2);
-  }
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
-}
-
 /* 主内容区域 */
 .main-content {
   flex: 1;
-  padding: 12px 20px;
+  padding: 12px;
   overflow: hidden;
 }
 
-.transcript-container,
-.devices-container,
 .employee-container {
   height: 100%;
   display: flex;
   flex-direction: column;
-}
-
-.devices-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-  padding: 0 4px;
-}
-
-.devices-header h2 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.devices-content {
-  flex: 1;
-  overflow: hidden;
 }
 
 /* 会话管理面板 - 悬浮覆盖层 */
@@ -1925,74 +1557,25 @@ export default {
 
 /* 响应式设计 */
 @media (max-width: 1200px) {
-  .toolbar-left {
-    display: none;
-  }
-  
-  .toolbar-center {
-    justify-content: flex-start;
-  }
-  
   .main-content {
-    padding: 16px 20px;
+    padding: 12px;
   }
 }
 
 @media (max-width: 768px) {
-  .top-toolbar {
-    padding: 16px 20px;
-  }
-  
-  .page-title {
-    font-size: 20px;
-  }
-  
-  .tab-btn {
-    padding: 10px 16px;
-    font-size: 13px;
-  }
-  
-  .tab-btn svg {
-    width: 16px;
-    height: 16px;
-  }
-  
   .session-panel {
     width: 95%;
     max-height: 90vh;
   }
-  
+
   .session-header {
     padding: 16px 20px;
   }
 }
 
 @media (max-width: 480px) {
-  .top-toolbar {
-    padding: 12px 16px;
-  }
-  
   .main-content {
-    padding: 12px 16px;
-  }
-  
-  .tab-btn {
-    padding: 8px 12px;
-    font-size: 12px;
-  }
-  
-  .tab-btn span {
-    display: none;
-  }
-  
-  .session-status-btn {
-    padding: 6px 12px;
-    font-size: 11px;
-    min-width: 60px;
-  }
-  
-  .devices-header h2 {
-    font-size: 18px;
+    padding: 10px;
   }
 }
 </style>

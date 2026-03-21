@@ -1290,7 +1290,24 @@ class AgenticTestAgent:
             logger.info(f"Silence-triggered ASR result: '{asr_text}'")
 
             # 查询设备状态
-            device_status = await self.iot_service.get_device_status_all()
+            device_guids = list(self.family_devices.keys())
+            if device_guids:
+                status_result = await self.iot_service.get_device_status(
+                    device_guids,
+                    self.iot_config.get('token')
+                )
+                if status_result.get('success', False) or status_result.get('rc') == 0:
+                    data = status_result.get('data', [])
+                    device_status = {}
+                    for item in data:
+                        device_guid = item.get('deviceGuid')
+                        properties = item.get('properties', {})
+                        if device_guid:
+                            device_status[device_guid] = properties
+                else:
+                    device_status = {}
+            else:
+                device_status = {}
             self.device_status_after_asr = device_status
 
             # 检测设备状态变化

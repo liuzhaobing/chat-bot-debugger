@@ -1467,6 +1467,18 @@ class TesterService:
         self.add_to_conversation_history('user', query)
         self.add_to_conversation_history('assistant', asr_text)
 
+    async def on_user_input(self, asr_text: str, device_changes: Dict[str, Any]) -> None:
+        """用户输入回调（静默检测触发ASR后）
+
+        Args:
+            asr_text: ASR识别的用户输入文本
+            device_changes: 设备状态变化字典
+        """
+        logger.info(f"[TesterService] User input received: '{asr_text}'")
+        if device_changes:
+            logger.info(f"[TesterService] Device changes detected: {len(device_changes)} devices")
+        # 目前仅记录日志，后续可扩展处理逻辑
+
     # ========================================================================
     # 噪音重试相关（从 agent_service.py 迁移）
     # ========================================================================
