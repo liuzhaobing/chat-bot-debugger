@@ -670,6 +670,14 @@ class TesterService:
             logger.info(f"开始执行测试用例 {next_index + 1}/{len(self.case_manager.test_cases)}: {current_case.title}")
             await self._send_callback('log', f'开始执行测试用例 {next_index + 1}.{current_case.title}')
 
+            # 发送当前用例变化消息
+            await self._send_callback('current_case_changed', {
+                'case_index': next_index,
+                'case_id': current_case.id,
+                'title': current_case.title,
+                'total_cases': len(self.case_manager.test_cases),
+            })
+
             # 新用例的第一个查询：从 steps 中提取，而不是调用 QueryGenerator App
             # 这样可以确保新用例一定能开始执行
             query = self._extract_first_query_from_case(current_case)
@@ -1079,6 +1087,15 @@ class TesterService:
             current_case.step_pass_results.append(judge_result.is_pass)
             logger.info(f"用例 {current_case.id} 轮次{round_num} is_pass={judge_result.is_pass}, "
                        f"step_pass_results={current_case.step_pass_results}")
+
+            # 2.3 发送步骤结果更新消息
+            await self._send_callback('step_result_update', {
+                'case_id': current_case.id,
+                'step_index': len(current_case.step_pass_results) - 1,
+                'is_pass': judge_result.is_pass,
+                'actual_result': judge_result.actual_result,
+                'round_num': round_num,
+            })
 
             # 3. 当 is_pass=False 时，记录缺陷
             if not judge_result.is_pass:

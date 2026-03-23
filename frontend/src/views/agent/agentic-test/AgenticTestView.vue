@@ -12,12 +12,21 @@
           :is-session-active="isSessionActive"
           :is-connecting="isConnecting"
           :session-duration="sessionDuration"
+          :test-cases-with-status="testCasesWithStatus"
+          :current-case-index="currentCaseIndex"
+          :selected-case-index="selectedCaseIndex"
+          :test-case-logs="testCaseLogs"
+          :current-case-logs="currentCaseLogs"
+          :test-completed="testCompleted"
+          :test-report-data="testReportData"
           @start-session-with-config="handleStartSessionWithConfig"
           @reopen-test-case-popup="handleReopenTestCasePopup"
           @clear-transcript="clearTranscript"
           @clear-logs="clearLogs"
           @session-btn-click="handleVoiceAgentClick"
           @test-cases-confirm="confirmTestCases"
+          @select-case="handleSelectCase"
+          @view-report="handleViewReport"
         />
       </div>
     </div>
@@ -151,6 +160,15 @@ export default {
       // 标记是否已经生成过测试用例（防止重连后重复生成）
       hasGeneratedTestCases: false,
 
+      // 测试用例执行状态（测试用例导向UI）
+      testCasesWithStatus: [],  // [{testCase, status, logs, stepResults}]
+      currentCaseIndex: -1,     // 当前执行的用例索引
+      selectedCaseIndex: -1,    // 用户选中的用例索引（用于查看详情）
+      testCaseLogs: {},         // Map<caseId, Array<log>>
+      currentCaseLogs: [],      // 当前执行用例的日志（用于实时显示）
+      testCompleted: false,     // 测试是否已完成
+      testReportData: null,     // 测试报告数据
+
       // 静默检测状态机
       silenceDetectionActive: false,   // 静默检测是否激活
       hasDetectedVoice: false,          // 是否已检测到用户说话
@@ -163,18 +181,8 @@ export default {
     // 不再在页面加载时初始化音频处理器
     // 只在用户点击对话调试按钮时才初始化和启动麦克风
     this.addSystemLog('system', 'info', '系统初始化完成，点击对话调试按钮开始会话')
-    
-    // 启动定时清理机制，每5分钟清理一次过多的数据
-    this.cleanupInterval = setInterval(() => {
-      this.performPeriodicCleanup()
-    }, 5 * 60 * 1000) // 5分钟
   },
   beforeDestroy() {
-    // 清理定时器
-    if (this.cleanupInterval) {
-      clearInterval(this.cleanupInterval)
-    }
-    
     this.cleanup()
   },
   methods: {
@@ -852,6 +860,8 @@ export default {
             var generatedCases = (data.content && data.content.test_cases) || []
             if (generatedCases.length > 0 && this.$refs.sceneTestPanel) {
               this.pendingTestCases = generatedCases
+              // 初始化测试用例状态数组
+              this.initTestCasesWithStatus(generatedCases)
               this.$refs.sceneTestPanel.setTestCaseComplete(generatedCases)
             }
             this.isGeneratingTestCases = false
@@ -871,6 +881,8 @@ export default {
               this.$nextTick(() => {
                 if (confirmCases.length > 0) {
                   this.pendingTestCases = confirmCases
+                  // 初始化测试用例状态数组
+                  this.initTestCasesWithStatus(confirmCases)
                   this.$refs.sceneTestPanel.setTestCaseComplete(confirmCases)
                 }
               })
@@ -884,11 +896,52 @@ export default {
           case 'test_completed':
             // 测试完成，显示报告摘要并关闭连接
             var content = data.content || {}
-            this.addSystemLog('system', 'success', '测试完成: 共' + (content.total_cases || 0) + '个用例, 通过' + (content.passed || 0) + '个, 失败' + (content.failed || 0) + '个', data.content)
+            // 添加详细的测试报告日志到当前用例日志
+            this.addSystemLog('system', 'success', '========================================')
+            this.addSystemLog('system', 'success', '测试报告概要')
+            this.addSystemLog('system', 'info', `总用例数: ${content.total_cases || 0}`)
+            this.addSystemLog('system', 'success', `通过: ${content.passed || 0}`)
+            this.addSystemLog('system', 'error', `失败: ${content.failed || 0}`)
+            this.addSystemLog('system', 'info', `通过率: ${content.pass_rate || 0}%`)
+            this.addSystemLog('system', 'success', '========================================')
+            // 设置测试完成状态和报告数据
+            this.testCompleted = true
+            this.testReportData = data.content
             // 延迟关闭连接，给日志渲染一点时间
             setTimeout(() => {
               this.closeWebSocketAfterTest()
             }, 1000)
+            break
+
+          case 'current_case_changed':
+            // 当前用例变化
+            var caseIndex = data.content?.case_index ?? -1
+            // var caseId = data.content?.case_id
+            var caseTitle = data.content?.title
+            this.currentCaseIndex = caseIndex
+            // 自动选择当前执行的用例
+            if (caseIndex >= 0) {
+              this.selectedCaseIndex = caseIndex
+            }
+            // 清空当前用例日志，准备接收新用例的日志
+            this.currentCaseLogs = []
+            this.addSystemLog('test', 'info', `开始执行用例 ${caseIndex + 1}: ${caseTitle}`)
+            break
+
+          case 'step_result_update':
+            // 步骤结果更新
+            var stepData = data.content || {}
+            this.updateStepResult(stepData)
+            this.addSystemLog('test', stepData.is_pass ? 'success' : 'warning',
+              `步骤 ${stepData.step_index + 1}: ${stepData.is_pass ? '通过' : '失败'}`)
+            break
+
+          case 'case_completed':
+            // 用例完成
+            var completedData = data.content || {}
+            this.updateCaseStatus(completedData)
+            this.addSystemLog('test', 'success',
+              `用例完成: ${completedData.title} - ${completedData.test_result}`)
             break
 
           case 'test_stopped':
@@ -1164,38 +1217,6 @@ export default {
     },
 
     /**
-     * 定期清理数据，防止内存泄漏
-     */
-    performPeriodicCleanup() {
-      const now = Date.now()
-      const maxAge = 15 * 60 * 1000 // 15分钟
-      
-      // 清理过期的转录消息
-      this.transcriptMessages = this.transcriptMessages.filter(msg => 
-        now - msg.timestamp < maxAge
-      )
-      
-      // 清理过期的系统日志
-      this.systemLogs = this.systemLogs.filter(log => 
-        now - log.timestamp < maxAge
-      )
-      
-      // 强制限制数量（双重保险）
-      if (this.transcriptMessages.length > 20) {
-        this.transcriptMessages = this.transcriptMessages.slice(-20)
-      }
-      
-      if (this.systemLogs.length > 30) {
-        this.systemLogs = this.systemLogs.slice(-30)
-      }
-      
-      this.addSystemLog('system', 'info', '执行定期数据清理', {
-        transcriptCount: this.transcriptMessages.length,
-        systemLogCount: this.systemLogs.length
-      })
-    },
-
-    /**
      * 更新部分转录
      */
     updatePartialTranscript(content) {
@@ -1221,10 +1242,25 @@ export default {
         details,
         timestamp: Date.now()
       }
-      
+
+      // 1. 添加到全局日志（用于 TranscriptPanel）
       this.systemLogs.push(log)
-      
-      // 限制日志数量 - 减少到更合理的数量
+
+      // 2. 直接添加到当前用例日志（用于实时显示）- 这是关键！
+      // Vue 2 能正确追踪数组的 push 操作
+      this.currentCaseLogs.push(log)
+
+      // 3. 同时存储到 testCasesWithStatus（用于历史查看）
+      if (this.currentCaseIndex >= 0 && this.testCasesWithStatus[this.currentCaseIndex]) {
+        const currentCase = this.testCasesWithStatus[this.currentCaseIndex]
+        const currentLogs = currentCase.logs || []
+        this.$set(this.testCasesWithStatus, this.currentCaseIndex, {
+          ...currentCase,
+          logs: [...currentLogs, log]
+        })
+      }
+
+      // 限制日志数量
       if (this.systemLogs.length > 50) {
         this.systemLogs = this.systemLogs.slice(-50)
       }
@@ -1280,7 +1316,16 @@ export default {
      */
     async confirmTestCases(testCases) {
       if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
-        // 1. 初始化音频处理器（用户确认后才开始采集音频）
+        // 1. 立即切换到测试用例执行视图（确保能接收后续的WebSocket消息）
+        if (this.$refs.sceneTestPanel) {
+          this.$refs.sceneTestPanel.switchToTestExecutionView()
+          // 默认选中第一个用例
+          this.selectedCaseIndex = 0
+        }
+        // 清空当前用例日志，准备接收新用例的日志
+        this.currentCaseLogs = []
+
+        // 2. 初始化音频处理器（用户确认后才开始采集音频）
         try {
           await this.initializeAudioProcessor()
           this.addSystemLog('audio', 'success', '音频处理器初始化成功，麦克风已激活')
@@ -1290,19 +1335,12 @@ export default {
           // 即使音频初始化失败，也继续执行测试
         }
 
-        // 2. 切换到字幕面板
-        this.activePanel = 'transcript'
-
         // 3. 发送确认消息到服务端
         const confirmMessage = {
           type: 'test_case_confirm',
           timestamp: Date.now()
         }
         this.websocket.send(JSON.stringify(confirmMessage))
-        // 切换回字幕面板
-        if (this.$refs.sceneTestPanel) {
-          this.$refs.sceneTestPanel.rightPanelContent = 'transcript'
-        }
         this.addSystemLog('system', 'success', `已确认 ${testCases.length} 个测试用例，开始执行...`)
         this.addTranscriptMessage('system', '测试用例已确认，请开始说话...', false, true)
       } else {
@@ -1415,6 +1453,99 @@ export default {
         timestamp: Date.now()
       }
       this.websocket.send(JSON.stringify(message))
+    },
+
+    /**
+     * 更新步骤结果
+     */
+    updateStepResult(stepData) {
+      const { case_id, step_index, is_pass, actual_result } = stepData
+      const index = this.testCasesWithStatus.findIndex(c => c.testCase.id === case_id)
+      if (index >= 0) {
+        const caseStatus = this.testCasesWithStatus[index]
+        if (!caseStatus.stepResults) {
+          caseStatus.stepResults = []
+        }
+        // 使用 $set 确保响应式
+        this.$set(caseStatus.stepResults, step_index, {
+          is_pass,
+          actual_result,
+          timestamp: Date.now()
+        })
+      }
+    },
+
+    /**
+     * 更新用例状态
+     */
+    updateCaseStatus(completedData) {
+      const { case_id, test_result, step_pass_results, actual_results } = completedData
+      const index = this.testCasesWithStatus.findIndex(c => c.testCase.id === case_id)
+      if (index >= 0) {
+        // 使用 $set 确保 Vue 2 响应式更新
+        this.$set(this.testCasesWithStatus, index, {
+          ...this.testCasesWithStatus[index],
+          status: test_result,
+          stepResults: step_pass_results?.map((is_pass, i) => ({
+            is_pass,
+            actual_result: actual_results?.[i] || '',
+            timestamp: Date.now()
+          })) || []
+        })
+      }
+
+      // 用例完成后，自动切换到下一个用例
+      if (this.currentCaseIndex >= 0 && this.currentCaseIndex < this.testCasesWithStatus.length - 1) {
+        this.selectedCaseIndex = this.currentCaseIndex + 1
+      }
+    },
+
+    /**
+     * 初始化测试用例状态数组
+     */
+    initTestCasesWithStatus(testCases) {
+      this.testCasesWithStatus = testCases.map(tc => ({
+        testCase: tc,
+        status: 'NOT_RUN',
+        logs: [],           // 每个用例的日志数组（用于历史查看）
+        stepResults: []
+      }))
+      // 清空实时日志
+      this.currentCaseLogs = []
+      // 重置测试状态
+      this.testCompleted = false
+      this.testReportData = null
+      // 重置用例索引
+      this.currentCaseIndex = -1
+      this.selectedCaseIndex = -1
+    },
+
+    /**
+     * 获取选中用例的日志
+     */
+    getSelectedCaseLogs() {
+      if (this.selectedCaseIndex < 0 || !this.testCasesWithStatus[this.selectedCaseIndex]) {
+        return []
+      }
+      const caseId = this.testCasesWithStatus[this.selectedCaseIndex].testCase.id
+      return this.testCaseLogs[caseId] || []
+    },
+
+    /**
+     * 处理用例选择事件
+     */
+    handleSelectCase(index) {
+      this.selectedCaseIndex = index
+    },
+
+    /**
+     * 处理查看报告事件
+     */
+    handleViewReport() {
+      // 通知 SceneTestPanel 显示详细报告
+      if (this.$refs.sceneTestPanel) {
+        this.$refs.sceneTestPanel.showDetailedReport(this.testReportData)
+      }
     }
   }
 }

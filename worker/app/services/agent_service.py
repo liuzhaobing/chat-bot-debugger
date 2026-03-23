@@ -205,6 +205,8 @@ class AgenticTestAgent:
         self.buffer_start_time: Optional[float] = None
         self.is_buffering: bool = False
         self.buffer_lock = asyncio.Lock()
+        # 静默检测标记（用于处理竞态条件）
+        self.silence_detected_pending: bool = False
 
         # 音频输入等待事件
         self._audio_input_event = asyncio.Event()
@@ -1162,6 +1164,115 @@ class AgenticTestAgent:
         self.tester_service.reset_noise_retry()
         logger.info(f"TTS playback ended, starting fresh buffer, duration target: {self.fixed_duration}s")
 
+        # 检查是否有待处理的静默检测（竞态条件处理）
+        if self.silence_detected_pending:
+            logger.info("Silence was detected before buffering started, processing now...")
+            self.silence_detected_pending = False
+            # 安排在事件循环中异步执行 trigger_early_asr
+            asyncio.create_task(self._process_pending_silence_detection())
+
+    async def _process_pending_silence_detection(self):
+        """处理待处理的静默检测
+
+        当静默检测消息在 buffering 开始前到达时，
+        会设置 pending 标记，此方法在 buffering 开始后被调用。
+
+        修复：在 ASR 识别后继续调用完整的处理流程。
+        """
+        # 等待一小段时间，确保有音频数据被缓冲
+        await asyncio.sleep(0.5)
+
+        async with self.buffer_lock:
+            if not self.audio_buffer:
+                logger.info("No audio data buffered, continuing to wait")
+                # 恢复缓冲状态，继续等待音频
+                self.is_buffering = True
+                return
+
+            combined_audio = b''.join(self.audio_buffer)
+            self.audio_buffer = []
+            self._stop_buffering()
+
+        current_duration = len(combined_audio) / 32000
+        await self.send_callback('status', f'检测到静默，提前结束音频采集: {current_duration:.2f}秒')
+
+        # 执行 ASR 识别
+        wav_audio_b64 = AudioConverter.pcm_to_wav_base64(combined_audio)
+        asr_result = await self.asr_service.recognize_speech(wav_audio_b64, audio_format="wav")
+
+        await self.send_callback('transcript_final', asr_result, {
+            'loop_step': self.loop_step,
+            'audio_duration_s': current_duration,
+            'audio_mode': 'silence_detected_pending'
+        })
+
+        asr_text = asr_result.strip()
+
+        # 处理 ASR 结果为空或噪音的情况
+        if not asr_text or asr_text == '<noise>':
+            logger.info(f"Pending silence-triggered ASR result is empty or noise: '{asr_text}'")
+            # 作为噪音处理，重新播放当前 query
+            if asr_text == '<noise>':
+                await self.send_callback('status', '检测到噪音，重新播放提示音...')
+                await asyncio.sleep(0.5)
+                audio_output_result = await self.generate_and_play_audio(self.current_query)
+                if audio_output_result.success:
+                    self._start_buffering()
+            return
+
+        # 记录 ASR 结果
+        self.current_asr_result = asr_text
+        self.current_asr_true_result = asr_text
+        self.real_voice_active_time = time.perf_counter()
+        logger.info(f"Pending silence-triggered ASR result: '{asr_text}'")
+
+        # 关键修复：调用完整的处理流程（brain 处理和后续步骤）
+        try:
+            # 1. ASR 后查询设备状态
+            device_status_a0 = copy.deepcopy(self.device_status_after_tts)
+            await self.refresh_device_status(stage='after_asr')
+            device_status_a1 = copy.deepcopy(self.device_status_after_asr)
+
+            # 2. 调用云端大脑处理
+            brain_result = await self.process_brain_with_device_context(asr_text)
+
+            if not brain_result.success:
+                await self.send_callback('error', f'云端大脑处理失败: {brain_result.error_message}')
+                return
+
+            # 3. 检查是否需要继续
+            if brain_result.should_continue and brain_result.next_query:
+                await asyncio.sleep(1.0)
+                await self.execute_full_loop()
+                self._audio_input_event.set()
+            else:
+                # 测试完成或对话结束
+                completion_result = await self.tester_service.check_testing_completion()
+                if completion_result.completed:
+                    await self.send_callback('status', '所有测试用例已完成')
+                    # 生成测试报告
+                    report = await self.tester_service.finalize()
+                    await self.send_callback('test_report', report.to_dict())
+                    await self.send_callback('test_completed', {
+                        'session_id': self.session_id,
+                        'total_cases': report.case_statistics.total,
+                        'passed': report.case_statistics.passed,
+                        'failed': report.case_statistics.failed,
+                        'pass_rate': report.case_statistics.pass_rate
+                    })
+                    self.is_running = False
+                    self._test_completed = True
+                    self._audio_input_event.set()
+                else:
+                    await self.send_callback('status', '对话完成，等待新的音频输入...')
+                    self._start_buffering()
+
+        except Exception as e:
+            logger.error(f"Error in _process_pending_silence_detection post-processing: {e}", exc_info=True)
+            await self.send_callback('error', f'静默检测后续处理失败: {str(e)}')
+            # 出错时恢复缓冲状态
+            self._start_buffering()
+
     async def _process_fixed_duration_with_buffer(self, audio_data: str, audio_format: str = 'pcm') -> Optional[VADASRResult]:
         """固定时长模式：后端控制 buffer 积累和处理"""
         try:
@@ -1242,7 +1353,10 @@ class AgenticTestAgent:
         """前端检测到静默，提前触发ASR识别"""
         try:
             if not self.is_buffering:
-                logger.info("Not in buffering state, ignoring silence_detected")
+                # 竞态条件：静默检测在 buffering 开始前到达
+                # 设置 pending 标记，等待 start_buffering_after_tts 处理
+                logger.info("Not in buffering state, setting silence_detected_pending flag")
+                self.silence_detected_pending = True
                 return
 
             # 检查是否有音频数据，并在锁内停止缓冲
@@ -1282,50 +1396,71 @@ class AgenticTestAgent:
                 self.current_asr_result = ""
                 return
 
+            # 处理噪音或空结果
+            if asr_text == '<noise>' or not asr_text:
+                logger.info(f"Silence-triggered ASR result is noise or empty: '{asr_text}'")
+                self.current_asr_result = asr_text or ""
+                # 作为噪音处理，重新播放当前 query
+                if asr_text == '<noise>':
+                    await self.send_callback('status', '检测到噪音，重新播放提示音...')
+                    await asyncio.sleep(0.5)
+                    audio_output_result = await self.generate_and_play_audio(self.current_query)
+                    if audio_output_result.success:
+                        self._start_buffering()
+                return
+
             self.current_asr_result = asr_text
-            if asr_text != '<noise>':
-                self.current_asr_true_result = asr_text
-                self.real_voice_active_time = time.perf_counter()
+            self.current_asr_true_result = asr_text
+            self.real_voice_active_time = time.perf_counter()
 
             logger.info(f"Silence-triggered ASR result: '{asr_text}'")
 
-            # 查询设备状态
-            device_guids = list(self.family_devices.keys())
-            if device_guids:
-                status_result = await self.iot_service.get_device_status(
-                    device_guids,
-                    self.iot_config.get('token')
-                )
-                if status_result.get('success', False) or status_result.get('rc') == 0:
-                    data = status_result.get('data', [])
-                    device_status = {}
-                    for item in data:
-                        device_guid = item.get('deviceGuid')
-                        properties = item.get('properties', {})
-                        if device_guid:
-                            device_status[device_guid] = properties
+            # 关键修复：调用完整的处理流程（brain 处理和后续步骤）
+            try:
+                # 1. ASR 后查询设备状态 (A1)
+                device_status_a0 = copy.deepcopy(self.device_status_after_tts)
+                await self.refresh_device_status(stage='after_asr')
+                device_status_a1 = copy.deepcopy(self.device_status_after_asr)
+
+                # 2. 调用云端大脑处理
+                brain_result = await self.process_brain_with_device_context(asr_text)
+
+                if not brain_result.success:
+                    await self.send_callback('error', f'云端大脑处理失败: {brain_result.error_message}')
+                    return
+
+                # 3. 检查是否需要继续
+                if brain_result.should_continue and brain_result.next_query:
+                    await asyncio.sleep(1.0)
+                    await self.execute_full_loop()
+                    self._audio_input_event.set()
                 else:
-                    device_status = {}
-            else:
-                device_status = {}
-            self.device_status_after_asr = device_status
+                    # 测试完成或对话结束
+                    completion_result = await self.tester_service.check_testing_completion()
+                    if completion_result.completed:
+                        await self.send_callback('status', '所有测试用例已完成')
+                        # 生成测试报告
+                        report = await self.tester_service.finalize()
+                        await self.send_callback('test_report', report.to_dict())
+                        await self.send_callback('test_completed', {
+                            'session_id': self.session_id,
+                            'total_cases': report.case_statistics.total,
+                            'passed': report.case_statistics.passed,
+                            'failed': report.case_statistics.failed,
+                            'pass_rate': report.case_statistics.pass_rate
+                        })
+                        self.is_running = False
+                        self._test_completed = True
+                        self._audio_input_event.set()
+                    else:
+                        await self.send_callback('status', '对话完成，等待新的音频输入...')
+                        self._start_buffering()
 
-            # 检测设备状态变化
-            changes = self.detect_device_changes()
-            has_changes = any(c.get('has_change', False) for c in changes.values())
-
-            if has_changes:
-                await self.log_event('device_status', '检测到设备状态变化', {'changes': changes})
-
-            # 添加到对话历史
-            self.tester_service.add_to_conversation_history('user', asr_text)
-
-            # 通知测试工程师服务
-            await self.tester_service.on_user_input(asr_text, changes)
-
-            # 设置事件，触发后续处理
-            if hasattr(self, '_audio_input_event'):
-                self._audio_input_event.set()
+            except Exception as e:
+                logger.error(f"Error in trigger_early_asr post-processing: {e}", exc_info=True)
+                await self.send_callback('error', f'静默检测后续处理失败: {str(e)}')
+                # 出错时恢复缓冲状态
+                self._start_buffering()
 
         except Exception as e:
             logger.error(f"Error in trigger_early_asr: {e}", exc_info=True)

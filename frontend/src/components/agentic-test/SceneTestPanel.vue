@@ -117,8 +117,22 @@
 
           <!-- 内容区域 -->
           <div class="panel-content">
+            <!-- 测试用例列表（测试执行期间） -->
+            <div v-if="leftPanelContent === 'test-case-list' && testCasesWithStatus.length > 0" class="test-case-list-wrapper">
+              <TestCaseListPanel
+                :test-cases="pendingTestCases"
+                :test-cases-with-status="testCasesWithStatus"
+                :current-index="currentCaseIndex"
+                :selected-index="selectedCaseIndex"
+                :test-completed="testCompleted"
+                :report-data="testReportData"
+                @select-case="handleSelectCase"
+                @view-report="handleViewReport"
+              />
+            </div>
+
             <!-- 3D角色展示 -->
-            <div v-if="leftPanelContent === 'avatar'" class="hero-showcase-compact">
+            <div v-else-if="leftPanelContent === 'avatar'" class="hero-showcase-compact">
               <template v-if="currentEmployee">
                 <div class="hero-container-compact">
                   <Avatar3D
@@ -158,6 +172,32 @@
         <div class="right-panel">
           <!-- 面板切换按钮 -->
           <div class="panel-switcher right-switcher">
+            <!-- 测试报告按钮 - 测试完成后显示 -->
+            <button
+              v-if="testCompleted"
+              :class="{ active: rightPanelContent === 'test-report-detail' }"
+              @click="rightPanelContent = 'test-report-detail'"
+              title="测试报告"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+              </svg>
+            </button>
+            <!-- 测试用例详情按钮 - 在测试执行期间显示 -->
+            <button
+              v-if="testCasesWithStatus.length > 0"
+              :class="{ active: rightPanelContent === 'test-case-detail' }"
+              @click="rightPanelContent = 'test-case-detail'"
+              title="用例详情"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M9 11l3 3L22 4"></path>
+                <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"></path>
+              </svg>
+            </button>
             <button :class="{ active: rightPanelContent === 'transcript' }" @click="rightPanelContent = 'transcript'" title="字幕">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
@@ -218,8 +258,35 @@
 
           <!-- 内容区域 -->
           <div class="panel-content">
+            <!-- 测试报告详情 -->
+            <div v-if="rightPanelContent === 'test-report-detail'" class="test-report-detail-wrapper">
+              <div class="report-detail-header">
+                <button class="back-btn" @click="rightPanelContent = 'test-case-detail'">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="19" y1="12" x2="5" y2="12"></line>
+                    <polyline points="12 19 5 12 12 5"></polyline>
+                  </svg>
+                  <span>返回</span>
+                </button>
+                <h3>测试报告</h3>
+              </div>
+              <TestReportPanel
+                :report-data="testReportData || reportData"
+                :loading="false"
+              />
+            </div>
+
+            <!-- 测试用例详情（测试执行期间） -->
+            <TestCaseDetailPanel
+              v-else-if="rightPanelContent === 'test-case-detail' && testCasesWithStatus.length > 0"
+              :test-case="selectedTestCase"
+              :status="selectedCaseStatus"
+              :step-results="selectedCaseStepResults"
+              :logs="displayedLogs"
+            />
+
             <!-- 字幕/日志 -->
-            <TranscriptPanel v-if="rightPanelContent === 'transcript'"
+            <TranscriptPanel v-else-if="rightPanelContent === 'transcript'"
               :transcript-messages="transcriptMessages"
               :logs="systemLogs"
               @clear-transcript="$emit('clear-transcript')"
@@ -564,6 +631,8 @@ import TestReportPanel from './TestReportPanel.vue'
 import TranscriptPanel from './TranscriptPanel.vue'
 import IOTConfigPanel from './IOTConfigPanel.vue'
 import TestCaseDesignPopup from './TestCaseDesignPopup.vue'
+import TestCaseListPanel from './TestCaseListPanel.vue'
+import TestCaseDetailPanel from './TestCaseDetailPanel.vue'
 import sceneTestService from '@/services/sceneTestService'
 
 export default {
@@ -575,7 +644,9 @@ export default {
     TestReportPanel,
     TranscriptPanel,
     IOTConfigPanel,
-    TestCaseDesignPopup
+    TestCaseDesignPopup,
+    TestCaseListPanel,
+    TestCaseDetailPanel
   },
   props: {
     hasPendingTestCases: {
@@ -602,6 +673,38 @@ export default {
     sessionDuration: {
       type: Number,
       default: 0
+    },
+    // 测试用例导向UI - 新增props
+    testCasesWithStatus: {
+      type: Array,
+      default: () => []
+    },
+    currentCaseIndex: {
+      type: Number,
+      default: -1
+    },
+    selectedCaseIndex: {
+      type: Number,
+      default: -1
+    },
+    testCaseLogs: {
+      type: Object,
+      default: () => ({})
+    },
+    // 当前执行用例的日志（用于实时显示）
+    currentCaseLogs: {
+      type: Array,
+      default: () => []
+    },
+    // 测试是否已完成
+    testCompleted: {
+      type: Boolean,
+      default: false
+    },
+    // 测试报告数据
+    testReportData: {
+      type: Object,
+      default: null
     }
   },
   data() {
@@ -674,6 +777,51 @@ export default {
       const minutes = Math.floor(this.sessionDuration / 60)
       const seconds = this.sessionDuration % 60
       return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+    },
+    // 选中的测试用例
+    selectedTestCase() {
+      if (this.selectedCaseIndex < 0 || !this.testCasesWithStatus[this.selectedCaseIndex]) {
+        return null
+      }
+      return this.testCasesWithStatus[this.selectedCaseIndex].testCase
+    },
+    // 选中的用例状态
+    selectedCaseStatus() {
+      if (this.selectedCaseIndex < 0 || !this.testCasesWithStatus[this.selectedCaseIndex]) {
+        return 'NOT_RUN'
+      }
+      return this.testCasesWithStatus[this.selectedCaseIndex].status
+    },
+    // 选中的用例步骤结果
+    selectedCaseStepResults() {
+      if (this.selectedCaseIndex < 0 || !this.testCasesWithStatus[this.selectedCaseIndex]) {
+        return []
+      }
+      return this.testCasesWithStatus[this.selectedCaseIndex].stepResults || []
+    },
+    // 选中的用例日志（从 testCasesWithStatus 中获取，用于历史查看）
+    selectedCaseLogs() {
+      if (this.selectedCaseIndex < 0 || !this.testCasesWithStatus[this.selectedCaseIndex]) {
+        return []
+      }
+      return this.testCasesWithStatus[this.selectedCaseIndex].logs || []
+    },
+    // 当前显示的日志（根据是否选中当前执行用例决定来源）
+    // 关键修复：返回新数组而不是原数组引用，确保 Vue 2 能检测到变化
+    displayedLogs() {
+      // 如果选中的是当前执行的用例，使用实时日志
+      if (this.selectedCaseIndex === this.currentCaseIndex && this.currentCaseIndex >= 0) {
+        // 返回新数组，确保 Vue 检测到变化
+        return [...this.currentCaseLogs]
+      }
+      // 否则显示选中用例的历史日志
+      // 同样返回新数组
+      const logs = this.testCasesWithStatus[this.selectedCaseIndex]?.logs || []
+      return [...logs]
+    },
+    // 测试用例列表（从 testCasesWithStatus 提取）
+    pendingTestCases() {
+      return this.testCasesWithStatus.map(item => item.testCase)
     }
   },
   mounted() {
@@ -1033,6 +1181,37 @@ export default {
       if (this.$refs.testCaseDesignPopup) {
         this.$refs.testCaseDesignPopup.setDesignComplete(testCases)
       }
+    },
+    /**
+     * 选择测试用例
+     */
+    handleSelectCase(index) {
+      this.$emit('select-case', index)
+      // 切换到测试用例详情面板
+      this.rightPanelContent = 'test-case-detail'
+    },
+    /**
+     * 切换到测试用例执行视图
+     */
+    switchToTestExecutionView() {
+      this.leftPanelContent = 'test-case-list'
+      this.rightPanelContent = 'test-case-detail'
+    },
+    /**
+     * 处理查看报告事件
+     */
+    handleViewReport() {
+      // 切换右侧面板显示测试报告详情
+      this.rightPanelContent = 'test-report-detail'
+    },
+    /**
+     * 显示详细报告（由父组件调用）
+     */
+    showDetailedReport(reportData) {
+      if (reportData) {
+        this.reportData = reportData
+      }
+      this.rightPanelContent = 'test-report-detail'
     }
   }
 }
@@ -1363,6 +1542,59 @@ export default {
   display: flex;
   flex-direction: column;
   padding: 12px;
+}
+
+/* 测试用例列表包装器 */
+.test-case-list-wrapper {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 测试报告详情包装器 */
+.test-report-detail-wrapper {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-secondary, #f6f8fa);
+}
+
+.test-report-detail-wrapper .report-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: #fff;
+  border-bottom: 1px solid #e5e7eb;
+  flex-shrink: 0;
+}
+
+.test-report-detail-wrapper .report-detail-header h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a1a2e;
+}
+
+.test-report-detail-wrapper .back-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border: none;
+  background: transparent;
+  color: #666;
+  font-size: 13px;
+  cursor: pointer;
+  transition: color 0.2s ease;
+  border-radius: 6px;
+}
+
+.test-report-detail-wrapper .back-btn:hover {
+  color: #333;
+  background: rgba(0, 0, 0, 0.04);
 }
 
 .panel-title {
