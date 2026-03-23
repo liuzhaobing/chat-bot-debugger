@@ -237,6 +237,12 @@ async def agentic_test_websocket(
                         )
                         continue
 
+                    # 如果消息中包含测试用例数据，则更新（用户可能做了CRUD操作）
+                    test_cases_data = data.get("test_cases")
+                    if test_cases_data and isinstance(test_cases_data, list):
+                        logger.info(f"[test_case_confirm] Received {len(test_cases_data)} test cases from frontend, updating...")
+                        agent.tester_service.case_manager.set_test_cases(test_cases_data)
+
                     # 打印 agent 的 tester_service 状态
                     logger.info(f"[test_case_confirm] Agent tester_service cases: {len(agent.tester_service.get_test_cases())}")
 

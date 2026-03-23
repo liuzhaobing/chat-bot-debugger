@@ -714,6 +714,29 @@ class TestCaseManager:
             logger.error(f"Failed to export test cases: {e}")
             return False
 
+    def set_test_cases(self, cases_data: List[Dict[str, Any]]) -> int:
+        """设置测试用例（替换现有用例）
+
+        用于从前端接收用户修改后的测试用例。
+
+        Args:
+            cases_data: 测试用例字典列表
+
+        Returns:
+            设置的用例数量
+        """
+        # 清空现有用例
+        self.test_cases = []
+        self._case_map = {}
+
+        for case_data in cases_data:
+            case = TestCase.from_dict(case_data)
+            self.test_cases.append(case)
+            self._case_map[case.id] = case
+
+        logger.info(f"Set {len(self.test_cases)} test cases from external source")
+        return len(self.test_cases)
+
     def get_unexecuted_cases(self) -> List[Tuple[int, TestCase]]:
         """获取所有未执行的用例
 

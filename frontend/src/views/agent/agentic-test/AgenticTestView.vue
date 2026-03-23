@@ -1363,6 +1363,9 @@ export default {
      */
     async confirmTestCases(testCases) {
       if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
+        // 使用用户修改后的测试用例初始化状态数组
+        this.initTestCasesWithStatus(testCases)
+
         // 1. 立即切换到测试用例执行视图（确保能接收后续的WebSocket消息）
         if (this.$refs.sceneTestPanel) {
           this.$refs.sceneTestPanel.switchToTestExecutionView()
@@ -1382,10 +1385,11 @@ export default {
           // 即使音频初始化失败，也继续执行测试
         }
 
-        // 3. 发送确认消息到服务端
+        // 3. 发送确认消息到服务端（包含用户修改后的测试用例）
         const confirmMessage = {
           type: 'test_case_confirm',
-          timestamp: Date.now()
+          timestamp: Date.now(),
+          test_cases: testCases  // 包含用户修改后的测试用例
         }
         this.websocket.send(JSON.stringify(confirmMessage))
         this.addSystemLog('system', 'success', `已确认 ${testCases.length} 个测试用例，开始执行...`)
