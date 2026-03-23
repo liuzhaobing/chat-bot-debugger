@@ -86,9 +86,25 @@
           <pre>{{ displayRawContent }}</pre>
         </div>
 
-        <!-- 空状态（仅在非设计状态且无用例时显示） -->
-        <div v-if="!isDesigning && testCases.length === 0" class="empty-state">
-          <span>暂无测试用例</span>
+        <!-- 空状态（仅在非设计状态且无用例时显示）- 大虚线框 + 派发任务按钮 -->
+        <div v-if="!isDesigning && testCases.length === 0" class="empty-state-action" @click="handleDispatchTask">
+          <div class="empty-state-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"></path>
+              <path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"></path>
+              <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"></path>
+              <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"></path>
+            </svg>
+          </div>
+          <p class="empty-state-title">暂无测试用例</p>
+          <p class="empty-state-hint">点击派发任务，AI 将自动生成测试用例</p>
+          <button class="dispatch-task-btn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            派发任务
+          </button>
         </div>
       </div>
 
@@ -195,7 +211,7 @@ export default {
     return {
       testCases: [],
       rawContent: '',
-      isDesigning: true,
+      isDesigning: false,  // 默认为 false，只有实际开始流式生成时才为 true
       showRawContent: false,
       editingIndex: null,
       editingCase: null,
@@ -327,6 +343,10 @@ export default {
      */
     addDesignChunk(chunk) {
       console.log('[StreamingJSON] Received chunk:', chunk.substring(0, 50) + '...')
+      // 开始接收流式数据时设置为设计状态
+      if (!this.isDesigning) {
+        this.isDesigning = true
+      }
       this.rawContent += chunk
       this.parseStreamingJson(chunk)
     },
@@ -616,6 +636,13 @@ export default {
      */
     handleCancel() {
       this.$emit('cancel')
+    },
+
+    /**
+     * 派发任务
+     */
+    handleDispatchTask() {
+      this.$emit('dispatch-task')
     },
 
     /**
@@ -1070,6 +1097,77 @@ export default {
   text-align: center;
   padding: 60px;
   color: var(--text-tertiary);
+}
+
+/* 空状态操作区域 - 大虚线框样式 */
+.empty-state-action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 40px;
+  margin: 20px 0;
+  border: 2px dashed var(--border-color);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.empty-state-action:hover {
+  border-color: var(--accent-blue);
+  background: rgba(79, 70, 229, 0.04);
+}
+
+.empty-state-action:hover .empty-state-icon {
+  transform: scale(1.1);
+  color: var(--accent-blue);
+}
+
+.empty-state-action:hover .dispatch-task-btn {
+  background: var(--accent-blue);
+  color: white;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+}
+
+.empty-state-icon {
+  color: var(--text-tertiary);
+  margin-bottom: 16px;
+  transition: all 0.3s ease;
+}
+
+.empty-state-title {
+  margin: 0 0 8px 0;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.empty-state-hint {
+  margin: 0 0 20px 0;
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+.dispatch-task-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 24px;
+  border: 2px solid var(--accent-blue);
+  background: transparent;
+  color: var(--accent-blue);
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.dispatch-task-btn svg {
+  width: 16px;
+  height: 16px;
 }
 
 .popup-footer {

@@ -166,6 +166,13 @@
               </div>
             </div>
           </div>
+
+          <!-- 悬浮字幕组件 -->
+          <FloatingTranscript
+            :transcript-messages="transcriptMessages"
+            :employee-color="currentEmployeeColor"
+            @clear-transcript="$emit('clear-transcript')"
+          />
         </div>
 
         <!-- 右侧：字幕/设备区 (70%) -->
@@ -196,11 +203,6 @@
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M9 11l3 3L22 4"></path>
                 <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"></path>
-              </svg>
-            </button>
-            <button :class="{ active: rightPanelContent === 'transcript' }" @click="rightPanelContent = 'transcript'" title="字幕">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
               </svg>
             </button>
             <button :class="{ active: rightPanelContent === 'devices' }" @click="rightPanelContent = 'devices'" title="智能设备">
@@ -268,7 +270,7 @@
                   </svg>
                   <span>返回</span>
                 </button>
-                <h3>测试报告</h3>
+                <h3>测试报告详情</h3>
               </div>
               <TestReportPanel
                 :report-data="testReportData || reportData"
@@ -282,15 +284,9 @@
               :test-case="selectedTestCase"
               :status="selectedCaseStatus"
               :step-results="selectedCaseStepResults"
+              :actual-results="selectedCaseActualResults"
               :logs="displayedLogs"
-            />
-
-            <!-- 字幕/日志 -->
-            <TranscriptPanel v-else-if="rightPanelContent === 'transcript'"
-              :transcript-messages="transcriptMessages"
-              :logs="systemLogs"
-              @clear-transcript="$emit('clear-transcript')"
-              @clear-logs="$emit('clear-logs')"
+              :is-executing="isSelectedCaseExecuting"
             />
 
             <!-- 智能设备（从弹窗移到这里） -->
@@ -306,6 +302,7 @@
                 :initial-test-cases="initialTestCases"
                 @confirm="handleTestCaseConfirm"
                 @cancel="handleTestCaseCancel"
+                @dispatch-task="handleDispatchTaskFromTestCase"
               />
             </div>
 
@@ -422,6 +419,7 @@
                   <TestReportPanel
                     :report-data="reportDataForDetail"
                     :loading="reportLoadingForDetail"
+                    :show-header="false"
                   />
                 </div>
               </template>
@@ -628,11 +626,11 @@ import Avatar3D from './Avatar3D.vue'
 import EmployeeGroup from './EmployeeGroup.vue'
 import HireEmployeeModal from './HireEmployeeModal.vue'
 import TestReportPanel from './TestReportPanel.vue'
-import TranscriptPanel from './TranscriptPanel.vue'
 import IOTConfigPanel from './IOTConfigPanel.vue'
 import TestCaseDesignPopup from './TestCaseDesignPopup.vue'
 import TestCaseListPanel from './TestCaseListPanel.vue'
 import TestCaseDetailPanel from './TestCaseDetailPanel.vue'
+import FloatingTranscript from './FloatingTranscript.vue'
 import sceneTestService from '@/services/sceneTestService'
 
 export default {
@@ -642,11 +640,11 @@ export default {
     EmployeeGroup,
     HireEmployeeModal,
     TestReportPanel,
-    TranscriptPanel,
     IOTConfigPanel,
     TestCaseDesignPopup,
     TestCaseListPanel,
-    TestCaseDetailPanel
+    TestCaseDetailPanel,
+    FloatingTranscript
   },
   props: {
     hasPendingTestCases: {
@@ -799,6 +797,15 @@ export default {
       }
       return this.testCasesWithStatus[this.selectedCaseIndex].stepResults || []
     },
+    // 选中的用例实际执行结果
+    selectedCaseActualResults() {
+      if (this.selectedCaseIndex < 0 || !this.testCasesWithStatus[this.selectedCaseIndex]) {
+        return []
+      }
+      const stepResults = this.testCasesWithStatus[this.selectedCaseIndex].stepResults || []
+      // 从步骤结果中提取实际结果
+      return stepResults.map(s => s.actual_result || '').filter(r => r)
+    },
     // 选中的用例日志（从 testCasesWithStatus 中获取，用于历史查看）
     selectedCaseLogs() {
       if (this.selectedCaseIndex < 0 || !this.testCasesWithStatus[this.selectedCaseIndex]) {
@@ -822,6 +829,10 @@ export default {
     // 测试用例列表（从 testCasesWithStatus 提取）
     pendingTestCases() {
       return this.testCasesWithStatus.map(item => item.testCase)
+    },
+    // 选中的用例是否正在执行
+    isSelectedCaseExecuting() {
+      return this.selectedCaseIndex === this.currentCaseIndex && this.currentCaseIndex >= 0
     }
   },
   mounted() {
@@ -881,6 +892,9 @@ export default {
         // 如果没有匹配的，默认显示第一个员工
         this.currentIndex = 0
       }
+      // 重置面板状态：左侧显示头像，右侧显示智能设备
+      this.leftPanelContent = 'avatar'
+      this.rightPanelContent = 'devices'
       this.viewMode = 'single'
     },
     backToGroup() {
@@ -1151,6 +1165,12 @@ export default {
       this.rightPanelContent = 'transcript'
     },
     /**
+     * 从测试用例面板派发任务
+     */
+    handleDispatchTaskFromTestCase() {
+      this.showDispatchModal = true
+    },
+    /**
      * 重置测试用例面板
      */
     resetTestCasePanel() {
@@ -1274,6 +1294,7 @@ export default {
 
 /* 左侧面板 - 3D角色展示 (30%) */
 .left-panel {
+  position: relative;
   width: 30%;
   min-width: 280px;
   display: flex;
@@ -1287,7 +1308,7 @@ export default {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
+  padding: 10px 14px;
   background: rgba(255, 255, 255, 0.9);
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
   flex-shrink: 0;
@@ -1328,7 +1349,7 @@ export default {
 .panel-switcher {
   display: flex;
   gap: 4px;
-  padding: 8px 12px;
+  padding: 10px 14px;
   background: rgba(255, 255, 255, 0.9);
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
   flex-shrink: 0;
@@ -1565,15 +1586,15 @@ export default {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 16px;
-  background: #fff;
+  padding: 10px 14px;
+  background: linear-gradient(180deg, #fafbfc 0%, #f5f6f8 100%);
   border-bottom: 1px solid #e5e7eb;
   flex-shrink: 0;
 }
 
 .test-report-detail-wrapper .report-detail-header h3 {
   margin: 0;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   color: #1a1a2e;
 }
@@ -1934,14 +1955,14 @@ export default {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
-  background: #f9fafb;
+  padding: 10px 14px;
+  background: linear-gradient(180deg, #fafbfc 0%, #f5f6f8 100%);
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 .report-detail-header h4 {
   margin: 0;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   color: #374151;
 }
@@ -2523,7 +2544,7 @@ export default {
 
   /* 平板上面板切换按钮更大 */
   .panel-switcher {
-    padding: 10px 12px;
+    padding: 10px 14px;
   }
 
   .panel-switcher button {
@@ -2533,7 +2554,7 @@ export default {
 
   /* 左侧面板头部 */
   .left-panel-header {
-    padding: 10px 12px;
+    padding: 10px 14px;
   }
 
   .left-panel-header .panel-switcher button {

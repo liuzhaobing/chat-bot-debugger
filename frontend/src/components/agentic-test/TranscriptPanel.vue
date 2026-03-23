@@ -308,14 +308,14 @@ export default {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 20px;
+  padding: 10px 14px;
   border-bottom: 1px solid var(--border-color);
   background: var(--bg-secondary);
 }
 
 .section-header h3 {
   margin: 0;
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
 }
@@ -744,20 +744,20 @@ export default {
   .transcript-panel {
     gap: 12px;
   }
-  
+
   .section-header {
-    padding: 12px 16px;
+    padding: 10px 14px;
   }
-  
+
   .section-header h3 {
-    font-size: 14px;
+    font-size: 13px;
   }
-  
+
   .transcript-content,
   .logs-content {
     padding: 12px;
   }
-  
+
   .transcript-message {
     padding: 10px;
     margin-bottom: 12px;

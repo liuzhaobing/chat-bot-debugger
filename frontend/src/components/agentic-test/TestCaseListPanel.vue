@@ -41,9 +41,6 @@
         <div class="case-info">
           <div class="case-header-row">
             <span class="case-title">{{ getFirstLine(caseStatus.testCase.title) }}</span>
-            <span v-if="caseStatus.stepResults && caseStatus.stepResults.length > 0" class="step-summary">
-              {{ getPassedStepCount(caseStatus.stepResults) }}/{{ caseStatus.stepResults.length }} 步骤
-            </span>
           </div>
           <div class="case-meta">
             <span class="case-id">{{ caseStatus.testCase.id }}</span>
@@ -52,9 +49,14 @@
           </div>
         </div>
 
-        <!-- 右侧状态标签 -->
-        <div class="case-status-tag" :class="getStatusClass(caseStatus.status)">
-          {{ getStatusLabel(caseStatus.status) }}
+        <!-- 右侧区域：步骤统计 + 状态标签 -->
+        <div class="case-right-section">
+          <span v-if="caseStatus.stepResults && caseStatus.stepResults.length > 0" class="step-summary">
+            {{ getPassedStepCount(caseStatus.stepResults) }}/{{ caseStatus.stepResults.length }}
+          </span>
+          <div class="case-status-tag" :class="getStatusClass(caseStatus.status)">
+            {{ getStatusLabel(caseStatus.status) }}
+          </div>
         </div>
       </div>
 
@@ -382,11 +384,13 @@ export default {
 .case-info {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .case-header-row {
   display: flex;
-  justify-content: space-between;
   align-items: center;
   gap: 8px;
 }
@@ -398,16 +402,6 @@ export default {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  flex: 1;
-}
-
-.step-summary {
-  font-size: 10px;
-  color: #6b7280;
-  background: #f3f4f6;
-  padding: 2px 6px;
-  border-radius: 4px;
-  flex-shrink: 0;
 }
 
 .case-meta {
@@ -432,13 +426,30 @@ export default {
   color: #6b7280;
 }
 
+/* 右侧区域 */
+.case-right-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.step-summary {
+  font-size: 10px;
+  color: #6b7280;
+  background: #f3f4f6;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
 /* 右侧状态标签 */
 .case-status-tag {
   font-size: 10px;
   font-weight: 600;
   padding: 3px 8px;
   border-radius: 6px;
-  flex-shrink: 0;
   min-width: 42px;
   text-align: center;
 }

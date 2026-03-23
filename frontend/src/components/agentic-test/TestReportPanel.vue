@@ -1,7 +1,7 @@
 <template>
   <div class="test-report-panel">
-    <!-- 报告头部 -->
-    <div class="report-header">
+    <!-- 报告头部 - 仅在独立模式显示 -->
+    <div v-if="showHeader" class="report-header">
       <h3>测试报告</h3>
       <button class="close-btn" @click="$emit('close')">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -209,6 +209,10 @@ export default {
     loading: {
       type: Boolean,
       default: false
+    },
+    showHeader: {
+      type: Boolean,
+      default: true
     }
   },
   data() {
@@ -273,13 +277,14 @@ export default {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 24px;
+  padding: 10px 14px;
   border-bottom: 1px solid var(--border-color);
+  background: linear-gradient(180deg, #fafbfc 0%, #f5f6f8 100%);
 }
 
 .report-header h3 {
   margin: 0;
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 600;
 }
 

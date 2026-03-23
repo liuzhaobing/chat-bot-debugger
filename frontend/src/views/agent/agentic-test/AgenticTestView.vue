@@ -438,6 +438,9 @@ export default {
     async handleStartSession() {
       if (this.isConnecting || this.isSessionActive) return
 
+      // 清空上次的字幕消息
+      this.transcriptMessages = []
+
       this.isConnecting = true
       this.connectionStatus = 'connecting'
       this.addSystemLog('system', 'info', '正在启动会话...')
@@ -477,6 +480,9 @@ export default {
         window.$message?.warning('已有会话在运行中，请先停止当前会话')
         return
       }
+
+      // 清空上次的字幕消息
+      this.transcriptMessages = []
 
       // 重置测试用例生成标记（用户主动开始新测试）
       this.hasGeneratedTestCases = false
@@ -896,6 +902,8 @@ export default {
           case 'test_completed':
             // 测试完成，显示报告摘要并关闭连接
             var content = data.content || {}
+            // 重置当前用例索引，停止动画
+            this.currentCaseIndex = -1
             // 添加详细的测试报告日志到当前用例日志
             this.addSystemLog('system', 'success', '========================================')
             this.addSystemLog('system', 'success', '测试报告概要')
@@ -906,7 +914,32 @@ export default {
             this.addSystemLog('system', 'success', '========================================')
             // 设置测试完成状态和报告数据
             this.testCompleted = true
-            this.testReportData = data.content
+            // 规范化报告数据格式，确保包含 case_statistics 和 test_cases
+            this.testReportData = {
+              ...content,
+              // 如果后端没有 case_statistics，从顶层字段构建
+              case_statistics: content.case_statistics || {
+                total: content.total_cases || 0,
+                passed: content.passed || 0,
+                failed: content.failed || 0,
+                blocked: content.blocked || 0,
+                skipped: content.skipped || 0,
+                not_run: content.not_run || 0,
+                pass_rate: content.pass_rate || 0
+              },
+              // 如果后端没有 test_cases，从 testCasesWithStatus 构建
+              test_cases: content.test_cases || this.testCasesWithStatus.map(cs => ({
+                id: cs.testCase.id,
+                title: cs.testCase.title,
+                type: cs.testCase.type || 'functional',
+                preconditions: cs.testCase.preconditions || [],
+                expect_results: cs.testCase.expect_results || [],
+                actual_results: cs.testCase.actual_results || [],
+                test_result: cs.status === 'PASS' ? 'Pass' : (cs.status === 'FAIL' ? 'Fail' : cs.status),
+                error_message: cs.errorMessage || '',
+                step_results: cs.stepResults || []
+              }))
+            }
             // 延迟关闭连接，给日志渲染一点时间
             setTimeout(() => {
               this.closeWebSocketAfterTest()
@@ -916,15 +949,20 @@ export default {
           case 'current_case_changed':
             // 当前用例变化
             var caseIndex = data.content?.case_index ?? -1
-            // var caseId = data.content?.case_id
+            var caseId = data.content?.case_id
             var caseTitle = data.content?.title
+            var previousCaseIndex = this.currentCaseIndex
+            console.log('[current_case_changed] caseIndex:', caseIndex, 'caseId:', caseId, 'previousCaseIndex:', previousCaseIndex)
             this.currentCaseIndex = caseIndex
             // 自动选择当前执行的用例
             if (caseIndex >= 0) {
               this.selectedCaseIndex = caseIndex
             }
-            // 清空当前用例日志，准备接收新用例的日志
-            this.currentCaseLogs = []
+            // 只有用例真正切换时才清空日志（从有效索引切换到另一个有效索引）
+            // 从 -1 到 0（首次进入）不清空，保留已添加的日志
+            if (previousCaseIndex >= 0 && previousCaseIndex !== caseIndex) {
+              this.currentCaseLogs = []
+            }
             this.addSystemLog('test', 'info', `开始执行用例 ${caseIndex + 1}: ${caseTitle}`)
             break
 
@@ -939,6 +977,13 @@ export default {
           case 'case_completed':
             // 用例完成
             var completedData = data.content || {}
+            console.log('[case_completed] 收到数据:', completedData)
+            console.log('[case_completed] currentCaseIndex:', this.currentCaseIndex)
+            console.log('[case_completed] testCasesWithStatus:', this.testCasesWithStatus.map((c, i) => ({
+              index: i,
+              testCaseId: c.testCase.id,
+              status: c.status
+            })))
             this.updateCaseStatus(completedData)
             this.addSystemLog('test', 'success',
               `用例完成: ${completedData.title} - ${completedData.test_result}`)
@@ -1251,10 +1296,12 @@ export default {
       this.currentCaseLogs.push(log)
 
       // 3. 同时存储到 testCasesWithStatus（用于历史查看）
-      if (this.currentCaseIndex >= 0 && this.testCasesWithStatus[this.currentCaseIndex]) {
-        const currentCase = this.testCasesWithStatus[this.currentCaseIndex]
+      // 使用 currentCaseIndex，但如果还是 -1（尚未收到 current_case_changed），则使用 0（第一个用例）
+      const targetCaseIndex = this.currentCaseIndex >= 0 ? this.currentCaseIndex : 0
+      if (targetCaseIndex >= 0 && this.testCasesWithStatus[targetCaseIndex]) {
+        const currentCase = this.testCasesWithStatus[targetCaseIndex]
         const currentLogs = currentCase.logs || []
-        this.$set(this.testCasesWithStatus, this.currentCaseIndex, {
+        this.$set(this.testCasesWithStatus, targetCaseIndex, {
           ...currentCase,
           logs: [...currentLogs, log]
         })
@@ -1480,18 +1527,51 @@ export default {
      */
     updateCaseStatus(completedData) {
       const { case_id, test_result, step_pass_results, actual_results } = completedData
-      const index = this.testCasesWithStatus.findIndex(c => c.testCase.id === case_id)
+      console.log('[updateCaseStatus] case_id:', case_id, 'test_result:', test_result)
+
+      // 先尝试用 case_id 匹配
+      let index = this.testCasesWithStatus.findIndex(c => c.testCase.id === case_id)
+      console.log('[updateCaseStatus] 通过case_id查找结果:', index)
+
+      // 如果用 case_id 找不到，尝试用 currentCaseIndex
+      if (index < 0 && this.currentCaseIndex >= 0 && this.currentCaseIndex < this.testCasesWithStatus.length) {
+        index = this.currentCaseIndex
+        console.log('[updateCaseStatus] 使用currentCaseIndex:', index)
+      }
+
       if (index >= 0) {
-        // 使用 $set 确保 Vue 2 响应式更新
-        this.$set(this.testCasesWithStatus, index, {
-          ...this.testCasesWithStatus[index],
-          status: test_result,
+        // 规范化状态值（确保是大写格式）
+        let normalizedStatus = (test_result || 'NOT_RUN').toUpperCase()
+        // 处理可能的变体
+        const statusMap = {
+          'PASS': 'PASS',
+          'PASSED': 'PASS',
+          'FAIL': 'FAIL',
+          'FAILED': 'FAIL',
+          'BLOCKED': 'BLOCKED',
+          'SKIPPED': 'SKIPPED',
+          'NOT_RUN': 'NOT_RUN',
+          'NOTRUN': 'NOT_RUN'
+        }
+        normalizedStatus = statusMap[normalizedStatus] || normalizedStatus
+        console.log('[updateCaseStatus] 规范化状态:', normalizedStatus)
+
+        // 创建新数组以确保 Vue 2 响应式更新
+        const newTestCasesWithStatus = [...this.testCasesWithStatus]
+        newTestCasesWithStatus[index] = {
+          ...newTestCasesWithStatus[index],
+          status: normalizedStatus,
           stepResults: step_pass_results?.map((is_pass, i) => ({
             is_pass,
             actual_result: actual_results?.[i] || '',
             timestamp: Date.now()
-          })) || []
-        })
+          })) || [],
+          actual_results: actual_results || []
+        }
+        this.testCasesWithStatus = newTestCasesWithStatus
+        console.log('[updateCaseStatus] 更新完成, 新状态:', this.testCasesWithStatus[index].status)
+      } else {
+        console.warn('[updateCaseStatus] 未找到匹配的用例!')
       }
 
       // 用例完成后，自动切换到下一个用例

@@ -17,68 +17,73 @@
         </span>
       </div>
 
-      <div v-if="testCase" class="detail-content">
-        <!-- 标题 -->
-        <div class="detail-row">
-          <span class="detail-label">标题</span>
-          <span class="detail-value title">{{ testCase.title }}</span>
-        </div>
+      <div class="detail-scroll-container">
+        <div v-if="testCase" class="detail-content">
+          <!-- 标题 -->
+          <div class="detail-row">
+            <span class="detail-label">标题</span>
+            <span class="detail-value title">{{ testCase.title }}</span>
+          </div>
 
-        <!-- 前置条件 -->
-        <div v-if="testCase.preconditions && testCase.preconditions.length" class="detail-block">
-          <div class="block-title">前置条件</div>
-          <ul class="condition-list">
-            <li v-for="(cond, i) in testCase.preconditions" :key="i">{{ cond }}</li>
-          </ul>
-        </div>
+          <!-- 前置条件 -->
+          <div v-if="testCase.preconditions && testCase.preconditions.length" class="detail-block">
+            <div class="block-title">前置条件</div>
+            <ul class="condition-list">
+              <li v-for="(cond, i) in testCase.preconditions" :key="i">{{ cond }}</li>
+            </ul>
+          </div>
 
-        <!-- 测试步骤 -->
-        <div class="detail-block">
-          <div class="block-title">测试步骤</div>
-          <div class="steps-list">
-            <div
-              v-for="(step, i) in testCase.steps"
-              :key="i"
-              class="step-item"
-              :class="getStepClass(i)"
-            >
-              <div class="step-index">{{ i + 1 }}</div>
-              <div class="step-content">
-                <span class="step-text">{{ step }}</span>
-                <span v-if="getStepResult(i)" class="step-result" :class="{ pass: getStepResult(i).is_pass, fail: !getStepResult(i).is_pass }">
-                  {{ getStepResult(i).is_pass ? '通过' : '失败' }}
-                </span>
+          <!-- 测试步骤 -->
+          <div class="detail-block">
+            <div class="block-title">测试步骤</div>
+            <div class="steps-list">
+              <div
+                v-for="(step, i) in testCase.steps"
+                :key="i"
+                class="step-item"
+                :class="getStepClass(i)"
+              >
+                <div class="step-index">{{ i + 1 }}</div>
+                <div class="step-content">
+                  <span class="step-text">{{ step }}</span>
+                  <span v-if="getStepResult(i)" class="step-result" :class="{ pass: getStepResult(i).is_pass, fail: !getStepResult(i).is_pass }">
+                    {{ getStepResult(i).is_pass ? '通过' : '失败' }}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
-        </div>
 
-        <!-- 预期结果 -->
-        <div class="detail-block">
-          <div class="block-title">预期结果</div>
-          <ul class="result-list">
-            <li v-for="(result, i) in testCase.expect_results" :key="i">{{ result }}</li>
-          </ul>
-        </div>
+          <!-- 预期结果 -->
+          <div class="detail-block">
+            <div class="block-title">预期结果</div>
+            <ul class="result-list">
+              <li v-for="(result, i) in testCase.expect_results" :key="i">{{ result }}</li>
+            </ul>
+          </div>
 
-        <!-- 实际结果 -->
-        <div v-if="actualResults.length" class="detail-block">
-          <div class="block-title">实际结果</div>
-          <div class="actual-results">
-            <div v-for="(result, i) in actualResults" :key="i" class="actual-result-item">
-              {{ result }}
+          <!-- 实际结果 - 始终显示 -->
+          <div class="detail-block">
+            <div class="block-title">实际执行结果</div>
+            <div v-if="actualResults.length" class="actual-results">
+              <div v-for="(result, i) in actualResults" :key="i" class="actual-result-item">
+                {{ result }}
+              </div>
+            </div>
+            <div v-else class="empty-actual-results">
+              <span>暂无实际执行结果</span>
             </div>
           </div>
         </div>
-      </div>
 
-      <!-- 空状态 -->
-      <div v-else class="empty-detail">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"></path>
-          <polyline points="14 2 14 8 20 8"></polyline>
-        </svg>
-        <p>请在左侧选择一个测试用例</p>
+        <!-- 空状态 -->
+        <div v-else class="empty-detail">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+          </svg>
+          <p>请在左侧选择一个测试用例</p>
+        </div>
       </div>
     </div>
 
@@ -105,9 +110,40 @@
             class="log-item"
             :class="[log.level, log.category]"
           >
-            <span class="log-time">{{ formatTime(log.timestamp) }}</span>
-            <span class="log-category">[{{ log.category }}]</span>
-            <span class="log-message">{{ log.message }}</span>
+            <div class="log-header-row">
+              <span class="log-time">{{ formatTime(log.timestamp) }}</span>
+              <span class="log-category">[{{ log.category }}]</span>
+              <span class="log-message">{{ log.message }}</span>
+              <button
+                v-if="hasDetails(log.details)"
+                class="log-expand-btn"
+                @click="toggleLogExpand(log.id)"
+                :title="isLogExpanded(log.id) ? '收起详情' : '展开详情'"
+              >
+                <svg v-if="isLogExpanded(log.id)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="6,9 12,15 18,9"></polyline>
+                </svg>
+                <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="9,18 15,12 9,6"></polyline>
+                </svg>
+              </button>
+            </div>
+            <!-- 展开的详情内容 -->
+            <div v-if="hasDetails(log.details) && isLogExpanded(log.id)" class="log-details-content">
+              <div class="log-details-header">
+                <span class="details-label">详细信息</span>
+                <button class="copy-btn" @click="copyLogDetails(log)" :title="copySuccessLogId === log.id ? '已复制' : '复制'">
+                  <svg v-if="copySuccessLogId === log.id" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="20,6 9,17 4,12"></polyline>
+                  </svg>
+                  <svg v-else width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                  </svg>
+                </button>
+              </div>
+              <pre>{{ formatDetails(log.details) }}</pre>
+            </div>
           </div>
         </div>
       </div>
@@ -131,13 +167,31 @@ export default {
       type: Array,
       default: () => []
     },
+    actualResults: {
+      type: Array,
+      default: () => []
+    },
     logs: {
       type: Array,
       default: () => []
+    },
+    isExecuting: {
+      type: Boolean,
+      default: false
+    }
+  },
+  data() {
+    return {
+      expandedLogs: new Set(),
+      copySuccessLogId: null
     }
   },
   computed: {
     statusClass() {
+      // 如果正在执行，优先显示执行中状态
+      if (this.isExecuting) {
+        return 'executing'
+      }
       const classMap = {
         'NOT_RUN': 'not-run',
         'PASS': 'pass',
@@ -148,6 +202,10 @@ export default {
       return classMap[this.status] || 'not-run'
     },
     statusText() {
+      // 如果正在执行，优先显示执行中状态
+      if (this.isExecuting) {
+        return '执行中'
+      }
       const textMap = {
         'NOT_RUN': '未执行',
         'PASS': '通过',
@@ -156,10 +214,6 @@ export default {
         'SKIPPED': '跳过'
       }
       return textMap[this.status] || '未执行'
-    },
-    actualResults() {
-      if (!this.testCase || !this.testCase.actual_results) return []
-      return this.testCase.actual_results
     }
   },
   watch: {
@@ -197,6 +251,44 @@ export default {
       if (container) {
         container.scrollTop = container.scrollHeight
       }
+    },
+
+    hasDetails(details) {
+      if (!details) return false
+      if (Array.isArray(details)) return details.length > 0
+      if (typeof details === 'object') return Object.keys(details).length > 0
+      return false
+    },
+
+    isLogExpanded(logId) {
+      return this.expandedLogs.has(logId)
+    },
+
+    toggleLogExpand(logId) {
+      if (this.expandedLogs.has(logId)) {
+        this.expandedLogs.delete(logId)
+      } else {
+        this.expandedLogs.add(logId)
+      }
+      // 触发响应式更新
+      this.expandedLogs = new Set(this.expandedLogs)
+    },
+
+    formatDetails(details) {
+      return JSON.stringify(details, null, 2)
+    },
+
+    async copyLogDetails(log) {
+      try {
+        const content = JSON.stringify(log.details, null, 2)
+        await navigator.clipboard.writeText(content)
+        this.copySuccessLogId = log.id
+        setTimeout(() => {
+          this.copySuccessLogId = null
+        }, 2000)
+      } catch (err) {
+        console.error('复制失败:', err)
+      }
     }
   }
 }
@@ -215,17 +307,24 @@ export default {
 .case-detail-section {
   flex: 0 0 auto;
   max-height: 50%;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
   border-bottom: 1px solid #e5e7eb;
+}
+
+.detail-scroll-container {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .section-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 16px;
-  background: #f9fafb;
-  border-bottom: 1px solid #e5e7eb;
+  padding: 10px 14px;
+  background: linear-gradient(180deg, #fafbfc 0%, #f5f6f8 100%);
+  border-bottom: 1px solid #e8eaed;
 }
 
 .section-title {
@@ -233,13 +332,13 @@ export default {
   align-items: center;
   gap: 8px;
   margin: 0;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   color: #1a1a2e;
 }
 
 .section-title svg {
-  color: #6b7280;
+  color: #3b82f6;
 }
 
 .case-status-badge {
@@ -267,6 +366,17 @@ export default {
 .case-status-badge.blocked {
   background: rgba(245, 158, 11, 0.1);
   color: #f59e0b;
+}
+
+.case-status-badge.executing {
+  background: rgba(59, 130, 246, 0.1);
+  color: #3b82f6;
+  animation: pulse-badge 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-badge {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
 }
 
 .detail-content {
@@ -414,6 +524,16 @@ export default {
   border-radius: 4px;
 }
 
+.empty-actual-results {
+  font-size: 12px;
+  color: #9ca3af;
+  padding: 10px;
+  background: #f9fafb;
+  border-radius: 4px;
+  text-align: center;
+  border: 1px dashed #e5e7eb;
+}
+
 .empty-detail {
   display: flex;
   flex-direction: column;
@@ -449,8 +569,8 @@ export default {
 .logs-content {
   flex: 1;
   overflow-y: auto;
-  padding: 12px 16px;
-  background: #f9fafb;
+  padding: 8px;
+  background: #f5f6f8;
 }
 
 .empty-logs {
@@ -470,15 +590,40 @@ export default {
 
 .log-item {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
+  flex-direction: column;
   font-size: 12px;
-  padding: 4px 0;
-  border-bottom: 1px solid #f3f4f6;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-left: 3px solid #d1d5db;
+  margin-bottom: 4px;
 }
 
 .log-item:last-child {
-  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.log-item.info {
+  border-left-color: #3b82f6;
+}
+
+.log-item.success {
+  border-left-color: #10b981;
+}
+
+.log-item.warning {
+  border-left-color: #f59e0b;
+}
+
+.log-item.error {
+  border-left-color: #ef4444;
+}
+
+.log-header-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .log-time {
@@ -491,12 +636,93 @@ export default {
 .log-category {
   color: #6b7280;
   flex-shrink: 0;
+  font-size: 11px;
 }
 
 .log-message {
   color: #374151;
   flex: 1;
   word-break: break-word;
+}
+
+.log-expand-btn {
+  width: 26px;
+  height: 26px;
+  border: none;
+  background: #f3f4f6;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #6b7280;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.log-expand-btn:hover {
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.log-expand-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* 展开的详情内容 */
+.log-details-content {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: #f9fafb;
+  border-radius: 4px;
+  border: 1px solid #e5e7eb;
+}
+
+.log-details-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.details-label {
+  font-size: 10px;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.log-details-header .copy-btn {
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #9ca3af;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.log-details-header .copy-btn:hover {
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.log-details-content pre {
+  margin: 0;
+  padding: 8px;
+  background: #1f2937;
+  color: #e5e7eb;
+  border-radius: 4px;
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 .log-item.success .log-message {
