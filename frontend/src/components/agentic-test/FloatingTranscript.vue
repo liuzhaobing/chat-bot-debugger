@@ -59,7 +59,7 @@
             :style="message.type === 'agent' ? { borderLeftColor: employeeColor } : {}"
           >
             <div class="message-header">
-              <span class="message-sender">{{ message.type === 'user' ? '用户' : 'AI' }}</span>
+              <span class="message-sender">{{ message.type === 'user' ? '食神' : '模拟用户' }}</span>
               <span class="message-time">{{ formatTime(message.timestamp) }}</span>
             </div>
             <div class="message-body">
