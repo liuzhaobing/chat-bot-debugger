@@ -297,7 +297,7 @@ class TestCaseManager:
     ) -> List[TestCase]:
         """根据PRD（产品需求文档）自动设计测试用例
 
-        通过调用后端的测试用例设计 APP，根据 PRD 内容、设备功能说明和家庭设备信息自动生成测试用例。
+        通过调用后端的测试用例设计 APP，根据 PRD 内容、设备功能说明和家庭设备信息自动设计测试用例。
 
         Args:
             prd: 产品需求文档内容
@@ -369,7 +369,7 @@ class TestCaseManager:
     ) -> List[TestCase]:
         """根据PRD（产品需求文档）流式设计测试用例
 
-        通过调用后端的测试用例设计 APP，流式生成测试用例。
+        通过调用后端的测试用例设计 APP，流式设计测试用例。
         支持 stream_callback 回调，实时将生成的文本发送给前端。
 
         Args:
@@ -513,7 +513,7 @@ class TestCaseManager:
         }
         case_type = type_mapping.get(test_point.test_type, TestCaseType.FUNCTIONAL)
 
-        # 生成测试用例ID
+        # 设计测试用例ID
         case_id = f"TC-{test_point.id}"
 
         # TODO: 如果有 llm_service，可以调用LLM生成更详细的测试步骤

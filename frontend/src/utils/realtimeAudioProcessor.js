@@ -9,7 +9,8 @@ class RealtimeAudioProcessor {
     this.sampleRate = options.sampleRate || 16000
     this.channelCount = options.channelCount || 1
     this.bufferSize = options.bufferSize || 256 // 16ms at 16kHz
-    
+    this.fftSize = options.fftSize || 2048
+
     // 音频上下文和节点
     this.audioContext = null
     this.analyser = null
@@ -17,17 +18,23 @@ class RealtimeAudioProcessor {
     this.audioProcessor = null
     this.dataArray = null
     this.source = null
-    
+
     // 状态
     this.isActive = false
     this.audioLevel = 0
     this.isVoiceActive = false
-    
+
     // VAD参数
     this.vadBuffer = []
     this.vadBufferSize = 10
     this.vadThreshold = 0.02
-    
+
+    // 拖尾机制（hangover）- 防止频繁切换
+    this.speechFrameCount = 0
+    this.silenceFrameCount = 0
+    this.minSpeechFrames = 3       // 连续3帧确认语音开始
+    this.hangoverFrames = 10       // 连续10帧确认语音结束（拖尾约160ms）
+
     // 回调函数
     this.onAudioData = null  // (audioBytes: Uint8Array) => void
     this.onAudioLevel = null  // (level: number) => void
@@ -95,10 +102,10 @@ class RealtimeAudioProcessor {
         await this.audioContext.resume()
       }
 
-      // 创建分析器用于可视化
+      // 创建分析器用于可视化和频谱分析
       this.analyser = this.audioContext.createAnalyser()
-      this.analyser.fftSize = 2048
-      this.analyser.smoothingTimeConstant = 0.8
+      this.analyser.fftSize = this.fftSize
+      this.analyser.smoothingTimeConstant = 0.3  // 降低平滑，提高频谱响应速度
       this.dataArray = new Uint8Array(this.analyser.frequencyBinCount)
 
       // 创建音频源
@@ -192,11 +199,13 @@ class RealtimeAudioProcessor {
     this.isActive = false
     this.audioLevel = 0
     this.isVoiceActive = false
+    this.speechFrameCount = 0
+    this.silenceFrameCount = 0
     console.log('停止音频处理')
   }
 
   /**
-   * VAD语音活动检测
+   * VAD语音活动检测 - 带拖尾机制
    */
   detectVoiceActivity(audioLevel) {
     // 添加到VAD缓冲区
@@ -208,9 +217,25 @@ class RealtimeAudioProcessor {
     // 计算平均音频级别
     const avgLevel = this.vadBuffer.reduce((sum, level) => sum + level, 0) / this.vadBuffer.length
 
-    // 判断语音活动
+    // 拖尾机制（hangover）- 防止频繁切换
+    const isSpeech = avgLevel > this.vadThreshold
     const wasActive = this.isVoiceActive
-    this.isVoiceActive = avgLevel > this.vadThreshold
+
+    if (isSpeech) {
+      this.speechFrameCount++
+      this.silenceFrameCount = 0
+      // 连续N帧语音才确认语音开始
+      if (this.speechFrameCount >= this.minSpeechFrames && !this.isVoiceActive) {
+        this.isVoiceActive = true
+      }
+    } else {
+      this.silenceFrameCount++
+      // 连续N帧静音才确认语音结束（拖尾）
+      if (this.silenceFrameCount >= this.hangoverFrames && this.isVoiceActive) {
+        this.isVoiceActive = false
+        this.speechFrameCount = 0
+      }
+    }
 
     // 触发语音活动变化回调
     if (this.onVoiceActivity && wasActive !== this.isVoiceActive) {
@@ -219,13 +244,51 @@ class RealtimeAudioProcessor {
   }
 
   /**
-   * 获取频谱数据（用于可视化）
+   * 获取频谱数据（用于可视化和频谱分析）
+   * @returns {Uint8Array|null} 频谱数据或null（如果不可用）
    */
   getFrequencyData() {
-    if (!this.analyser || !this.dataArray) return null
-    
-    this.analyser.getByteFrequencyData(this.dataArray)
-    return Array.from(this.dataArray)
+    if (!this.analyser || !this.dataArray || !this.isActive) {
+      return null
+    }
+
+    try {
+      this.analyser.getByteFrequencyData(this.dataArray)
+      return this.dataArray
+    } catch (e) {
+      console.error('获取频谱数据失败:', e)
+      return null
+    }
+  }
+
+  /**
+   * 计算人声频率能量占比
+   * 利用频谱分析区分人声和噪音
+   * @returns {number} 人声能量占比 (0-1)
+   */
+  calculateVoiceEnergyRatio() {
+    const frequencyData = this.getFrequencyData()
+    if (!frequencyData) return 0
+
+    // 动态计算人声频段 bin 索引
+    // 频率 bin 对应频率 = binIndex * sampleRate / fftSize
+    const binWidth = this.sampleRate / this.fftSize
+    const voiceStartBin = Math.floor(85 / binWidth)    // ~85Hz (人声低频)
+    const voiceEndBin = Math.ceil(3400 / binWidth)     // ~3400Hz (人声高频)
+
+    let voiceEnergy = 0
+    let totalEnergy = 0
+
+    for (let i = 0; i < frequencyData.length; i++) {
+      const energy = frequencyData[i] * frequencyData[i]
+      totalEnergy += energy
+
+      if (i >= voiceStartBin && i <= voiceEndBin) {
+        voiceEnergy += energy
+      }
+    }
+
+    return totalEnergy > 0 ? voiceEnergy / totalEnergy : 0
   }
 
   /**
@@ -286,6 +349,8 @@ class RealtimeAudioProcessor {
       this.analyser = null
       this.dataArray = null
       this.vadBuffer = []
+      this.speechFrameCount = 0
+      this.silenceFrameCount = 0
 
       console.log('音频处理器已完全销毁')
     } catch (error) {

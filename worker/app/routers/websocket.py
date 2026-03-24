@@ -212,14 +212,14 @@ async def agentic_test_websocket(
                         agent.initial_query = query
                     conn_info.metadata["agent"] = agent
 
-                    # 第一阶段：初始化并生成测试用例（等待用户确认）
+                    # 第一阶段：初始化并设计测试用例（等待用户确认）
                     asyncio.create_task(agent.initialize_and_generate_cases(iot_config))
 
                     await connection_manager.send_message(
                         session_id,
                         {
                             "type": "status",
-                            "content": "开始生成测试用例...",
+                            "content": "开始设计测试用例...",
                             "metadata": {
                                 "initial_query": query,
                                 "iot_config": bool(iot_config)

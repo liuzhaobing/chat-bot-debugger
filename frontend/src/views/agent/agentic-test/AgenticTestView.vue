@@ -173,8 +173,27 @@ export default {
       silenceDetectionActive: false,   // 静默检测是否激活
       hasDetectedVoice: false,          // 是否已检测到用户说话
       silenceStartTime: null,           // 静默开始时间
-      silenceThreshold: 3000,           // 3秒静默阈值
-      volumeThreshold: 0.02             // 音量阈值
+      silenceThreshold: 1200,           // n/1000 秒静默阈值
+
+      // 自适应阈值参数（基于噪音底噪估计）
+      noiseFloor: 0.01,                 // 噪音底噪估计
+      noiseFloorAlpha: 0.95,            // 底噪平滑系数（越大越平滑）
+      signalMargin: 2.5,                // 信号余量倍数
+      adaptiveThreshold: 0.025,         // 当前自适应阈值
+      baseVolumeThreshold: 0.01,        // 基础阈值下限
+
+      // 帧计数（替代时间戳防抖）
+      speechFrames: 0,                  // 连续语音帧计数
+      silenceFrames: 0,                 // 连续静音帧计数
+
+      // 说话时长检测
+      speechStartTime: null,            // 说话开始时间
+      minSpeechDuration: 1000,          // 最小说话时长阈值（毫秒）
+      actualSpeechDuration: 0,          // 实际说话时长
+
+      // 频谱分析相关
+      voiceEnergyRatioThreshold: 0.4,   // 人声能量占比阈值
+      lastVoiceEnergyRatio: 0           // 最近一次人声能量占比（调试用）
     }
   },
   mounted() {
@@ -337,6 +356,9 @@ export default {
           this.currentAudioLevel = level
           this.hasAudioActivity = level > 0.02
 
+          // 更新自适应阈值
+          this.updateAdaptiveThreshold(level)
+
           // 静默检测逻辑
           if (this.silenceDetectionActive) {
             this.handleSilenceDetection(level)
@@ -458,7 +480,7 @@ export default {
         this.connectionStatus = 'active'
 
         this.addSystemLog('system', 'success', '会话启动成功，等待测试用例确认...')
-        this.addTranscriptMessage('system', '会话已开始，正在生成测试用例...', false, true)
+        this.addTranscriptMessage('system', '会话已开始，正在设计测试用例...', false, true)
 
       } catch (error) {
         console.error('启动会话失败:', error)
@@ -837,7 +859,7 @@ export default {
             break
 
           case 'test_case_generation_started':
-            // 开始生成测试用例，打开确认弹窗
+            // 开始设计测试用例，打开确认弹窗
             this.isGeneratingTestCases = true
             this.pendingTestCases = []
             this.testCaseRawContent = ''
@@ -846,7 +868,7 @@ export default {
               this.$refs.sceneTestPanel.resetTestCasePanel()
               this.$refs.sceneTestPanel.switchToTestCasePanel()
             }
-            this.addSystemLog('system', 'info', '开始生成测试用例...')
+            this.addSystemLog('system', 'info', '开始设计测试用例...')
             break
 
           case 'test_case_stream':
@@ -1459,39 +1481,90 @@ export default {
       this.silenceDetectionActive = true
       this.hasDetectedVoice = false
       this.silenceStartTime = null
-      this.addSystemLog('audio', 'info', '开始静默检测')
+      this.speechFrames = 0
+      this.silenceFrames = 0
+      this.speechStartTime = null
+      this.actualSpeechDuration = 0
+      // 不重置 noiseFloor，保留已学习的噪音底噪
+      this.addSystemLog('audio', 'info',
+        `开始静默检测，当前阈值: ${this.adaptiveThreshold.toFixed(4)}`)
     },
 
     stopSilenceDetection() {
       this.silenceDetectionActive = false
       this.hasDetectedVoice = false
       this.silenceStartTime = null
+      this.speechFrames = 0
+      this.silenceFrames = 0
+      this.speechStartTime = null
+      this.actualSpeechDuration = 0
     },
 
     handleSilenceDetection(level) {
-      const hasVoice = level >= this.volumeThreshold
+      // 基础音量检测
+      const hasVoiceByLevel = level >= this.adaptiveThreshold
+
+      // 频谱分析：使用 RealtimeAudioProcessor 的人声能量占比计算
+      const voiceEnergyRatio = this.audioProcessor?.calculateVoiceEnergyRatio?.() || 0
+      this.lastVoiceEnergyRatio = voiceEnergyRatio  // 保存用于调试
+      const hasVoiceBySpectrum = voiceEnergyRatio >= this.voiceEnergyRatioThreshold
+
+      // 综合判断：音量达标 + 频谱符合人声特征
+      const hasVoice = hasVoiceByLevel && hasVoiceBySpectrum
 
       if (!this.hasDetectedVoice) {
-        // 阶段1：等待用户说话（从无声到有声）
+        // 阶段1：等待用户说话开始（帧计数防抖）
         if (hasVoice) {
-          this.hasDetectedVoice = true
-          this.silenceStartTime = null  // 重置静默计时
-          this.addSystemLog('audio', 'info', '检测到用户说话')
+          this.speechFrames++
+          this.silenceFrames = 0
+          // 连续3帧语音确认说话开始
+          if (this.speechFrames >= 3) {
+            this.hasDetectedVoice = true
+            this.speechStartTime = Date.now()  // 记录说话开始时间
+            this.actualSpeechDuration = 0
+            this.addSystemLog('audio', 'info', '检测到用户说话')
+          }
+        } else {
+          // 短暂噪音，重置帧计数
+          this.speechFrames = 0
         }
       } else {
-        // 阶段2：已说话，检测静默（从有声到无声）
+        // 阶段2：用户正在说话
         if (hasVoice) {
-          // 用户还在说话，重置静默计时
+          // 用户还在说话，更新说话时长
+          this.actualSpeechDuration = Date.now() - this.speechStartTime
           this.silenceStartTime = null
+          this.silenceFrames = 0
         } else {
           // 用户静默中
+          this.silenceFrames++
           if (!this.silenceStartTime) {
             this.silenceStartTime = Date.now()
-          } else if (Date.now() - this.silenceStartTime >= this.silenceThreshold) {
-            // 静默超过3秒，触发提前处理
-            this.addSystemLog('audio', 'info', '检测到3秒静默，提前触发识别')
-            this.sendSilenceDetected()
-            this.stopSilenceDetection()  // 停止检测，避免重复发送
+          }
+          const silenceDuration = Date.now() - this.silenceStartTime
+
+          // 先检查说话时长是否足够
+          if (this.actualSpeechDuration < this.minSpeechDuration) {
+            // 说话时长不足，等待更长时间确认是否真的结束
+            if (silenceDuration >= 500) {  // 500ms 确认说话结束
+              // 说话时长不足，重置状态等待新的说话
+              this.addSystemLog('audio', 'info',
+                `说话时长不足 ${(this.actualSpeechDuration / 1000).toFixed(1)}s < ${(this.minSpeechDuration / 1000)}s，重置检测`)
+              this.hasDetectedVoice = false
+              this.speechStartTime = null
+              this.actualSpeechDuration = 0
+              this.silenceStartTime = null
+              this.speechFrames = 0
+              this.silenceFrames = 0
+            }
+          } else {
+            // 说话时长足够，等待静默阈值后触发识别
+            if (silenceDuration >= this.silenceThreshold) {
+              this.addSystemLog('audio', 'info',
+                `说话时长 ${(this.actualSpeechDuration / 1000).toFixed(1)}s，检测到${this.silenceThreshold / 1000}秒静默，触发识别`)
+              this.sendSilenceDetected()
+              this.stopSilenceDetection()  // 停止检测，避免重复发送
+            }
           }
         }
       }
@@ -1504,6 +1577,25 @@ export default {
         timestamp: Date.now()
       }
       this.websocket.send(JSON.stringify(message))
+    },
+
+    /**
+     * 更新自适应阈值 - 基于噪音底噪估计算法
+     * 参考：ITU-T G.729 Annex B
+     */
+    updateAdaptiveThreshold(level) {
+      // 仅在未检测到说话时更新噪音底噪
+      if (!this.hasDetectedVoice) {
+        // 一阶IIR滤波器平滑
+        this.noiseFloor = this.noiseFloorAlpha * this.noiseFloor +
+                          (1 - this.noiseFloorAlpha) * level
+      }
+
+      // 动态计算语音阈值 = 噪音底噪 * 信号余量
+      this.adaptiveThreshold = Math.max(
+        this.baseVolumeThreshold,
+        this.noiseFloor * this.signalMargin
+      )
     },
 
     /**

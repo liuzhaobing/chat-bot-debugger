@@ -611,7 +611,7 @@ backend/
 
 2. **ScenarioGenerator (scenario_generator.py)**
    - 从IOT协议自动生成测试场景
-   - 基于functions和properties生成测试用例
+   - 基于functions和properties设计测试用例
    - 场景优先级排序
    - 场景分类管理
 

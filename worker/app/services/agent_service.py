@@ -193,6 +193,9 @@ class AgenticTestAgent:
             log_event_callback=self.log_event
         )
 
+        # 初始查询标记：初始查询后的第一个响应不需要评判
+        self.is_initial_query = True
+
         # 设备状态缓存
         self.family_devices: Dict = {}
         # A0: TTS 播放后的设备状态（query 发送后的状态）
@@ -232,7 +235,7 @@ class AgenticTestAgent:
         return f"TEST_{timestamp}_{random_suffix}"
 
     async def initialize_and_generate_cases(self, iot_config: Optional[Dict[str, str]] = None):
-        """初始化服务并生成测试用例（流式）
+        """初始化服务并设计测试用例（流式）
 
         第一阶段：准备测试用例，等待用户确认
 
@@ -256,7 +259,7 @@ class AgenticTestAgent:
         await self._update_task_job_info()
 
         try:
-            # 初始化设备信息 - 必须在生成测试用例之前执行
+            # 初始化设备信息 - 必须在设计测试用例之前执行
             await self.refresh_device_status(stage='init')
 
             # 设置测试工程师服务的家庭设备
@@ -265,16 +268,16 @@ class AgenticTestAgent:
             # 初始化设备协议（用于参数键含义说明）
             await self.tester_service.initialize_judge_protocols()
 
-            # 如果有 PRD 内容，生成测试用例
+            # 如果有 PRD 内容，设计测试用例
             prd_content = self.tester_config.get('prd_content') if self.tester_config else None
             if prd_content and prd_content != '测试':
-                await self.send_callback('status', '正在根据PRD生成测试用例...')
-                devices_md = self._format_devices_to_markdown()  # 将家庭设备信息转换为 Markdown 格式，用于生成测试用例
+                await self.send_callback('status', '正在根据PRD设计测试用例...')
+                devices_md = self._format_devices_to_markdown()  # 将家庭设备信息转换为 Markdown 格式，用于设计测试用例
                 cases = await self.tester_service.generate_test_cases_from_config(devices_md)
                 if cases:
                     await self.send_callback('log', f'成功生成 {len(cases)} 个测试用例')
                 else:
-                    await self.send_callback('log', '生成测试用例为空，使用默认测试用例')
+                    await self.send_callback('log', '设计测试用例为空，使用默认测试用例')
             # 后门：当 prd_content == '测试' 时，跳过生成，直接使用默认用例
             elif prd_content == '测试':
                 await self.send_callback('log', '检测到测试标记，使用默认测试用例')
@@ -307,7 +310,7 @@ class AgenticTestAgent:
 
         except Exception as e:
             logger.error(f"Error in initialize_and_generate_cases: {e}", exc_info=True)
-            await self.send_callback('error', f'初始化或生成测试用例失败: {str(e)}')
+            await self.send_callback('error', f'初始化或设计测试用例失败: {str(e)}')
             self.is_running = False
 
     async def start_main_loop(self):
@@ -316,16 +319,16 @@ class AgenticTestAgent:
         第二阶段：用户确认后执行音频处理
         """
         try:
+            # 重置测试用例索引为 -1，确保从第一个用例开始
+            # 这样 generate_test_query 会正确识别为"需要定位新用例"
+            self.tester_service.case_manager.current_index = -1
+            logger.info(f"[start_main_loop] 重置 current_index=-1，测试用例数: {len(self.tester_service.get_test_cases())}")
+
             # 获取初始查询：优先使用前端传来的 initial_query，否则从测试用例生成
             if self.initial_query:
                 self.current_query = self.initial_query
                 logger.info(f"[start_main_loop] 使用前端传来的初始查询: {self.current_query}")
             else:
-                # 重置测试用例索引为 -1，确保从第一个用例开始
-                # 这样 generate_test_query 会正确识别为"需要定位新用例"
-                self.tester_service.case_manager.current_index = -1
-                logger.info(f"[start_main_loop] 重置 current_index=-1，测试用例数: {len(self.tester_service.get_test_cases())}")
-
                 # 从测试用例生成查询
                 self.current_query = await self.tester_service.generate_test_query() or ""
 
@@ -764,6 +767,14 @@ class AgenticTestAgent:
                     ai_response="检测到噪音或空输入，请重新说话"
                 )
 
+            # 检查是否是初始查询后的第一个响应
+            skip_judge = self.is_initial_query
+            if self.is_initial_query:
+                await self.send_callback('log', '初始查询响应，跳过评判')
+                logger.info(f"[process_brain] 初始查询响应: '{asr_text}'，跳过评判")
+                # 重置标记，后续响应需要正常评判
+                self.is_initial_query = False
+
             # 1. 记录用户输入到对话历史
             self.tester_service.add_to_conversation_history('assistant', asr_text)
 
@@ -779,7 +790,8 @@ class AgenticTestAgent:
             progress = await self.tester_service.evaluate_round_result(
                 asr_text=asr_text,
                 device_status_before=device_status_a0,
-                device_status_after=device_status_a1
+                device_status_after=device_status_a1,
+                skip_judge=skip_judge
             )
 
             await self.send_callback('log', f'评判结果: action={progress.action.value}, message={progress.message}')

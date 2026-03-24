@@ -462,7 +462,7 @@ class TesterService:
     ) -> List[TestCase]:
         """设计测试用例
 
-        根据PRD（产品需求文档）、设备功能说明和家庭设备信息自动生成测试用例。
+        根据PRD（产品需求文档）、设备功能说明和家庭设备信息自动设计测试用例。
 
         Args:
             prd: 产品需求文档内容
@@ -487,7 +487,7 @@ class TesterService:
     ) -> List[TestCase]:
         """流式设计测试用例
 
-        根据PRD（产品需求文档）、设备功能说明和家庭设备信息流式生成测试用例。
+        根据PRD（产品需求文档）、设备功能说明和家庭设备信息流式设计测试用例。
         实时将生成的内容发送到前端。
 
         Args:
@@ -525,9 +525,9 @@ class TesterService:
         self,
         devices_md: Optional[str] = None
     ) -> List[TestCase]:
-        """根据配置生成测试用例
+        """根据配置设计测试用例
 
-        如果配置中有 prd_content，则根据 PRD、设备功能说明和家庭设备信息生成测试用例。
+        如果配置中有 prd_content，则根据 PRD、设备功能说明和家庭设备信息设计测试用例。
         生成成功后，清空默认用例，使用新生成的用例。
         支持流式生成，实时将内容发送到前端。
 
@@ -559,8 +559,8 @@ class TesterService:
             else:
                 logger.warning(f"Failed to retrieve protocol: {self.config.iot_protocol_id}")
 
-        # 流式生成测试用例
-        await self._send_callback('status', '正在生成测试用例...')
+        # 流式设计测试用例
+        await self._send_callback('status', '正在设计测试用例...')
         await self._send_callback('test_case_generation_started', {
             'prd_length': len(self.config.prd_content),
         })
@@ -1048,7 +1048,8 @@ class TesterService:
         self,
         asr_text: str,
         device_status_before: Optional[Dict] = None,
-        device_status_after: Optional[Dict] = None
+        device_status_after: Optional[Dict] = None,
+        skip_judge: bool = False
     ) -> TaskProgress:
         """评估本轮执行结果并推进任务
 
@@ -1064,11 +1065,25 @@ class TesterService:
             asr_text: ASR识别文本
             device_status_before: 执行前设备状态
             device_status_after: 执行后设备状态
+            skip_judge: 是否跳过评判（初始查询响应时为 True）
 
         Returns:
             任务进度
         """
-        # 1. 评判结果
+        # 1. 评判结果（如果 skip_judge=True，则跳过评判和步骤记录）
+        if skip_judge:
+            # 初始查询响应：跳过评判，不记录测试步骤
+            logger.info(f"[evaluate_round_result] 跳过评判，初始查询响应: '{asr_text}'")
+
+            # 返回一个简单的进度，不做任何状态更新
+            return TaskProgress(
+                action=NextAction.WAIT,
+                current_case_index=self.case_manager.current_index,
+                total_cases=len(self.case_manager.test_cases),
+                message="初始查询响应已接收，准备开始测试",
+                state=TaskState.EXECUTING
+            )
+
         judge_result = await self.judge_test_result(
             asr_text,
             device_status_before,

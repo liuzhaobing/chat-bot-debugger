@@ -17,7 +17,7 @@ QUERY_GENERATOR_APP_ID = "c7a27bd4e3cf49008ae99fc69817f155"
 # 测试点提取 App - 从场景描述/需求文档中提取需要验证的测试点
 TEST_POINT_EXTRACTOR_APP_ID = "test_point_extractor"
 
-# 测试用例设计 App - 根据 PRD（产品需求文档）自动生成测试用例
+# 测试用例设计 App - 根据 PRD（产品需求文档）自动设计测试用例
 TEST_CASE_DESIGNER_APP_ID = "43281a11ed734cbc9ed7d1e1f18a1f99"
 
 # 完成验证 App - 大模型验证是否所有测试用例都已完成执行
@@ -63,7 +63,7 @@ APP_INFO = {
     "test_case_designer": {
         "id": TEST_CASE_DESIGNER_APP_ID,
         "name": "测试用例设计 App",
-        "description": "根据 PRD（产品需求文档）自动生成测试用例",
+        "description": "根据 PRD（产品需求文档）自动设计测试用例",
         "module": "case_manager.py",
     },
     "completion_verifier": {

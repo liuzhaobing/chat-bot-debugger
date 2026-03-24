@@ -89,7 +89,7 @@ result = await self.backend_service.invoke_app(
 | **App ID** | `43281a11ed734cbc9ed7d1e1f18a1f99` |
 | **定义位置** | `case_manager.py:201` |
 | **调用位置** | `TestCaseManager.design_cases_from_prd()` |
-| **作用** | 根据 PRD（产品需求文档）自动生成测试用例 |
+| **作用** | 根据 PRD（产品需求文档）自动设计测试用例 |
 
 **入参：**
 ```python

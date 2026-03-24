@@ -97,7 +97,7 @@
             </svg>
           </div>
           <p class="empty-state-title">暂无测试用例</p>
-          <p class="empty-state-hint">点击派发任务，AI 将自动生成测试用例</p>
+          <p class="empty-state-hint">点击派发任务，AI 将自动设计测试用例</p>
           <button class="dispatch-task-btn">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="12" y1="5" x2="12" y2="19"></line>
